@@ -19,10 +19,18 @@ if {$::OS == "Windows"} {
   load xe_ckc.so
 }
 
+proc xetcl_clear_global {} {
+  global xe_gT xe_gTFull xe_gfilter_item_ht xe_gtablewindow_visibility
+  array unset xe_gT 
+  array unset xe_gTFull 
+  array unset xe_gfilter_item_ht 
+  set xe_gtablewindow_visibility {}
+}
+
 # Global variables
 global XSCHEM_SHAREDIR
-list set xe_filter_list {}
-list set xe_tablewindow_visibility {}
+xetcl_clear_global
+
 set xe_cm_wcounter 1
 set XE_ROOT_DIR $XSCHEM_SHAREDIR/XE
 
@@ -50,7 +58,6 @@ set_ne sim(xe,0,st) 1
 set_ne sim(xe,n) 1
 set_ne sim(xe,default) 0
 ###############################################
-
 # if XE's WD/UD/TF are setup, just call xe_load API
 # else call configure_xe_win
 proc xetcl_load {} {
@@ -928,7 +935,7 @@ proc xetcl_process_fi_subckt {} {
 
 proc xetcl_see_report_win {{msg {}}} {
   global xe_conf_dict xe_csv_files1 xe_report_ht
-  global xe_tablewindow_visibility xe_gT xe_gTFull
+  global xe_gtablewindow_visibility xe_gT xe_gTFull xe_gfilter_item_ht
   if {[winfo exists .xe_report_dialog]} {
     focus  .xe_report_dialog
     return
@@ -939,11 +946,14 @@ proc xetcl_see_report_win {{msg {}}} {
   }
   if (![info exists xe_conf_dict(xe_wd)]) {
     alert_  "Need to first configure XE to read report"
+    xetcl_configure_xe_win 0
     return
   }
-  set xe_tablewindow_visibility {} 
-  array set xe_gT {}
-  array set xe_gTFull {}
+  xetcl_clear_global
+  #array unset xe_gT 
+  #array unset xe_gTFull 
+  #array unset xe_gfilter_item_ht 
+  #set xe_gtablewindow_visibility {}
 
   set num_col 0
   set current_row 0
@@ -1119,8 +1129,11 @@ proc xetcl_see_report_win {{msg {}}} {
         pack .xe_report_dialog.l.paneright.table.xscroll -side bottom -fill x 
         set num_col 0
         set current_row 0
-        array set xe_gT {}
-        array set xe_gTFull {}
+        xetcl_clear_global
+        #array unset xe_gT 
+        #array unset xe_gTFull 
+        #array unset xe_gfilter_item_ht 
+        #set xe_gtablewindow_visibility {}
         set fn $xe_conf_dict(xe_wd)/$sel_report
         set fd [open $fn r]
         set a [catch "open \"$fn\" r" fd]
@@ -1147,7 +1160,7 @@ proc xetcl_see_report_win {{msg {}}} {
             }
             if ($num_col==0) {set num_col $col}
             incr current_row
-            lappend xe_tablewindow_visibility 1
+            lappend xe_gtablewindow_visibility 1
           }
           .xe_report_dialog.l.paneright.table configure -rows $current_row -cols [expr $num_col+1]
           .xe_report_dialog.l.paneright.table configure -state disabled
@@ -1165,34 +1178,34 @@ proc xetcl_see_report_win {{msg {}}} {
 }
 # ============================================================
 proc xetcl_see_report_win_context_menu {w el mousex mousey} {
-  global xe_cm_wcounter xe_tablewindow_visibility
+  global xe_cm_wcounter xe_gtablewindow_visibility
   global xe_cm_w
   if {[scan $el %d,%d r c] != 2} return
   if {$c==0} return
   if {[$w tag includes title $el]} {
     set xe_cm_wcounter [expr $xe_cm_wcounter+1]
     set xe_cm_w .cmenu$xe_cm_wcounter
-    menu $cm_w -tearoff 0   
+    menu $xe_cm_w -tearoff 0   
     #############
     set num_col [$w cget -cols]
-    set num_row [llength $g_tablewindow_visibility]
+    set num_row [llength $xe_gtablewindow_visibility]
     set current_row 0
     for {set i 1} {$i<$num_row} {incr i} {
-      if {[lindex $g_tablewindow_visibility $i]==0} {continue}
+      if {[lindex $xe_gtablewindow_visibility $i]==0} {continue}
       incr current_row
     }
     set top_cell 1,1
     set last_cell $current_row,$num_col
     #############
-    $cm_w add command -label "Sort ascending" -command "$w configure -state normal; \
+    $xe_cm_w add command -label "Sort ascending" -command "$w configure -state normal; \
       ::tk::table::Sort $w $top_cell $last_cell  $c -increasing; \
       $w configure -state disabled"
-    $cm_w add command -label "Sort descending"  -command "$w configure -state normal; \
+    $xe_cm_w add command -label "Sort descending"  -command "$w configure -state normal; \
       ::tk::table::Sort $w $top_cell $last_cell  $c -decreasing; \
       $w configure -state disabled"
-    $cm_w add separator
-    $cm_w add command -label "Filter"  -command "xetcl_see_report_win_context_menu_filter_dialog $w $c"
-    tk_popup $cm_w $mousex $mousey 
+    $xe_cm_w add separator
+    $xe_cm_w add command -label "Filter"  -command "xetcl_see_report_win_context_menu_filter_dialog $w $c"
+    tk_popup $xe_cm_w $mousex $mousey 
   } 
 }
 
@@ -1241,13 +1254,23 @@ proc xetcl_see_report_win_probe {w el mousex mousey} {
   }
 }
 
+# TK's checkbutton has issue with text and variable name that has []:.  Escape it for now
+proc xetcl_get_processed_name {name} {
+  regsub -all {\[} $name {\\[} name
+  regsub -all {\]} $name {\\]} name
+  regsub -all {\:} $name {\\:} name
+  return $name
+}
+
 proc xetcl_see_report_win_context_menu_filter_dialog {w c} {
-  global xe_filter_list xe_tablewindow_visibility xe_gT xe_gTFull
-  array set ht {}
-  set num_row [llength $g_tablewindow_visibility]
+  # xe_gfilter_item_ht is used because TK doesn't like name with [].  Use a number instead
+  global xe_gtablewindow_visibility xe_gT xe_gTFull xe_gfilter_item_ht
+  array unset ht
+  set myList {}
+  set num_row [llength $xe_gtablewindow_visibility]
   for {set i 1} {$i<$num_row} {incr i} {
     if {[info exists xe_gTFull($i,$c)]} {
-      lappend myList $xe_gTFull($i,$c)
+      lappend myList $xe_gTFull($i,$c)      
     }
   }
   set xe_filter_list [lsort -unique $myList]
@@ -1257,24 +1280,27 @@ proc xetcl_see_report_win_context_menu_filter_dialog {w c} {
   frame .filter_dialog.l.paneleft
   ##############
 
-  checkbutton .filter_dialog.l.paneleft.all -text "Select ALL" -variable .filter_dialog.l.paneleft.all -command "xetcl_report_win_cm_filter_update_window_visibility $w -1 all .filter_dialog.l.paneleft"
+  checkbutton .filter_dialog.l.paneleft.all -text "Select ALL" -variable .filter_dialog.l.paneleft.all -command "xetcl_report_win_cm_filter_update_window_visibility $w -1 all .filter_dialog.l.paneleft [list $xe_filter_list]"
   grid .filter_dialog.l.paneleft.all -row 1 -column 2 -sticky nw
   set i 2
   foreach item $xe_filter_list {
-    checkbutton .filter_dialog.l.paneleft.a_${item} -text $item -variable .filter_dialog.l.paneleft.$item -command "xetcl_report_win_cm_filter_update_window_visibility $w $c $item .filter_dialog.l.paneleft.$item"
+    set xe_gfilter_item_ht($item) $i
+    set item [xetcl_get_processed_name $item]
+    checkbutton .filter_dialog.l.paneleft.a$i -text $item  -variable .filter_dialog.l.paneleft.$i -command "xetcl_report_win_cm_filter_update_window_visibility $w $c $item .filter_dialog.l.paneleft.$i [list $xe_filter_list]"
     #-anchor w
     # pack .filter_dialog.l.paneleft.$item -side left
-    grid .filter_dialog.l.paneleft.a_$item -row $i -column 2 -sticky w
+    grid .filter_dialog.l.paneleft.a$i -row $i -column 2 -sticky w
     incr i
   }
   set has_deselect 0
   for {set i 1} {$i <= $num_row} {incr i} {
     if {[info exists xe_gTFull($i,$c)]} {
       set name $xe_gTFull($i,$c)
-      if {[lindex $g_tablewindow_visibility $i]==1} {
-        xetcl_setValue .filter_dialog.l.paneleft.$name 1
+      set ii $xe_gfilter_item_ht($name)
+      if {[lindex $xe_gtablewindow_visibility $i]==1} {
+        xetcl_setValue .filter_dialog.l.paneleft.$ii 1
       } else {
-        xetcl_setValue .filter_dialog.l.paneleft.$name 0
+        xetcl_setValue .filter_dialog.l.paneleft.$ii 0
         set has_deselect 1
       }
     }
@@ -1320,20 +1346,23 @@ proc xetcl_setValue { var val } {
 }
 
 # for select all, display=".dialog.l.paneleft", and c=-1, name=all
-proc xetcl_report_win_cm_filter_update_window_visibility {w c name display} {
-  global xe_filter_list xe_tablewindow_visibility xe_gTFull .filter_dialog.l.paneleft.all
+proc xetcl_report_win_cm_filter_update_window_visibility {w c name display xe_filter_list} {
+  # name did not get from updated $item from caller
+  set name [xetcl_get_processed_name $name]
+  global xe_gtablewindow_visibility xe_gTFull .filter_dialog.l.paneleft.all xe_gfilter_item_ht
   set num_col [$w cget -cols]
-  set num_row [llength $g_tablewindow_visibility]
+  set num_row [llength $xe_gtablewindow_visibility]
   if ($c<0)  { 
     set display_bool [xetcl_getValue .filter_dialog.l.paneleft.all]
     for {set i 1} {$i<$num_row} {incr i} {
-      lset xe_tablewindow_visibility $i $display_bool
+      lset xe_gtablewindow_visibility $i $display_bool
     }
     foreach item $xe_filter_list {
+      set i $xe_gfilter_item_ht($item)
       if {$display_bool==0} {
-        $display.a_$item deselect
+        $display.a$i deselect
       } else {
-        $display.a_$item select
+        $display.a$i select
       }
     }
     return
@@ -1343,11 +1372,12 @@ proc xetcl_report_win_cm_filter_update_window_visibility {w c name display} {
   for {set i 1} {$i<$num_row} {incr i} {
     if {[info exists xe_gTFull($i,$c)]} {
       set name2 $xe_gTFull($i,$c)
+      set name2 [xetcl_get_processed_name $name2]
       if {$name2 eq $name} {
-        lset xe_tablewindow_visibility $i $display_bool
+        lset xe_gtablewindow_visibility $i $display_bool
       }
     }
-    if {[lindex $g_tablewindow_visibility $i]==0} {set has_deselect 1}
+    if {[lindex $xe_gtablewindow_visibility $i]==0} {set has_deselect 1}
   }
   if {$has_deselect} {
     .filter_dialog.l.paneleft.all deselect
@@ -1357,14 +1387,14 @@ proc xetcl_report_win_cm_filter_update_window_visibility {w c name display} {
 }
 
 proc xetcl_report_win_cm_filter_update_table {w} {
-  global xe_filter_list xe_tablewindow_visibility xe_gT xe_gTFull
+  global xe_gtablewindow_visibility xe_gT xe_gTFull
   set num_col [$w cget -cols]
-  set num_row [llength $g_tablewindow_visibility]
+  set num_row [llength $xe_gtablewindow_visibility]
  
   $w configure -state normal
   set current_row 1
   for {set i 1} {$i<$num_row} {incr i} {
-    if {[lindex $g_tablewindow_visibility $i]==0} {continue}
+    if {[lindex $xe_gtablewindow_visibility $i]==0} {continue}
     for {set j 0} {$j<$num_col} {incr j} {
       if {$j==0} {
         if {$current_row > 0} {
