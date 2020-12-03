@@ -779,7 +779,7 @@ proc simulate {{callback {}}} {
   ## $S : schematic name full path (/home/schippes/.xschem/xschem_library/opamp.sch)
   ## $d : netlist directory
 
-  global netlist_dir netlist_type computerfarm terminal current_dirname sim
+  global netlist_dir netlist_type computerfarm terminal sim
   global execute_callback XSCHEM_SHAREDIR
   set_sim_defaults
   
@@ -892,7 +892,7 @@ proc waves {} {
   ## $S : schematic name full path (/home/schippes/.xschem/xschem_library/opamp.sch)
   ## $d : netlist directory
 
-  global netlist_dir netlist_type computerfarm terminal current_dirname sim XSCHEM_SHAREDIR
+  global netlist_dir netlist_type computerfarm terminal sim XSCHEM_SHAREDIR
   set_sim_defaults
   
   if { [select_netlist_dir 0] ne {}} {
@@ -1122,15 +1122,16 @@ proc myload_set_colors2 {} {
   }
 }
 proc myload_set_home {dir} {
-  global pathlist  myload_files1 myload_index1 current_dirname
+  global pathlist  myload_files1 myload_index1
 
+  set curr_dirname [xschem get current_dirname]
   .dialog.l.paneleft.list selection clear 0 end
-  if { $dir eq {.}} { set dir $current_dirname}
+  if { $dir eq {.}} { set dir $curr_dirname}
   # puts "set home: dir=$dir, pathlist=$pathlist"
   set pl {}
   foreach path_elem $pathlist {
-    if { ![string compare $path_elem .]  && [info exist current_dirname]} {
-      set path_elem $current_dirname
+    if { ![string compare $path_elem .]} {
+      set path_elem $curr_dirname
     }
     lappend pl $path_elem
   }
@@ -1351,7 +1352,9 @@ proc load_file_dialog {{msg {}} {ext {}} {global_initdir {INITIALINSTDIR}} {init
            if { [winfo exists .dialog] } {
              .dialog.l.paneright.pre configure -background {}
              xschem preview_window draw .dialog.l.paneright.pre "$myload_dir1/$myload_dir2"
-             bind .dialog.l.paneright.pre <Expose> {xschem preview_window draw .dialog.l.paneright.pre "$myload_dir1/$myload_dir2"}
+             bind .dialog.l.paneright.pre <Expose> {
+               xschem preview_window draw .dialog.l.paneright.pre "$myload_dir1/$myload_dir2"
+             }
            }
          } else {
            bind .dialog.l.paneright.pre <Expose> {}
@@ -1388,8 +1391,9 @@ proc load_file_dialog {{msg {}} {ext {}} {global_initdir {INITIALINSTDIR}} {init
     }
     set t [is_xschem_file "$myload_dir1/$myload_retval"]
     if { $t eq {0}  } {
-      set answer [tk_messageBox -message  "$myload_dir1/$myload_retval does not seem to be an xschem file...\nContinue?" \
-           -icon warning -parent . -type yesno]
+      set answer [
+        tk_messageBox -message "$myload_dir1/$myload_retval does not seem to be an xschem file...\nContinue?" \
+         -icon warning -parent . -type yesno]
       if { $answer eq "no"} {
         set myload_retval {}
         return {}
@@ -1397,7 +1401,8 @@ proc load_file_dialog {{msg {}} {ext {}} {global_initdir {INITIALINSTDIR}} {init
         return "$myload_dir1/$myload_retval"
       }
     } elseif { $t ne {SYMBOL} && ($ext eq {.sym}) } {
-      set answer [tk_messageBox -message  "$myload_dir1/$myload_retval does not seem to be a SYMBOL file...\nContinue?" \
+      set answer [
+        tk_messageBox -message "$myload_dir1/$myload_retval does not seem to be a SYMBOL file...\nContinue?" \
            -icon warning -parent . -type yesno]
       if { $answer eq "no"} {
         set myload_retval {}
@@ -1745,7 +1750,7 @@ proc enter_text {textlabel {preserve_disabled disabled}} {
    button .dialog.buttons.b3 -text "Load" -command \
    {
      global INITIALTEXTDIR
-     if { ![info exists INITIALTEXTDIR] } { set INITIALTEXTDIR $current_dirname }
+     if { ![info exists INITIALTEXTDIR] } { set INITIALTEXTDIR [xschem get current_dirname] }
      set a [tk_getOpenFile -parent .dialog -initialdir $INITIALTEXTDIR ]
      if [string compare $a ""] {
       set INITIALTEXTDIR [file dirname $a]
@@ -2770,12 +2775,13 @@ proc viewdata {data {ro {}}} {
 # given an absolute path of a symbol/schematic remove the path prefix
 # if file is in a library directory (a $pathlist dir)
 proc rel_sym_path {symbol} {
-  global pathlist current_dirname
+  global pathlist
 
+  set curr_dirname [xschem get current_dirname]
   set name {}
   foreach path_elem $pathlist {
-    if { ![string compare $path_elem .]  && [info exist current_dirname]} {
-      set path_elem $current_dirname
+    if { ![string compare $path_elem .]  && [info exist curr_dirname]} {
+      set path_elem $curr_dirname
     }
     set pl [string length $path_elem]
     if { [string equal -length $pl $path_elem $symbol] } {
@@ -2793,7 +2799,9 @@ proc rel_sym_path {symbol} {
 
 # given a library/symbol return its absolute path
 proc abs_sym_path {fname {ext {} } } {
-  global pathlist current_dirname
+  global pathlist
+
+  set  curr_dirname [xschem get current_dirname]
 
   # empty: do nothing
   if {$fname eq {} } return {}
@@ -2819,9 +2827,9 @@ proc abs_sym_path {fname {ext {} } } {
   # remove trailing '/'s to non empty path
   regsub {([^/]+)/+$} $fname {\1} fname
   # if fname copy tmpfname is ../../e/f
-  # and current_dirname copy tmpdirname is /a/b/c
+  # and curr_dirname copy tmpdirname is /a/b/c
   # set tmpfname to /a/e/f
-  set tmpdirname $current_dirname
+  set tmpdirname $curr_dirname
   set tmpfname $fname
   set found 0 
   while { [regexp {^\.\./} $tmpfname ] } {
@@ -2840,16 +2848,16 @@ proc abs_sym_path {fname {ext {} } } {
   while { [regsub {^\./} $fname {} fname] } {}
   # if previous operation left fname empty set to '.'
   if { $fname eq {} } { set fname . }
-  # if fname is just "." return $current_dirname
+  # if fname is just "." return $curr_dirname
   if {[regexp {^\.$} $fname] } {
-    return "$current_dirname"
+    return "$curr_dirname"
   }
   # if fname is present in one of the pathlist paths get the absolute path
   set name {}
   foreach path_elem $pathlist {
     # in xschem a . in pathlist means the directory of currently loaded  schematic/symbol
-    if { ![string compare $path_elem .]  && [info exist current_dirname]} {
-      set path_elem $current_dirname
+    if { ![string compare $path_elem .]  && [info exist curr_dirname]} {
+      set path_elem $curr_dirname
     }
     set fullpath "$path_elem/$fname"
     if { [file exists $fullpath] } {
@@ -2858,7 +2866,7 @@ proc abs_sym_path {fname {ext {} } } {
     }
   }
   if {$name eq {} } {
-    set name "$current_dirname/$fname"
+    set name "$curr_dirname/$fname"
   }
   regsub {/\.$} $name {} name
   return $name
@@ -3132,6 +3140,60 @@ proc toolbar_hide {} {
     set $toolbar_visible 0
 }
 
+proc raise_dialog {window_path } {
+ if {[winfo exists .dialog] && [winfo ismapped .dialog] && [winfo ismapped .] && [wm stackorder .dialog isbelow . ]} {
+   raise .dialog $window_path
+ }
+}
+
+
+proc set_bindings {window_path} {
+global env no_x
+  ###
+  ### Tk event handling
+  ###
+
+  #    bind . <Enter> {
+  #      if { [winfo exists .dialog] && [winfo ismapped .dialog] && [winfo ismapped .] && [wm stackorder .dialog isbelow . ]} {
+  #        raise .dialog $window_path 
+  #      }
+  #    }
+  bind . <Expose> [list raise_dialog $window_path]
+  bind . <Visibility> [list raise_dialog $window_path]
+  bind . <FocusIn> [list raise_dialog $window_path]
+  bind $window_path <Double-Button-1> {xschem callback -3 %x %y 0 %b 0 %s}
+  bind $window_path <Double-Button-2> {xschem callback -3 %x %y 0 %b 0 %s}
+  bind $window_path <Double-Button-3> {xschem callback -3 %x %y 0 %b 0 %s}
+  bind $window_path <Expose> {xschem callback %T %x %y 0 %w %h %s}
+  bind $window_path <Configure> {xschem windowid; xschem callback %T %x %y 0 %w %h 0}
+  bind $window_path <ButtonPress> {xschem callback %T %x %y 0 %b 0 %s}
+  if {$::OS == "Windows"} {
+    bind $window_path <MouseWheel> {
+      if {%D<0} {
+        xschem callback 4 %x %y 0 5 0 %s
+      } else {
+        xschem callback 4 %x %y 0 4 0 %s
+      }
+    }
+  }
+  bind $window_path <ButtonRelease> {xschem callback %T %x %y 0 %b 0 %s}
+  # on Windows Alt key mask is reported as 131072 (1<<17) so build masks manually with values passed from C code 
+  if {$::OS == "Windows" } {
+    bind $window_path <Alt-KeyPress> {xschem callback %T %x %y %N 0 0 [expr {$Mod1Mask}]}
+    bind $window_path <Control-Alt-KeyPress> {xschem callback %T %x %y %N 0 0 [expr {$ControlMask + $Mod1Mask}]}
+    bind $window_path <Shift-Alt-KeyPress> {xschem callback %T %x %y %N 0 0 [expr {$ShiftMask + $Mod1Mask}]}
+  }
+  bind $window_path <KeyPress> {xschem callback %T %x %y %N 0 0 %s}
+  bind $window_path <KeyRelease> {xschem callback %T %x %y %N 0 0 %s} ;# 20161118
+  bind $window_path <Motion> {xschem callback %T %x %y 0 0 0 %s}
+  bind $window_path  <Enter> {xschem callback %T %x %y 0 0 0 0 }
+  bind $window_path <Leave> {}
+  bind $window_path <Unmap> {
+   wm withdraw .infotext
+   set show_infowindow 0
+  }
+  bind $window_path  "?" { textwindow "${XSCHEM_SHAREDIR}/xschem.help" }
+}
 
 ## this function sets up all tk windows and binds X events. It is executed by xinit.c after completing 
 ## all X initialization. This avoids race conditions.
@@ -3139,9 +3201,8 @@ proc toolbar_hide {} {
 ## this could lead to crashes on some (may be slow) systems due to Configure/Expose events being delivered
 ## before xschem being ready to handle them.
 proc build_windows {} {
-  global env
-  if { ( $::OS== "Windows" || [string length [lindex [array get env DISPLAY] 1] ] > 0 )
-     && ![info exists no_x]} {
+  global env no_x
+  if {($::OS== "Windows" || [string length [lindex [array get env DISPLAY] 1] ] > 0 ) && ![info exists no_x]} {
     pack .statusbar.2 -side left 
     pack .statusbar.3 -side left 
     pack .statusbar.4 -side left 
@@ -3156,67 +3217,7 @@ proc build_windows {} {
     pack .statusbar -after .drw -anchor sw  -fill x 
     bind .statusbar.5 <Leave> { xschem set cadgrid $grid; focus .drw}
     bind .statusbar.3 <Leave> { xschem set cadsnap $snap; focus .drw}
-    ###
-    ### Tk event handling
-    ###
-
-    #    bind . <Enter> {
-    #      if { [winfo exists .dialog] && [winfo ismapped .dialog] && [winfo ismapped .] && [wm stackorder .dialog isbelow . ]} {
-    #        raise .dialog .drw 
-    #      }
-    #    }
-    bind . <Expose> {
-      if { [winfo exists .dialog] && [winfo ismapped .dialog] && [winfo ismapped .] && [wm stackorder .dialog isbelow . ]} {
-        raise .dialog .drw 
-      }
-    }
-    bind . <Visibility> {
-      if { [winfo exists .dialog] && [winfo ismapped .dialog] && [winfo ismapped .] && [wm stackorder .dialog isbelow . ]} {
-        raise .dialog .drw
-      }
-    }
-    bind . <FocusIn> {
-      if { [winfo exists .dialog] && [winfo ismapped .dialog] && [winfo ismapped .] && [wm stackorder .dialog isbelow . ]} {
-        raise .dialog .drw
-      }
-    }
-
-    bind .drw <Double-Button-1> {xschem callback -3 %x %y 0 %b 0 %s}
-    bind .drw <Double-Button-2> {xschem callback -3 %x %y 0 %b 0 %s}
-    bind .drw <Double-Button-3> {xschem callback -3 %x %y 0 %b 0 %s}
-    bind .drw <Expose> {xschem callback %T %x %y 0 %w %h %s}
-    bind .drw <Configure> {xschem windowid; xschem callback %T %x %y 0 %w %h 0}
-    bind .drw <ButtonPress> {xschem callback %T %x %y 0 %b 0 %s}
- 
-    if {$::OS == "Windows"} {
-      bind .drw <MouseWheel> {
-        if {%D<0} {
-          xschem callback 4 %x %y 0 5 0 %s
-        } else {
-          xschem callback 4 %x %y 0 4 0 %s
-        }
-      }
-    }
- 
-    bind .drw <ButtonRelease> {xschem callback %T %x %y 0 %b 0 %s}
-
-    # on Windows Alt key mask is reported as 131072 (1<<17) so build masks manually with values passed from C code 
-    if {$::OS == "Windows" } {
-      bind .drw <Alt-KeyPress> {xschem callback %T %x %y %N 0 0 [expr {$Mod1Mask}]}
-      bind .drw <Control-Alt-KeyPress> {xschem callback %T %x %y %N 0 0 [expr {$ControlMask + $Mod1Mask}]}
-      bind .drw <Shift-Alt-KeyPress> {xschem callback %T %x %y %N 0 0 [expr {$ShiftMask + $Mod1Mask}]}
-    }
-
-    bind .drw <KeyPress> {xschem callback %T %x %y %N 0 0 %s}
-    bind .drw <KeyRelease> {xschem callback %T %x %y %N 0 0 %s} ;# 20161118
-    bind .drw <Motion> {xschem callback %T %x %y 0 0 0 %s}
-    bind .drw  <Enter> {xschem callback %T %x %y 0 0 0 0 }
-    bind .drw <Leave> {}
-    bind .drw <Unmap> {
-     wm withdraw .infotext
-     set show_infowindow 0
-    }
-    bind .drw  "?" { textwindow "${XSCHEM_SHAREDIR}/xschem.help" }
+    set_bindings {.drw}
   }
 }
 
@@ -3289,7 +3290,6 @@ set_ne globfilter {*}
 ## list of tcl procedures to load at end of xschem.tcl
 set_ne tcl_files {}
 set_ne netlist_dir "$USER_CONF_DIR/simulations"
-set_ne user_top_netl_name {}
 set_ne bus_replacement_char {} ;# use {<>} to replace [] with <> in bussed signals
 set_ne hspice_netlist 0
 set_ne top_subckt 0
@@ -3306,7 +3306,6 @@ set_ne fullscreen 0
 set_ne unzoom_nodrift 1
 set_ne change_lw 0
 set_ne draw_window 0
-set_ne line_width 0
 set_ne incr_hilight 1
 set_ne enable_stretch 0
 set_ne horizontal_move 0 ; # 20171023
@@ -3961,7 +3960,7 @@ font configure Underline-Font -underline true -size 24
      }
    .menubar.simulation.menu add command -label "Set top level netlist name" \
      -command {
-           input_line {Set netlist file name} {xschem set user_top_netl_name} [xschem get user_top_netl_name] 40
+           input_line {Set netlist file name} {xschem set netlist_name} [xschem get netlist_name] 40
      }
    .menubar.simulation.menu add command -label {Configure simulators and tools} -command {simconf}
    .menubar.simulation.menu add command -label {Utile Stimuli Editor (GUI)} \

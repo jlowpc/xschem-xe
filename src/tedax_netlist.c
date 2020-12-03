@@ -32,26 +32,26 @@ void global_tedax_netlist(int global)  /* netlister driver */
  char tcl_cmd_netlist[PATH_MAX + 100]; /* 20081211 overflow safe 20161122 */
  char cellname[PATH_MAX]; /* 20081211 overflow safe 20161122 */
 
- if(modified) {
+ if(xctx->modified) {
    save_ok = save_schematic(xctx->sch[xctx->currsch]);
    if(save_ok == -1) return;
  }
  statusmsg("",2);  /* clear infowindow */
  record_global_node(2, NULL, NULL); /* delete list of global nodes */
- bus_replacement_char[0] = bus_replacement_char[1] = '\0';
+ bus_char[0] = bus_char[1] = '\0';
  hiersep[0]='.'; hiersep[1]='\0';
  str_tmp = tclgetvar("bus_replacement_char");
  if(str_tmp && str_tmp[0] && str_tmp[1]) {
-   bus_replacement_char[0] = str_tmp[0];
-   bus_replacement_char[1] = str_tmp[1];
+   bus_char[0] = str_tmp[0];
+   bus_char[1] = str_tmp[1];
  }
  netlist_count=0;
  my_snprintf(netl_filename, S(netl_filename), "%s/.%s_%d", 
    netlist_dir, skip_dir(xctx->sch[xctx->currsch]), getpid());
  fd=fopen(netl_filename, "w");
 
- if(user_top_netl_name[0]) {
-   my_snprintf(cellname, S(cellname), "%s", get_cell(user_top_netl_name, 0));
+ if(xctx->netlist_name[0]) {
+   my_snprintf(cellname, S(cellname), "%s", get_cell(xctx->netlist_name, 0));
  } else {
    my_snprintf(cellname, S(cellname), "%s.tdx", skip_dir(xctx->sch[xctx->currsch]));
  }
@@ -175,7 +175,7 @@ void tedax_block_netlist(FILE *fd, int i)
   } else {
     dbg(1, "tedax_block_netlist(): loading: %s -> %s\n",
       xctx->sym[i].name, add_ext(abs_sym_path(xctx->sym[i].name, ""), ".sch"));
-    dbg(1, "tedax_block_netlist(): current_dirname=%s\n", tclgetvar("current_dirname"));
+    dbg(1, "tedax_block_netlist(): current_dirname=%s\n", xctx->current_dirname);
     load_schematic(1, add_ext(abs_sym_path(xctx->sym[i].name, ""), ".sch"), 0);
   }
   tedax_netlist(fd, tedax_stop);
@@ -194,9 +194,8 @@ void tedax_netlist(FILE *fd, int tedax_stop )
   int i;
   char *type=NULL;
 
-  prepared_netlist_structs = 0;
+  xctx->prep_net_structs = 0;
   prepare_netlist_structs(1);
-  /* set_modify(1); */ /* 20160302 prepare_netlist_structs could change schematic (wire node naming for example) */
   traverse_node_hash();  /* print all warnings about unconnected floatings etc */
   if(!tedax_stop) {
     for(i=0;i<xctx->instances;i++) /* print first ipin/opin defs ... */
@@ -221,7 +220,8 @@ void tedax_netlist(FILE *fd, int tedax_stop )
      my_strdup(423, &type,(xctx->inst[i].ptr+ xctx->sym)->type);
 
      if( type && !IS_LABEL_OR_PIN(type) ) {
-       if(!strcmp(type,"netlist_commands") && netlist_count==0) continue; /* already done in global_tedax_netlist */
+       /* already done in global_tedax_netlist */
+       if(!strcmp(type,"netlist_commands") && netlist_count==0) continue;
        if(netlist_count &&
           !strcmp(get_tok_value(xctx->inst[i].prop_ptr, "only_toplevel", 0), "true")) continue;
        if(!strcmp(type,"netlist_commands")) {

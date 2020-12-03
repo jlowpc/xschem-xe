@@ -508,6 +508,35 @@ typedef struct {
   double zoom;
   double mooz;
   double lw;
+  unsigned long ui_state ; /* this signals that we are doing a net place,panning etc.
+                            * used to prevent nesting of some commands */
+  double mousex,mousey; /* mouse coord. */
+  double mousex_snap,mousey_snap; /* mouse coord. snapped to grid */
+  double mx_double_save, my_double_save;
+  int areax1,areay1,areax2,areay2,areaw,areah; /* window corners / size, line width beyond screen edges */
+  int xschem_h, xschem_w; /* true window size from XGetWindowAttributes */
+  int need_reb_sel_arr;
+  int lastsel;
+  int maxsel;
+  Selected *sel_array;
+  int prep_net_structs;
+  int prep_hi_structs;
+  int prep_hash_inst;
+  int prep_hash_wires;
+  int modified;
+  int semaphore;
+  char netlist_name[PATH_MAX];
+  char current_dirname[PATH_MAX];
+  struct instpinentry *instpintable[NBOXES][NBOXES];
+  struct wireentry *wiretable[NBOXES][NBOXES];
+  struct instentry *insttable[NBOXES][NBOXES];
+  Window window;
+  Pixmap save_pixmap;
+  XRectangle xrect[1];
+  #ifdef HAS_CAIRO
+  cairo_surface_t *save_sfc;
+  cairo_t *cairo_save_ctx;
+  #endif
 } Xschem_ctx;
 
 struct Lcc { /* used for symbols containing schematics as instances (LCC, Local Custom Cell) */
@@ -585,7 +614,6 @@ struct instentry {
 extern Xschem_ctx *xctx;
 extern int help;
 extern char *cad_icon[];
-extern int semaphore;
 extern int a3page;
 extern int manhattan_lines;
 extern int cadlayers;
@@ -594,10 +622,6 @@ extern int *enable_layer;
 extern int n_active_layers;
 extern int hilight_color;
 extern int do_print;
-extern int prepared_netlist_structs;
-extern int prepared_hilight_structs;
-extern int prepared_hash_instances;
-extern int prepared_hash_wires;
 extern int has_x;
 extern int no_draw;
 extern int sym_txt;
@@ -631,26 +655,17 @@ extern double cadgrid;
 extern double cadhalfdotsize;
 extern int draw_pixmap; /*  pixmap used as 2nd buffer */
 extern int draw_window;
-extern int need_rebuild_selected_array;
 extern unsigned int rectcolor;
 extern XEvent xev;
 extern KeySym key;
 extern unsigned short enable_stretch;
 extern unsigned int button;
 extern unsigned int state; /*  status of shift,ctrl etc.. */
-extern Selected *selectedgroup; /*  array of selected objs to draw while moving */
-extern int lastselected;
 extern int currentsch;
 extern char *xschem_version_string;
-extern int max_selected;
 extern int split_files;
 extern char *netlist_dir;
-extern char user_top_netl_name[PATH_MAX];
-extern char bus_replacement_char[];
-
-extern unsigned long ui_state ; /*  this signals that we are doing a net place, */
-                              /*  panning etc... */
-
+extern char bus_char[];
 extern char *undo_dirname;
 extern int cur_undo_ptr;
 extern int tail_undo_ptr;
@@ -658,17 +673,11 @@ extern int head_undo_ptr;
 extern int max_undo;
 extern int draw_dots;
 extern int draw_single_layer;
-extern int check_version;
 extern int yyparse_error;
 extern char *xschem_executable;
 extern int depth;
 extern int *fill_type; /* 20171117 for every layer: 0: no fill, 1, solid fill, 2: stipple fill */
-extern int  areax1,areay1,areax2,areay2,areaw,areah;
 extern Tcl_Interp *interp;
-extern XRectangle xrect[];
-extern int xschem_h, xschem_w; /*  20171130 window size */
-extern double mousex,mousey; /*  mouse coord. */
-extern double mousex_snap,mousey_snap; /*  mouse coord. snapped to grid */
 extern double cadsnap;
 extern int horizontal_move;
 extern int vertical_move;
@@ -686,7 +695,6 @@ extern char hiersep[20];
 extern int quit;
 extern int show_erc;
 extern int hilight_nets;
-extern int modified;
 extern int color_ps;
 extern int only_probes;
 extern int pending_fullzoom;
@@ -696,10 +704,6 @@ extern int dark_colorscheme;
 extern double color_dim;
 extern int no_undo;
 extern int enable_drill;
-extern struct wireentry *wiretable[NBOXES][NBOXES];
-extern struct instpinentry *instpintable[NBOXES][NBOXES];
-extern double mx_double_save, my_double_save;
-extern struct instentry *insttable[NBOXES][NBOXES];
 extern size_t get_tok_value_size;
 extern size_t get_tok_size;
 extern int batch_mode; /* no TCL console */
@@ -720,7 +724,6 @@ extern const char fopen_read_mode[];
 
 /* X11 specific globals */
 extern Colormap colormap;
-extern Window window;
 extern Window pre_window;
 extern Window parent_of_topwindow;
 extern unsigned char **pixdata;
@@ -729,13 +732,14 @@ extern GC *gc, *gcstipple, gctiled;
 extern Display *display;
 extern XRectangle *rectangle;
 extern XPoint *gridpoint;
-extern Pixmap cad_icon_pixmap, cad_icon_mask, *pixmap,save_pixmap;
+extern Pixmap cad_icon_pixmap, cad_icon_mask, *pixmap;
 extern XColor xcolor_array[];
 extern Visual *visual;
 #ifdef HAS_CAIRO
-extern cairo_surface_t *sfc, *save_sfc;
-extern cairo_t *cairo_ctx, *cairo_save_ctx;
 extern XRenderPictFormat *format;
+extern cairo_surface_t *sfc;
+extern cairo_t *cairo_ctx;
+
 #if HAS_XCB==1
 extern xcb_connection_t *xcbconn;
 extern xcb_screen_t *screen_xcb;
@@ -820,7 +824,7 @@ extern int Tcl_AppInit(Tcl_Interp *interp);
 extern int source_tcl_file(char *s);
 extern int callback(int event, int mx, int my, KeySym key,
                         int button, int aux, int state);
-extern void resetwin(int create_pixmap, int clear_pixmap, int preview_window);
+extern void resetwin(int create_pixmap, int clear_pixmap, int force);
 extern void find_closest_net(double mx,double my);
 extern void find_closest_box(double mx,double my);
 extern void find_closest_arc(double mx,double my);

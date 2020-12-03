@@ -26,7 +26,7 @@ static void instdelete(int n, int x, int y)
 {
   struct instentry *saveptr, **prevptr;
 
-  prevptr = &insttable[x][y];
+  prevptr = &xctx->insttable[x][y];
   while( (*prevptr)->n != n) prevptr = &(*prevptr)->next;
   saveptr = (*prevptr)->next;
   my_free(821, prevptr);
@@ -36,11 +36,11 @@ static void instdelete(int n, int x, int y)
 static void instinsert(int n, int x, int y)
 {
   struct instentry *ptr, *newptr;
-  ptr=insttable[x][y];
+  ptr=xctx->insttable[x][y];
   newptr=my_malloc(236, sizeof(struct instentry));
   newptr->next=ptr;
   newptr->n=n;
-  insttable[x][y]=newptr;
+  xctx->insttable[x][y]=newptr;
   dbg(2, "instinsert(): inserting object %d at %d,%d\n",n,x,y);
 }
 
@@ -61,8 +61,8 @@ void del_inst_table(void)
 
   for(i=0;i<NBOXES;i++)
     for(j=0;j<NBOXES;j++)
-      insttable[i][j] = delinstentry(insttable[i][j]);
-  prepared_hash_instances=0;
+      xctx->insttable[i][j] = delinstentry(xctx->insttable[i][j]);
+  xctx->prep_hash_inst=0;
   dbg(1, "del_inst_table(): cleared object hash table\n");
 }
 
@@ -114,19 +114,19 @@ void hash_instances(void) /* 20171203 insert object bbox in spatial hash table *
 {
  int n;
 
- if(prepared_hash_instances) return;
+ if(xctx->prep_hash_inst) return;
  del_inst_table();
  for(n=0; n<xctx->instances; n++) {
    hash_inst(XINSERT, n);
  }
- prepared_hash_instances=1;
+ xctx->prep_hash_inst=1;
 }
 
 static void instpindelete(int n,int pin, int x, int y)
 {
   struct instpinentry *saveptr, **prevptr, *ptr;
 
-  prevptr = &instpintable[x][y];
+  prevptr = &xctx->instpintable[x][y];
   ptr = *prevptr;
   while(ptr) {
     if(ptr->n == n && ptr->pin == pin) {
@@ -145,14 +145,14 @@ static void instpininsert(int n,int pin, double x0, double y0, int x, int y)
 {
  struct instpinentry *ptr, *newptr;
 
- ptr=instpintable[x][y];
+ ptr=xctx->instpintable[x][y];
  newptr=my_malloc(237, sizeof(struct instpinentry));
  newptr->next=ptr;
  newptr->n=n;
  newptr->x0=x0;
  newptr->y0=y0;
  newptr->pin=pin;
- instpintable[x][y]=newptr;
+ xctx->instpintable[x][y]=newptr;
  dbg(2, "instpininsert(): inserting inst %d at %d,%d\n",n,x,y);
 }
 
@@ -175,7 +175,7 @@ static void del_inst_pin_table(void)
 
  for(i=0;i<NBOXES;i++)
   for(j=0;j<NBOXES;j++)
-   instpintable[i][j] = delinstpinentry(instpintable[i][j]);
+   xctx->instpintable[i][j] = delinstpinentry(xctx->instpintable[i][j]);
 }
 
 
@@ -183,7 +183,7 @@ static void wiredelete(int n, int x, int y)
 {
   struct wireentry *saveptr, **prevptr;
 
-  prevptr = &wiretable[x][y];
+  prevptr = &xctx->wiretable[x][y];
   while( (*prevptr)->n != n) prevptr = &(*prevptr)->next;
   saveptr = (*prevptr)->next;
   my_free(825, prevptr);
@@ -194,11 +194,11 @@ static void wireinsert(int n, int x, int y)
 {
   struct wireentry *ptr, *newptr;
 
-  ptr=wiretable[x][y];
+  ptr=xctx->wiretable[x][y];
   newptr=my_malloc(238, sizeof(struct wireentry));
   newptr->next=ptr;
   newptr->n=n;
-  wiretable[x][y]=newptr;
+  xctx->wiretable[x][y]=newptr;
   dbg(2, "wireinsert(): inserting wire %d at %d,%d\n",n,x,y);
 }
 
@@ -220,8 +220,8 @@ void del_wire_table(void)
 
  for(i=0;i<NBOXES;i++)
   for(j=0;j<NBOXES;j++)
-   wiretable[i][j] = delwireentry(wiretable[i][j]);
- prepared_hash_wires=0;
+   xctx->wiretable[i][j] = delwireentry(xctx->wiretable[i][j]);
+ xctx->prep_hash_wires=0;
 }
 
 void get_square(double x, double y, int *xx, int *yy)
@@ -338,7 +338,7 @@ void hash_wire(int what, int n, int incremental)
     else  wiredelete(n, tmpi, tmpj);
 
     /* reset ends of all wires that *could* touch wire[n] */
-    if(incremental) for(wptr = wiretable[tmpi][tmpj] ; wptr ; wptr = wptr->next) {
+    if(incremental) for(wptr = xctx->wiretable[tmpi][tmpj] ; wptr ; wptr = wptr->next) {
       wire[wptr->n].end1 = wire[wptr->n].end2 = -1;
     }
    }
@@ -349,11 +349,11 @@ void hash_wires(void)
 {
  int n;
 
- if(prepared_hash_wires) return;
+ if(xctx->prep_hash_wires) return;
  del_wire_table();
 
  for(n=0; n<xctx->wires; n++) hash_wire(XINSERT, n, 0);
- prepared_hash_wires=1;
+ xctx->prep_hash_wires=1;
 }
 
 /* return 0 if library path of s matches any lib name in tcl variable $xschem_libs */
@@ -382,11 +382,11 @@ void netlist_options(int i)
   const char * str;
   str = get_tok_value(xctx->inst[i].prop_ptr, "bus_replacement_char", 0);
   if(str[0] && str[1] && strlen(str) ==2) {
-    bus_replacement_char[0] = str[0];
-    bus_replacement_char[1] = str[1];
+    bus_char[0] = str[0];
+    bus_char[1] = str[1];
     /* tclsetvar("bus_replacement_char", str); */
   }
-  /* fprintf(errfp, "netlist_options(): bus_replacement_char=%s\n", str); */
+  /* fprintf(errfp, "netlist_options(): bus_char=%s\n", str); */
 
   str = get_tok_value(xctx->inst[i].prop_ptr, "top_subckt", 0);
   if(str[0]) {
@@ -416,7 +416,7 @@ void print_wires(void)
    for(j=0;j<NBOXES;j++)
    {
     dbg(1, "print_wires(): %4d%4d :\n",i,j);
-    ptr=wiretable[i][j];
+    ptr=xctx->wiretable[i][j];
     while(ptr)
     {
      dbg(1, "print_wires(): %6d\n", ptr->n);
@@ -425,7 +425,7 @@ void print_wires(void)
     dbg(1, "print_wires(): \n");
    }
  }
- ptr=wiretable[0][1];
+ ptr=xctx->wiretable[0][1];
  while(ptr)
  {
   select_wire(ptr->n,SELECTED, 1);
@@ -488,7 +488,7 @@ void wirecheck(int k)    /* recursive routine */
     countj++;
     tmpj=j%NBOXES; if(tmpj<0) tmpj+=NBOXES;
     /*check if wire[k]  touches wires in square [tmpi, tmpj] */
-    ptr2=wiretable[tmpi][tmpj];
+    ptr2=xctx->wiretable[tmpi][tmpj];
     while(ptr2)
     {
      if(wire[ptr2->n].node) {ptr2=ptr2->next; continue;} /* 20171207 net already checked. Move on */
@@ -630,10 +630,11 @@ void prepare_netlist_structs(int for_netlist)
   xInstance * const inst = xctx->inst;
   int const instances = xctx->instances;
 
-  if (for_netlist>0 && prepared_netlist_structs) return;
-  else if (!for_netlist && prepared_hilight_structs) return;
+  if (for_netlist>0 && xctx->prep_net_structs) return;
+  else if (!for_netlist && xctx->prep_hi_structs) return;
   /* delete instance pins spatial hash, wires spatial hash, node_hash, wires and inst nodes.*/
   else delete_netlist_structs();
+  dbg(1, "prepare_netlist_structs(): extraction\n");
   if(netlist_count == 0 ) startlevel = xctx->currsch;
   print_erc =  netlist_count == 0 || startlevel < xctx->currsch;
 
@@ -769,7 +770,7 @@ void prepare_netlist_structs(int for_netlist)
       x0=inst[i].x0+rx1;
       y0=inst[i].y0+ry1;
       get_square(x0, y0, &sqx, &sqy);
-      wptr=wiretable[sqx][sqy];
+      wptr=xctx->wiretable[sqx][sqy];
       if (inst[i].node[0]) while(wptr)
       {
         if (touch(xctx->wire[wptr->n].x1, xctx->wire[wptr->n].y1,
@@ -803,7 +804,8 @@ void prepare_netlist_structs(int for_netlist)
       my_strdup(265, &xctx->wire[i].node , tmp_str);
       my_strdup(266, &xctx->wire[i].prop_ptr,
       subst_token(xctx->wire[i].prop_ptr, "lab", xctx->wire[i].node));
-      bus_hash_lookup(xctx->wire[i].node,"", XINSERT, 0,"","","","");   /* insert unnamed wire name in hash table */
+      /* insert unnamed wire name in hash table */
+      bus_hash_lookup(xctx->wire[i].node,"", XINSERT, 0,"","","","");
       wirecheck(i);
     }
   }
@@ -833,7 +835,7 @@ void prepare_netlist_structs(int for_netlist)
           y0=inst[i].y0+ry1;
           get_square(x0, y0, &sqx, &sqy);
 
-          iptr=instpintable[sqx][sqy];
+          iptr=xctx->instpintable[sqx][sqy];
           while (iptr)
           {
             if (iptr->n == i)
@@ -903,7 +905,7 @@ void prepare_netlist_structs(int for_netlist)
           y0=inst[i].y0+ry1;
           get_square(x0, y0, &sqx, &sqy);
           /* name instance nodes that touch named nets */
-          wptr=wiretable[sqx][sqy];
+          wptr=xctx->wiretable[sqx][sqy];
           dbg(2, "prepare_netlist_structs():           from attached nets\n");
           while (wptr)
           {
@@ -938,7 +940,7 @@ void prepare_netlist_structs(int for_netlist)
 
           dbg(2, "prepare_netlist_structs():           from other instances\n");
           touches_unnamed=0;
-          iptr=instpintable[sqx][sqy];
+          iptr=xctx->instpintable[sqx][sqy];
           while (iptr)
           {
             if (iptr->n == i)
@@ -1014,9 +1016,9 @@ void prepare_netlist_structs(int for_netlist)
   /*---------------------- */
   rebuild_selected_array();
   if (for_netlist>0) {
-    prepared_netlist_structs=1;
-    prepared_hilight_structs=1;
-  } else prepared_hilight_structs=1;
+    xctx->prep_net_structs=1;
+    xctx->prep_hi_structs=1;
+  } else xctx->prep_hi_structs=1;
 
   my_free(835, &dir);
   my_free(836, &type);
@@ -1042,7 +1044,6 @@ int sym_vs_sch_pins()
   char *pin_dir=NULL;
   double tmpd;
   FILE *fd;
-  int version_found;
   int tmpi;
   int endfile;
   char tag[1];
@@ -1060,7 +1061,6 @@ int sym_vs_sch_pins()
         fd = fopen(filename, "r");
         pin_cnt = 0;
         endfile = 0;
-        version_found=0;
         xctx->file_version[0] = '\0';
         while(!endfile) {
           if(fscanf(fd," %c",tag)==EOF) break;
@@ -1069,7 +1069,6 @@ int sym_vs_sch_pins()
              load_ascii_string(&xctx->version_string, fd);
              my_snprintf(xctx->file_version, S(xctx->file_version), "%s", 
                          get_tok_value(xctx->version_string, "file_version", 0));
-             version_found = 1;
             break;
 
             case 'E':
@@ -1132,7 +1131,8 @@ int sym_vs_sch_pins()
               }
 
               if(fscanf(fd, "%lf %lf %d %d", &tmpd, &tmpd, &tmpi, &tmpi) < 4) {
-                fprintf(errfp,"sym_vs_sch_pins() WARNING: missing fields for INST object, filename=%s\n", filename);
+                fprintf(errfp,"sym_vs_sch_pins() WARNING: missing fields for INST object, filename=%s\n",
+                  filename);
                 read_line(fd, 0);
                 break;
               }
@@ -1204,7 +1204,6 @@ int sym_vs_sch_pins()
               break;
           }
           read_line(fd, 0); /* discard any remaining characters till (but not including) newline */
-          if(check_version && !version_found) break;
           if(!xctx->file_version[0]) {
             my_snprintf(xctx->file_version, S(xctx->file_version), "1.0");
             dbg(1, "sym_vs_sch_pins(): no file_version, assuming file_version=%s\n", xctx->file_version);
@@ -1304,6 +1303,6 @@ void delete_netlist_structs(void)
   del_inst_pin_table();
   free_node_hash();
   dbg(1, "delete_netlist_structs(): end erasing\n");
-  prepared_netlist_structs=0;
-  prepared_hilight_structs=0;
+  xctx->prep_net_structs=0;
+  xctx->prep_hi_structs=0;
 }

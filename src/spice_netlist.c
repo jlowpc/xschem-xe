@@ -41,7 +41,7 @@ void global_spice_netlist(int global)  /* netlister driver */
  char cellname[PATH_MAX]; /* 20081211 overflow safe 20161122 */
  char *subckt_name;
 
- if(modified) {
+ if(xctx->modified) {
    save_ok = save_schematic(xctx->sch[xctx->currsch]);
    if(save_ok == -1) return;
  }
@@ -51,12 +51,12 @@ void global_spice_netlist(int global)  /* netlister driver */
  record_global_node(2, NULL, NULL); /* delete list of global nodes */
  top_subckt = 0;
  spiceprefix=1;
- bus_replacement_char[0] = bus_replacement_char[1] = '\0';
+ bus_char[0] = bus_char[1] = '\0';
  hiersep[0]='.'; hiersep[1]='\0';
  str_tmp = tclgetvar("bus_replacement_char");
  if(str_tmp && str_tmp[0] && str_tmp[1]) {
-   bus_replacement_char[0] = str_tmp[0];
-   bus_replacement_char[1] = str_tmp[1];
+   bus_char[0] = str_tmp[0];
+   bus_char[1] = str_tmp[1];
  }
  netlist_count=0;
  my_snprintf(netl_filename, S(netl_filename), "%s/.%s_%d", 
@@ -64,8 +64,8 @@ void global_spice_netlist(int global)  /* netlister driver */
  dbg(1, "global_spice_netlist(): opening %s for writing\n",netl_filename);
  fd=fopen(netl_filename, "w");
 
- if(user_top_netl_name[0]) {
-   my_snprintf(cellname, S(cellname), "%s", get_cell(user_top_netl_name, 0));
+ if(xctx->netlist_name[0]) {
+   my_snprintf(cellname, S(cellname), "%s", get_cell(xctx->netlist_name, 0));
  } else {
    my_snprintf(cellname, S(cellname), "%s.spice", skip_dir(xctx->sch[xctx->currsch]));
  }
@@ -347,7 +347,7 @@ void spice_block_netlist(FILE *fd, int i)
   } else {
     dbg(1, "spice_block_netlist(): loading: %s -> %s\n", 
       xctx->sym[i].name, add_ext(abs_sym_path(xctx->sym[i].name, ""), ".sch"));
-    dbg(1, "spice_block_netlist(): current_dirname=%s\n", tclgetvar("current_dirname"));
+    dbg(1, "spice_block_netlist(): current_dirname=%s\n", xctx->current_dirname);
     load_schematic(1, add_ext(abs_sym_path(xctx->sym[i].name, ""), ".sch") ,0);
   }
   spice_netlist(fd, spice_stop);  /* 20111113 added spice_stop */
@@ -372,9 +372,8 @@ void spice_netlist(FILE *fd, int spice_stop )
   int i;
   char *type=NULL;
  
-  prepared_netlist_structs = 0;
+  xctx->prep_net_structs = 0;
   prepare_netlist_structs(1);
-  /* set_modify(1); */ /* 20160302 prepare_netlist_structs could change schematic (wire node naming for example) */
   traverse_node_hash();  /* print all warnings about unconnected floatings etc */
   if(!spice_stop) {
     for(i=0;i<xctx->instances;i++) /* print first ipin/opin defs ... */
@@ -399,7 +398,8 @@ void spice_netlist(FILE *fd, int spice_stop )
      my_strdup(390, &type,(xctx->inst[i].ptr+ xctx->sym)->type);
  
      if( type && !IS_LABEL_OR_PIN(type) ) {
-       if(!strcmp(type,"netlist_commands") && netlist_count==0) continue; /* already done in global_spice_netlist */
+       /* already done in global_spice_netlist */
+       if(!strcmp(type,"netlist_commands") && netlist_count==0) continue;
        if(netlist_count &&
           !strcmp(get_tok_value(xctx->inst[i].prop_ptr, "only_toplevel", 0), "true")) continue;
        if(!strcmp(type,"netlist_commands")) {
@@ -409,6 +409,7 @@ void spice_netlist(FILE *fd, int spice_stop )
        } else {
          const char *m;
          print_spice_element(fd, i) ;  /* this is the element line  */
+         fprintf(fd, "**** end_element\n");
          /* hash device_model attribute if any */
          m = get_tok_value(xctx->inst[i].prop_ptr, "device_model", 0);
          if(m[0]) str_hash_lookup(model_table, model_name(m), m, XINSERT);
