@@ -28,7 +28,7 @@ proc xetcl_clear_global {} {
 }
 
 # Global variables
-global XSCHEM_SHAREDIR
+global XSCHEM_SHAREDIR sim
 xetcl_clear_global
 
 set xe_cm_wcounter 1
@@ -44,13 +44,9 @@ pack .menubar.xe -side left
 
 ###############################################
 # TBD: TO BE REMOVED ONCE TCL IS SETUP
-#set_sim_defaults
+set_sim_defaults
 lappend sim(tool_list) {xe}
-if {$::OS == "Windows"} {
-set_ne sim(xe,0,cmd) {python C:/XE/run_xe.py}
-} else {
-set_ne sim(xe,0,cmd) {run_xe.py}
-}
+set_ne sim(xe,0,cmd) {run_xe.tcl}
 set_ne sim(xe,0,name) {YXTech XE}
 set_ne sim(xe,0,fg) 0
 set_ne sim(xe,0,st) 1
@@ -881,8 +877,9 @@ proc xetcl_configure_xe_win_run_xe {{callback {}}} {
     } else {
       set fg {execute}
     }
-    set xe_cmd [subst -nocommands $sim($tool,$def,cmd)]
-    set cmd "$xe_cmd --nl=$N $ud $tf --csv"
+    #set xe_cmd [subst -nocommands $sim($tool,$def,cmd)]
+    #set cmd "$xe_cmd --nl=$N $ud $tf --csv"
+    set cmd "--nl=$N $ud $tf --csv"
     if {$::OS == "Windows"} {
       if ([info exists XE_THREAD]) {
         alert_  "Looks like XE is still running in the background."  
@@ -895,7 +892,8 @@ proc xetcl_configure_xe_win_run_xe {{callback {}}} {
           thread::wait ; # Enter the event loop
         }]
         thread::send $XE_THREAD "cd $xe_conf_dict(xe_wd)" result
-        thread::send -async $XE_THREAD "eval exec $cmd" XE_RESULT
+        #thread::send -async $XE_THREAD "eval exec $cmd" XE_RESULT
+        thread::send -async $XE_THREAD "[xetcl_run_all_xe $cmd]" XE_RESULT
       }
     } else {
       set id [$fg $st sh -c "cd $xe_conf_dict(xe_wd); $cmd"]
@@ -1414,6 +1412,31 @@ proc xetcl_report_win_cm_filter_update_table {w} {
     }
   }
   $w configure -state disabled
+}
+
+proc xetcl_run_all_xe {cmd} {
+  xetcl_run_xe_lm $cmd
+  xetcl_run_xe_ckc
+}
+
+
+proc xetcl_run_xe_lm {cmd} {
+  set xe_lm_cmd "xe_lm_shell $cmd"
+}
+
+proc xetcl_run_xe_ckc {} {
+  global XE_ROOT_DIR
+  source $XE_ROOT_DIR/xe_ckc_limits.tcl
+  source $XE_ROOT_DIR/xe_ckc_helpers.tcl
+  set check_scripts [lsort [glob -nocomplain -directory $XE_ROOT_DIR -tails check_*.{tcl}]]
+  foreach script $check_scripts {
+    source $XE_ROOT_DIR/$script
+  }
+  xetcl_load
+  xetcl_check_beta_ratio
+  #xetcl_driver_weff
+  #xetcl_finfet_device_size
+  #xetcl_sram6t_device_size
 }
 
 ################################################################################
