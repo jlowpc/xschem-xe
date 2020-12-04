@@ -28,7 +28,7 @@
 static int init_done=0; /* 20150409 to avoid double call by Xwindows close and TclExitHandler */
 static XSetWindowAttributes winattr;
 static int screen_number;
-static Tk_Window  tkwindow, mainwindow, tkpre_window;
+static Tk_Window  tkwindow, mainwindow;
 static XWMHints *hints_ptr;
 static Window topwindow;
 static XColor xcolor_exact,xcolor;
@@ -330,6 +330,7 @@ void init_pixdata()
 void free_xschem_data()
 {
   int i;
+  delete_undo();
   my_free(1098, &xctx->wire);
   my_free(1100, &xctx->text);
   my_free(1107, &xctx->inst);
@@ -371,7 +372,21 @@ void free_xschem_data()
 void alloc_xschem_data()
 {
   int i;
+
   xctx = my_calloc(153, 1, sizeof(Xschem_ctx));
+  xctx->cur_undo_ptr = 0;
+  xctx->head_undo_ptr = 0;
+  xctx->tail_undo_ptr = 0;
+  xctx->undo_dirname = NULL;
+  #ifndef IN_MEMORY_UNDO
+  /* 20150327 create undo directory */
+  /* 20180923 no more mkdtemp (portability issues) */
+  if( !my_strdup(644, &xctx->undo_dirname, create_tmpdir("xschem_undo_") )) {
+    fprintf(errfp, "xinit(): problems creating tmp undo dir\n");
+    tcleval( "exit");
+  }
+  dbg(1, "xctx->undo_dirname=%s\n", xctx->undo_dirname);
+  #endif
   xctx->zoom=CADINITIALZOOM;
   xctx->mooz=1/CADINITIALZOOM;
   xctx->xorigin=CADINITIALX;
@@ -699,7 +714,6 @@ void xwin_exit(void)
  dbg(1, "xwin_exit(): closed display\n");
  my_free(1141, &filename);
 
- delete_undo();
  my_free(1142, &netlist_dir);
  my_free(1143, &xschem_executable);
  record_global_node(2, NULL, NULL); /* delete global node array */
@@ -848,6 +862,8 @@ void preview_window(const char *what, const char *tk_win_path, const char *filen
   static char *current_file = NULL;
   static Xschem_ctx *save_xctx = NULL; /* save pointer to current schematic context structure */
   static Xschem_ctx *preview_xctx = NULL; /* save pointer to current schematic context structure */
+  static Window pre_window;
+  static Tk_Window tkpre_window;
 
   dbg(1, "------\n");
   if(!strcmp(what, "create")) {
@@ -875,11 +891,9 @@ void preview_window(const char *what, const char *tk_win_path, const char *filen
       preview_xctx->window = pre_window;
       resetwin(1, 0, 1);  /* create preview pixmap.  resetwin(create_pixmap, clear_pixmap, force) */
     }
-    resetwin(1, 1, 0);  /* handle resize.  resetwin(create_pixmap, clear_pixmap, force) */
-    XSetTile(display,gctiled, xctx->save_pixmap);
+    resetwin(1, 1, 1);  /* handle resize.  resetwin(create_pixmap, clear_pixmap, force) */
     zoom_full(1, 0); /* draw */
     xctx = save_xctx;
-    XSetTile(display,gctiled, xctx->save_pixmap);
   }
   else if(!strcmp(what, "destroy")) {
     dbg(1, "preview_window() destroy\n");
@@ -892,7 +906,67 @@ void preview_window(const char *what, const char *tk_win_path, const char *filen
     my_free(1144, &current_file);
     xctx = save_xctx; /* restore schematic */
     save_xctx = NULL;
-    XSetTile(display,gctiled, xctx->save_pixmap);
+    resetwin(1, 1, 1);  /* handle resize.  resetwin(create_pixmap, clear_pixmap, force) */
+    set_modify(xctx->modified);
+  }
+}
+
+void new_schematic(const char *what, const char *tk_win_path, const char *filename)
+{
+  static int n = 0, cnt = 0;
+  static Xschem_ctx *save_xctx[20]; /* save pointer to current schematic context structure */
+  static Window new_window;
+  static Tk_Window tknew_window[20];
+
+  dbg(1, "------\n");
+  if(!strcmp(what, "create")) {
+    dbg(1, "new_schematic() create, save ctx\n");
+    if(cnt == 0) save_xctx[0] = xctx; /* save current schematic */
+    cnt++;
+    n = cnt;
+    tknew_window[cnt] = Tk_NameToWindow(interp, tk_win_path, mainwindow);
+    Tk_MakeWindowExist(tknew_window[cnt]);
+    new_window = Tk_WindowId(tknew_window[cnt]);
+    dbg(1, "new_schematic() draw\n");
+    xctx = NULL;      /* reset for preview */
+    alloc_xschem_data(); /* alloc data into xctx */
+    save_xctx[cnt] = xctx;
+    dbg(1, "new_schematic() draw, load schematic\n");
+    load_schematic(1,filename, 0);
+    xctx->window = new_window;
+    resetwin(1, 0, 1);  /* create preview pixmap.  resetwin(create_pixmap, clear_pixmap, force) */
+    zoom_full(1, 0); /* draw */
+  } else if(!strcmp(what, "redraw")) {
+    Xschem_ctx *save;
+    save = xctx;
+    n = atoi(tk_win_path);
+    if(n <0) n = 0;
+    if(n > cnt) n = cnt;
+    xctx = save_xctx[n];
+    resetwin(1, 1, 1);  /* create preview pixmap.  resetwin(create_pixmap, clear_pixmap, force) */
+    draw();
+    xctx = save;
+    set_modify(xctx->modified);
+  } else if(!strcmp(what, "destroy")) {
+    if(cnt > 0) {
+      dbg(1, "new_schematic() destroy\n");
+      xctx = save_xctx[cnt];
+      preview_clear();
+      save_xctx[cnt] = NULL;
+      Tk_DestroyWindow(tknew_window[cnt]);
+      cnt--;
+      n = 0;
+      xctx = save_xctx[0]; /* restore schematic */
+      resetwin(1, 1, 0);  /* create preview pixmap.  resetwin(create_pixmap, clear_pixmap, force) */
+      set_modify(xctx->modified);
+    }
+  } else if(!strcmp(what, "switch")) {
+    n = atoi(tk_win_path);
+    if(n <0) n = 0;
+    if(n > cnt) n = cnt;
+    xctx = save_xctx[n];
+    resetwin(1, 1, 1);  /* create preview pixmap.  resetwin(create_pixmap, clear_pixmap, force) */
+    draw();
     set_modify(xctx->modified);
   }
 }
@@ -1229,16 +1303,6 @@ int Tcl_AppInit(Tcl_Interp *inter)
  /*  [m]allocate dynamic memory */
  /*                             */
  alloc_data();
-
- #ifndef IN_MEMORY_UNDO
- /* 20150327 create undo directory */
- /* 20180923 no more mkdtemp (portability issues) */
- if( !my_strdup(644, &undo_dirname, create_tmpdir("xschem_undo_") )) {
-   fprintf(errfp, "xinit(): problems creating tmp undo dir\n");
-   tcleval( "exit");
- }
- dbg(1, "undo_dirname=%s\n", undo_dirname);
- #endif
 
  init_pixdata();
  init_color_array(0.0);
