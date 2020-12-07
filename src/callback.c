@@ -21,25 +21,23 @@
  */
 
 #include "xschem.h"
-static int mx_save, my_save;
-static int last_command=0;
 
 void start_line(double mx, double my)
 {
-    last_command = STARTLINE;
+    xctx->last_command = STARTLINE;
     if(xctx->ui_state & STARTLINE) {
       if(!vertical_move) {
-        mx_save = mx;
+        xctx->mx_save = mx;
         xctx->mx_double_save=xctx->mousex_snap;
       }
       if(!horizontal_move) {
-        my_save = my;
+        xctx->my_save = my;
         xctx->my_double_save=xctx->mousey_snap;
       }
       if(horizontal_move) xctx->mousey_snap = xctx->my_double_save;
       if(vertical_move) xctx->mousex_snap = xctx->mx_double_save;
     } else {
-      mx_save = mx; my_save = my;
+      xctx->mx_save = mx; xctx->my_save = my;
       xctx->mx_double_save=xctx->mousex_snap;
       xctx->my_double_save=xctx->mousey_snap;
     }
@@ -48,20 +46,20 @@ void start_line(double mx, double my)
 
 void start_wire(double mx, double my)
 {
-     last_command = STARTWIRE;
+     xctx->last_command = STARTWIRE;
      if(xctx->ui_state & STARTWIRE) {
        if(!vertical_move) {
-         mx_save = mx;
+         xctx->mx_save = mx;
          xctx->mx_double_save=xctx->mousex_snap;
        }
        if(!horizontal_move) {
-         my_save = my;
+         xctx->my_save = my;
          xctx->my_double_save=xctx->mousey_snap;
        }
        if(horizontal_move) xctx->mousey_snap = xctx->my_double_save;
        if(vertical_move) xctx->mousex_snap = xctx->mx_double_save;
      } else {
-       mx_save = mx; my_save = my;
+       xctx->mx_save = mx; xctx->my_save = my;
        xctx->mx_double_save=xctx->mousex_snap;
        xctx->my_double_save=xctx->mousey_snap;
      }
@@ -74,7 +72,6 @@ int callback(int event, int mx, int my, KeySym key,
                  int button, int aux, int state)
 {
  char str[PATH_MAX + 100]; /* overflow safe 20161122 */
- static char sel_or_clip[PATH_MAX] = "";/* overflow safe 20161122 */
  struct stat buf;
  unsigned short sel;
  static int capslock = 0;
@@ -127,9 +124,9 @@ int callback(int event, int mx, int my, KeySym key,
  {
    if(debug_var>=2)
      if(event != MotionNotify) 
-       fprintf(errfp, "callback(): reentrant call of callback(), xctx->semaphore=%d\n", xctx->semaphore);
+       fprintf(errfp, "callback(): reentrant call of callback(), semaphore=%d\n", xctx->semaphore);
    /* if(event==Expose) {
-    *   XCopyArea(display, xctx->save_pixmap, xctx->window, gctiled, mx,my,button,aux,mx,my);
+    *   XCopyArea(display, xctx->save_pixmap, xctx->window, xctx->gctiled, mx,my,button,aux,mx,my);
     *
     * }
     */
@@ -146,29 +143,29 @@ int callback(int event, int mx, int my, KeySym key,
  switch(event)
  {
   case EnterNotify:
-    if(!sel_or_clip[0]) my_snprintf(sel_or_clip, S(sel_or_clip), "%s/%s", user_conf_dir, ".selection.sch");
+    if(!xctx->sel_or_clip[0]) my_snprintf(xctx->sel_or_clip, S(xctx->sel_or_clip), "%s/%s", user_conf_dir, ".selection.sch");
 
     /* xschem window *sending* selected objects
        when the pointer comes back in abort copy operation since it has been done
        in another xschem xctx->window; STARTCOPY set and selection file does not exist any more */
-    if( stat(sel_or_clip, &buf)  && (xctx->ui_state & STARTCOPY) )
+    if( stat(xctx->sel_or_clip, &buf)  && (xctx->ui_state & STARTCOPY) )
     {
       copy_objects(ABORT); /* also unlinks sel_or_flip file */
       unselect_all();
     }
     /* xschem window *receiving* selected objects */
     /* no selected objects and selection file exists */
-    if(xctx->lastsel == 0  && !stat(sel_or_clip, &buf)) {
+    if(xctx->lastsel == 0  && !stat(xctx->sel_or_clip, &buf)) {
       dbg(2, "callback(): Enter event\n");
       xctx->mousex_snap = 490;
       xctx->mousey_snap = -340;
       merge_file(1, ".sch");
-      xunlink(sel_or_clip);
+      xunlink(xctx->sel_or_clip);
     }
     break;
 
   case Expose:
-    XCopyArea(display, xctx->save_pixmap, xctx->window, gctiled, mx,my,button,aux,mx,my);
+    XCopyArea(display, xctx->save_pixmap, xctx->window, xctx->gctiled, mx,my,button,aux,mx,my);
     {
       XRectangle xr[1];
       xr[0].x=mx;
@@ -196,7 +193,7 @@ int callback(int event, int mx, int my, KeySym key,
         (xctx->ui_state & STARTCOPY) || (xctx->ui_state & STARTRECT) ||
         (xctx->ui_state & STARTPOLYGON) || (xctx->ui_state & STARTPAN2) ||
         (xctx->ui_state & STARTPAN) || (xctx->ui_state & STARTSELECT)) {
-      XCopyArea(display, xctx->save_pixmap, xctx->window, gctiled, xctx->xrect[0].x, xctx->xrect[0].y,
+      XCopyArea(display, xctx->save_pixmap, xctx->window, xctx->gctiled, xctx->xrect[0].x, xctx->xrect[0].y,
         xctx->xrect[0].width, xctx->xrect[0].height, xctx->xrect[0].x, xctx->xrect[0].y);
     }
 #endif
@@ -205,7 +202,7 @@ int callback(int event, int mx, int my, KeySym key,
       #ifdef TURBOX_FIX
       /* fix Exceed TurboX bugs when drawing with pixmap tiled fill pattern */
       /* *NOT* a solution but at least makes the program useable. 20171130 */
-      XSetClipRectangles(display, gctiled, 0,0, xctx->xrect, 1, Unsorted);
+      XSetClipRectangles(display, xctx->gctiled, 0,0, xctx->xrect, 1, Unsorted);
       #endif
       my_snprintf(str, S(str), "mouse = %.16g %.16g - selected: %d w=%.16g h=%.16g",
         xctx->mousex_snap, xctx->mousey_snap,
@@ -260,12 +257,12 @@ int callback(int event, int mx, int my, KeySym key,
        !(state & ShiftMask) && !(xctx->ui_state & PLACE_SYMBOL))
     {
       static int onetime=0;
-      if(mx != mx_save || my != my_save) {
+      if(mx != xctx->mx_save || my != xctx->my_save) {
         if( !(xctx->ui_state & STARTSELECT)) {
           select_rect(START,1);
           onetime=1;
         }
-        if(abs(mx-mx_save) > 8 || abs(my-my_save) > 8 ) { /* set some reasonable threshold before unselecting */
+        if(abs(mx-xctx->mx_save) > 8 || abs(my-xctx->my_save) > 8 ) { /* set some reasonable threshold before unselecting */
           if(onetime) {
             unselect_all(); /* 20171026 avoid multiple calls of unselect_all() */
             onetime=0;
@@ -282,12 +279,12 @@ int callback(int event, int mx, int my, KeySym key,
     }
     else if((state&Button1Mask) && (state & ShiftMask) && !(xctx->ui_state & PLACE_SYMBOL) &&
              !(xctx->ui_state & STARTPAN2) ) {
-      if(mx != mx_save || my != my_save) {
+      if(mx != xctx->mx_save || my != xctx->my_save) {
         if( !(xctx->ui_state & STARTSELECT)) {
           select_rect(START,1);
         }
-        if(abs(mx-mx_save) > 8 || abs(my-my_save) > 8 ) {  /* set some reasonable threshold before unselecting */
-          select_object(X_TO_XSCHEM(mx_save), Y_TO_XSCHEM(my_save), 0, 0); /* remove near object if dragging */
+        if(abs(mx-xctx->mx_save) > 8 || abs(my-xctx->my_save) > 8 ) {  /* set some reasonable threshold before unselecting */
+          select_object(X_TO_XSCHEM(xctx->mx_save), Y_TO_XSCHEM(xctx->my_save), 0, 0); /* remove near object if dragging */
           rebuild_selected_array();
         }
       }
@@ -522,7 +519,7 @@ int callback(int event, int mx, int my, KeySym key,
        find_closest_net_or_symbol_pin(xctx->mousex, xctx->mousey, &x, &y);
        xx = X_TO_SCREEN(x);
        yy = Y_TO_SCREEN(y);
-       mx_save = xx; my_save = yy;
+       xctx->mx_save = xx; xctx->my_save = yy;
        xctx->mx_double_save = ROUND(x / cadsnap) * cadsnap;
        xctx->my_double_save = ROUND(y / cadsnap) * cadsnap;
        new_wire(PLACE, x, y);
@@ -551,10 +548,10 @@ int callback(int event, int mx, int my, KeySym key,
     no_draw = 0;
     if(xctx->semaphore >= 2) break;
     tcleval("set vertical_move 0; set horizontal_move 0" );
-    last_command=0;
+    xctx->last_command=0;
     manhattan_lines = 0;
     horizontal_move = vertical_move = 0;
-    dbg(1, "callback(): Escape: xctx->ui_state=%ld\n", xctx->ui_state);
+    dbg(1, "callback(): Escape: ui_state=%ld\n", xctx->ui_state);
     if(xctx->ui_state & STARTMOVE)
     {
      move_objects(ABORT,0,0,0);
@@ -603,10 +600,10 @@ int callback(int event, int mx, int my, KeySym key,
    {
      if(xctx->semaphore >= 2) break;
      dbg(1, "callback(): start polygon\n");
-     mx_save = mx; my_save = my;
+     xctx->mx_save = mx; xctx->my_save = my;
      xctx->mx_double_save=xctx->mousex_snap;
      xctx->my_double_save=xctx->mousey_snap;
-     last_command = 0;
+     xctx->last_command = 0;
      new_polygon(PLACE);
      break;
    }
@@ -628,10 +625,10 @@ int callback(int event, int mx, int my, KeySym key,
    if(key<='9' && key >='0' && state==ControlMask)              /* choose layer */
    {
     char n[30];
-    rectcolor = key - '0'+4;
-    my_snprintf(n, S(n), "%d", rectcolor);
-    Tcl_VarEval(interp, "xschem set rectcolor ", n, "; reconfigure_layers_button", NULL);
-    dbg(1, "callback(): new color: %d\n",color_index[rectcolor]);
+    xctx->rectcolor = key - '0'+4;
+    my_snprintf(n, S(n), "%d", xctx->rectcolor);
+    Tcl_VarEval(interp, "xschem set xctx->rectcolor ", n, "; reconfigure_layers_button", NULL);
+    dbg(1, "callback(): new color: %d\n",color_index[xctx->rectcolor]);
     break;
    }
    if(key==XK_Delete && (xctx->ui_state & SELECTION) )        /* delete objects */
@@ -680,17 +677,17 @@ int callback(int event, int mx, int my, KeySym key,
    if(key=='t' && state == 0)                        /* place text */
    {
      if(xctx->semaphore >= 2) break;
-     last_command = 0;
+     xctx->last_command = 0;
      place_text(1, xctx->mousex_snap, xctx->mousey_snap); /* 1 = draw text 24122002 */
      break;
    }
    if(key=='r' && !xctx->ui_state && state==0)              /* start rect */
    {
     dbg(1, "callback(): start rect\n");
-    mx_save = mx; my_save = my;
+    xctx->mx_save = mx; xctx->my_save = my;
     xctx->mx_double_save=xctx->mousex_snap;
     xctx->my_double_save=xctx->mousey_snap;
-    last_command = 0;
+    xctx->last_command = 0;
     new_rect(PLACE);
     break;
    }
@@ -816,20 +813,20 @@ int callback(int event, int mx, int my, KeySym key,
    if(key=='C' && state == ShiftMask)   /* place arc */
    {
      if(xctx->semaphore >= 2) break;
-     mx_save = mx; my_save = my;
+     xctx->mx_save = mx; xctx->my_save = my;
      xctx->mx_double_save=xctx->mousex_snap;
      xctx->my_double_save=xctx->mousey_snap;
-     last_command = 0;
+     xctx->last_command = 0;
      new_arc(PLACE, 180.);
      break;
    }
    if(key=='C' && state == (ControlMask|ShiftMask))   /* place circle */
    {
      if(xctx->semaphore >= 2) break;
-     mx_save = mx; my_save = my;
+     xctx->mx_save = mx; xctx->my_save = my;
      xctx->mx_double_save=xctx->mousex_snap;
      xctx->my_double_save=xctx->mousey_snap;
-     last_command = 0;
+     xctx->last_command = 0;
      new_arc(PLACE, 360.);
      break;
    }
@@ -887,11 +884,18 @@ int callback(int event, int mx, int my, KeySym key,
    if(key==XK_Insert || (key == 'I' && state == ShiftMask) ) /* insert sym */
    {
     if(xctx->semaphore >= 2) break;
-    last_command = 0;
+    xctx->last_command = 0;
+    #if 1 /* enable on request also in scheduler.c */
+    rebuild_selected_array();
+    if(xctx->lastsel && xctx->sel_array[0].type==ELEMENT) {
+      Tcl_VarEval(interp, "set INITIALINSTDIR [file dirname {",
+           abs_sym_path(xctx->inst[xctx->sel_array[0].n].name, ""), "}]", NULL);
+    } 
+    #endif
     unselect_all();
 
     /* place_symbol(-1,NULL,xctx->mousex_snap, xctx->mousey_snap, 0, 0, NULL,3, 1);*/
-    mx_save = mx; my_save = my;
+    xctx->mx_save = mx; xctx->my_save = my;
     xctx->mx_double_save = xctx->mousex_snap;
     xctx->my_double_save = xctx->mousey_snap;
     if(place_symbol(-1,NULL,xctx->mousex_snap, xctx->mousey_snap, 0, 0, NULL, 4, 1) ) {
@@ -1109,7 +1113,7 @@ int callback(int event, int mx, int my, KeySym key,
     else if(xctx->ui_state & STARTCOPY) copy_objects(FLIP);
     else {
       rebuild_selected_array();
-      mx_save = mx; my_save = my;
+      xctx->mx_save = mx; xctx->my_save = my;
       xctx->mx_double_save=xctx->mousex_snap;
       xctx->my_double_save=xctx->mousey_snap;
       move_objects(START,0,0,0);
@@ -1131,7 +1135,7 @@ int callback(int event, int mx, int my, KeySym key,
     else if(xctx->ui_state & STARTCOPY) copy_objects(FLIP|ROTATELOCAL);
     else {
       rebuild_selected_array();
-      mx_save = mx; my_save = my;
+      xctx->mx_save = mx; xctx->my_save = my;
       xctx->mx_double_save=xctx->mousex_snap;
       xctx->my_double_save=xctx->mousey_snap;
       move_objects(START,0,0,0);
@@ -1146,7 +1150,7 @@ int callback(int event, int mx, int my, KeySym key,
     else if(xctx->ui_state & STARTCOPY) copy_objects(ROTATE);
     else {
       rebuild_selected_array();
-      mx_save = mx; my_save = my;
+      xctx->mx_save = mx; xctx->my_save = my;
       xctx->mx_double_save=xctx->mousex_snap;
       xctx->my_double_save=xctx->mousey_snap;
       move_objects(START,0,0,0);
@@ -1163,7 +1167,7 @@ int callback(int event, int mx, int my, KeySym key,
     else if(xctx->ui_state & STARTCOPY) copy_objects(ROTATE|ROTATELOCAL);
     else {
       rebuild_selected_array();
-      mx_save = mx; my_save = my;
+      xctx->mx_save = mx; xctx->my_save = my;
       xctx->mx_double_save=xctx->mousex_snap;
       xctx->my_double_save=xctx->mousey_snap;
       move_objects(START,0,0,0);
@@ -1174,7 +1178,7 @@ int callback(int event, int mx, int my, KeySym key,
    }
    if(key=='m' && state==0 && !(xctx->ui_state & (STARTMOVE | STARTCOPY)))/* move selected obj. */
    {
-    mx_save = mx; my_save = my;
+    xctx->mx_save = mx; xctx->my_save = my;
     xctx->mx_double_save=xctx->mousex_snap;
     xctx->my_double_save=xctx->mousey_snap;
     move_objects(START,0,0,0);
@@ -1185,7 +1189,7 @@ int callback(int event, int mx, int my, KeySym key,
      !(xctx->ui_state & (STARTMOVE | STARTCOPY)))
    {
     if(xctx->semaphore >= 2) break;
-    mx_save = mx; my_save = my;
+    xctx->mx_save = mx; xctx->my_save = my;
     xctx->mx_double_save=xctx->mousex_snap;
     xctx->my_double_save=xctx->mousey_snap;
     copy_objects(START);
@@ -1389,10 +1393,10 @@ int callback(int event, int mx, int my, KeySym key,
    break;
 
   case ButtonPress:                     /* end operation */
-   dbg(1, "callback(): ButtonPress  xctx->ui_state=%ld state=%d\n",xctx->ui_state,state);
+   dbg(1, "callback(): ButtonPress  ui_state=%ld state=%d\n",xctx->ui_state,state);
    if(xctx->ui_state & STARTPAN2) {
      xctx->ui_state &=~STARTPAN2;
-     mx_save = mx; my_save = my;
+     xctx->mx_save = mx; xctx->my_save = my;
      xctx->mx_double_save=xctx->mousex_snap;
      xctx->my_double_save=xctx->mousey_snap;
 
@@ -1401,7 +1405,7 @@ int callback(int event, int mx, int my, KeySym key,
    if(button==Button5 && state == 0 ) view_unzoom(CADZOOMSTEP);
    else if(button == Button3 && xctx->semaphore <2) {
      if(!(xctx->ui_state & STARTPOLYGON) && !(state & Mod1Mask) ) {
-       last_command = 0;
+       xctx->last_command = 0;
        unselect_all();
        select_object(xctx->mousex,xctx->mousey,SELECTED, 1);
        rebuild_selected_array();
@@ -1432,8 +1436,8 @@ int callback(int event, int mx, int my, KeySym key,
     draw();
    }
    else if(button==Button1 && (state & Mod1Mask) ) {
-     last_command = 0;
-     mx_save = mx; my_save = my;
+     xctx->last_command = 0;
+     xctx->mx_save = mx; xctx->my_save = my;
      xctx->mx_double_save=xctx->mousex_snap;
      xctx->my_double_save=xctx->mousey_snap;
 
@@ -1463,9 +1467,9 @@ int callback(int event, int mx, int my, KeySym key,
    }
    else if(button==Button1)
    {
-     if(persistent_command && last_command) {
-       if(last_command == STARTLINE)  start_line(mx, my);
-       if(last_command == STARTWIRE)  start_wire(mx, my);
+     if(persistent_command && xctx->last_command) {
+       if(xctx->last_command == STARTLINE)  start_line(mx, my);
+       if(xctx->last_command == STARTWIRE)  start_wire(mx, my);
        break;
      }
      if(!(xctx->ui_state & STARTPOLYGON) && !(xctx->ui_state & STARTWIRE) && !(xctx->ui_state & STARTLINE) ) {
@@ -1478,7 +1482,7 @@ int callback(int event, int mx, int my, KeySym key,
        break;
      }
      if(xctx->ui_state & MENUSTARTWIRE) {
-       mx_save = mx; my_save = my;
+       xctx->mx_save = mx; xctx->my_save = my;
        xctx->mx_double_save=xctx->mousex_snap;
        xctx->my_double_save=xctx->mousey_snap;
        new_wire(PLACE, xctx->mousex_snap, xctx->mousey_snap);
@@ -1492,7 +1496,7 @@ int callback(int event, int mx, int my, KeySym key,
        find_closest_net_or_symbol_pin(xctx->mousex, xctx->mousey, &x, &y);
        xx = X_TO_SCREEN(x);
        yy = Y_TO_SCREEN(y);
-       mx_save = xx; my_save = yy;
+       xctx->mx_save = xx; xctx->my_save = yy;
        xctx->mx_double_save = ROUND(x / cadsnap) * cadsnap;
        xctx->my_double_save = ROUND(y / cadsnap) * cadsnap;
 
@@ -1501,7 +1505,7 @@ int callback(int event, int mx, int my, KeySym key,
        break;
      }
      if(xctx->ui_state & MENUSTARTLINE) {
-       mx_save = mx; my_save = my;
+       xctx->mx_save = mx; xctx->my_save = my;
        xctx->mx_double_save=xctx->mousex_snap;
        xctx->my_double_save=xctx->mousey_snap;
        new_line(PLACE);
@@ -1509,7 +1513,7 @@ int callback(int event, int mx, int my, KeySym key,
        break;
      }
      if(xctx->ui_state & MENUSTARTRECT) {
-       mx_save = mx; my_save = my;
+       xctx->mx_save = mx; xctx->my_save = my;
        xctx->mx_double_save=xctx->mousex_snap;
        xctx->my_double_save=xctx->mousey_snap;
        new_rect(PLACE);
@@ -1517,7 +1521,7 @@ int callback(int event, int mx, int my, KeySym key,
        break;
      }
      if(xctx->ui_state & MENUSTARTPOLYGON) {
-       mx_save = mx; my_save = my;
+       xctx->mx_save = mx; xctx->my_save = my;
        xctx->mx_double_save=xctx->mousex_snap;
        xctx->my_double_save=xctx->mousey_snap;
        new_polygon(PLACE);
@@ -1525,7 +1529,7 @@ int callback(int event, int mx, int my, KeySym key,
        break;
      }
      if(xctx->ui_state & MENUSTARTARC) {
-       mx_save = mx; my_save = my;
+       xctx->mx_save = mx; xctx->my_save = my;
        xctx->mx_double_save=xctx->mousex_snap;
        xctx->my_double_save=xctx->mousey_snap;
        new_arc(PLACE, 180.);
@@ -1533,7 +1537,7 @@ int callback(int event, int mx, int my, KeySym key,
        break;
      }
      if(xctx->ui_state & MENUSTARTCIRCLE) {
-       mx_save = mx; my_save = my;
+       xctx->mx_save = mx; xctx->my_save = my;
        xctx->mx_double_save=xctx->mousex_snap;
        xctx->my_double_save=xctx->mousey_snap;
        new_arc(PLACE, 360.);
@@ -1556,11 +1560,11 @@ int callback(int event, int mx, int my, KeySym key,
      if(xctx->ui_state & STARTWIRE) {
        if(persistent_command) {
          if(!vertical_move) {
-           mx_save = mx;
+           xctx->mx_save = mx;
            xctx->mx_double_save=xctx->mousex_snap;
          }
          if(!horizontal_move) {
-           my_save = my;
+           xctx->my_save = my;
            xctx->my_double_save=xctx->mousey_snap;
          }
          if(horizontal_move) xctx->mousey_snap = xctx->my_double_save;
@@ -1579,11 +1583,11 @@ int callback(int event, int mx, int my, KeySym key,
      if(xctx->ui_state & STARTLINE) {
        if(persistent_command) {
          if(!vertical_move) {
-           mx_save = mx;
+           xctx->mx_save = mx;
            xctx->mx_double_save=xctx->mousex_snap;
          }
          if(!horizontal_move) {
-           my_save = my;
+           xctx->my_save = my;
            xctx->my_double_save=xctx->mousey_snap;
          }
          if(horizontal_move) xctx->mousey_snap = xctx->my_double_save;
@@ -1619,13 +1623,13 @@ int callback(int event, int mx, int my, KeySym key,
      }
      if( !(xctx->ui_state & STARTSELECT) && !(xctx->ui_state & STARTWIRE) && !(xctx->ui_state & STARTLINE)  ) {
        int prev_last_sel = xctx->lastsel;
-       mx_save = mx; my_save = my;
+       xctx->mx_save = mx; xctx->my_save = my;
        xctx->mx_double_save=xctx->mousex_snap;
        xctx->my_double_save=xctx->mousey_snap;
        if( !(state & ShiftMask) && !(state & Mod1Mask) ) {
          unselect_all();
 #ifndef __unix__
-         XCopyArea(display, xctx->save_pixmap, xctx->window, gctiled, xctx->xrect[0].x, xctx->xrect[0].y,
+         XCopyArea(display, xctx->save_pixmap, xctx->window, xctx->gctiled, xctx->xrect[0].x, xctx->xrect[0].y,
            xctx->xrect[0].width, xctx->xrect[0].height, xctx->xrect[0].x, xctx->xrect[0].y);
 #endif
        }
@@ -1639,7 +1643,7 @@ int callback(int event, int mx, int my, KeySym key,
        }
        if( !(state & ShiftMask) )  {
          xRect boundbox;
-         if(auto_hilight && hilight_nets && sel == 0 ) { /* 20160413 20160503 */
+         if(auto_hilight && xctx->hilight_nets && sel == 0 ) { /* 20160413 20160503 */
            if(!prev_last_sel) {
              int big =  xctx->wires> 2000 || xctx->instances > 2000 ;
              if(!big) calc_drawing_bbox(&boundbox, 2);
@@ -1669,13 +1673,13 @@ int callback(int event, int mx, int my, KeySym key,
   case ButtonRelease:
    if(xctx->ui_state & STARTPAN2) {
      xctx->ui_state &=~STARTPAN2;
-     mx_save = mx; my_save = my;
+     xctx->mx_save = mx; xctx->my_save = my;
      xctx->mx_double_save=xctx->mousex_snap;
      xctx->my_double_save=xctx->mousey_snap;
 
      break;
    }
-   dbg(1, "callback(): ButtonRelease  xctx->ui_state=%ld state=%d\n",xctx->ui_state,state);
+   dbg(1, "callback(): ButtonRelease  ui_state=%ld state=%d\n",xctx->ui_state,state);
    if(xctx->semaphore >= 2) break;
    if(xctx->ui_state & STARTSELECT) {
      if(state & ControlMask) {
@@ -1696,7 +1700,7 @@ int callback(int event, int mx, int my, KeySym key,
    break;
   case -3:  /* double click  : edit prop */
    if(xctx->semaphore >= 2) break;
-   dbg(1, "callback(): DoubleClick  xctx->ui_state=%ld state=%d\n",xctx->ui_state,state);
+   dbg(1, "callback(): DoubleClick  ui_state=%ld state=%d\n",xctx->ui_state,state);
    if(button==Button1) {
      if(xctx->ui_state == STARTWIRE) {
        xctx->ui_state &= ~STARTWIRE;

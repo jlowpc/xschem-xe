@@ -95,17 +95,16 @@ unsigned char pixdata_init[22][32]={    /* fill patterns... indexed by laynumb. 
 {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},/*20 */
 {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}/*21 */
 };
-GC *gcstipple,*gc, gctiled;
+GC *gcstipple,*gc;
 Pixmap *pixmap = NULL;
 Display *display;
 Pixmap cad_icon_pixmap=0, cad_icon_mask=0;
 XPoint *gridpoint;         /* pointer to array of gridpoints, used in draw() */
 XColor xcolor_array[256];
 Visual *visual;
-#ifdef HAS_CAIRO
-XRenderPictFormat *format;
-cairo_surface_t *sfc;
-cairo_t *cairo_ctx;
+#if HAS_XRENDER==1
+XRenderPictFormat *render_format;
+#endif
 
 #if HAS_XCB==1
 xcb_connection_t *xcbconn;
@@ -113,9 +112,6 @@ xcb_render_pictforminfo_t format_rgb, format_rgba;
 xcb_screen_t *screen_xcb;
 xcb_visualtype_t *visual_xcb;
 #endif /*HAS_XCB */
-#endif /*HAS_CAIRO */
-
-
 
 /* these variables are mirrored in tcl code */
 int fullscreen=0;
@@ -192,7 +188,6 @@ int draw_window=0;
 int text_svg=1; /* use <text> svg element for text instead of xschem's internal vector font */
 double cadhalfdotsize = CADHALFDOTSIZE;
 unsigned int color_index[256]; /* layer color lookup table */
-unsigned int rectcolor ; /* this is the currently used layer */
 int max_undo=MAX_UNDO;
 int draw_dots=1;
 int draw_single_layer=-1;
@@ -214,7 +209,6 @@ char hiersep[20]=".";
 char bus_char[3] = {0, 0, 0};
 int horizontal_move=0;
 int vertical_move=0;
-int hilight_color=0;
 int pending_fullzoom=0;
 double color_dim=0.0;
 int no_undo=0;
@@ -225,7 +219,6 @@ int batch_mode = 0; /* no tcl console if set; batch mode */
 int cairo_longest_line;
 int cairo_lines;
 int show_erc=1;
-int hilight_nets=0;
 
 /* following data is relative to the current schematic */
 Xschem_ctx *xctx;

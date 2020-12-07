@@ -248,7 +248,8 @@ void hash_inst_pin(int what, int i, int j)
   xRect *rct;
   char *prop_ptr;
   double x0, y0, rx1, ry1;
-  int rot, flip, sqx, sqy;
+  short rot, flip;
+  int sqx, sqy;
   int rects;
 
   rects=(xctx->inst[i].ptr+ xctx->sym)->rects[PINLAYER] ;
@@ -276,7 +277,7 @@ void hash_inst_pin(int what, int i, int j)
     statusmsg(str,2);
     if(!netlist_count) {
       xctx->inst[i].flags |=4;
-      hilight_nets=1;
+      xctx->hilight_nets=1;
     }
   }
   rot=xctx->inst[i].rot;
@@ -444,10 +445,10 @@ static void signal_short( char *n1, char *n2)
    dbg(1, "signal_short(): signal_short: shorted: %s - %s", n1, n2);
    statusmsg(str,2);
    if(!netlist_count) {
-      bus_hilight_lookup(n1, hilight_color, XINSERT);
-      if(incr_hilight) hilight_color++;
-      bus_hilight_lookup(n2, hilight_color, XINSERT);
-      if(incr_hilight) hilight_color++;
+      bus_hilight_lookup(n1, xctx->hilight_color, XINSERT);
+      if(incr_hilight) xctx->hilight_color++;
+      bus_hilight_lookup(n2, xctx->hilight_color, XINSERT);
+      if(incr_hilight) xctx->hilight_color++;
    }
  }
 }
@@ -523,41 +524,38 @@ void wirecheck(int k)    /* recursive routine */
 /* what==3 -> get node multiplicity */
 int get_unnamed_node(int what, int mult,int node)
 {
-  static int new_node=0;
-  static int *node_mult=NULL;
-  static int node_mult_size;
   int i;
 
   dbg(2, "get_unnamed_node(): what=%d mult=%d node=%d\n", what, mult, node);
   if (what==0)  /* initialize unnamed node data structures */
   {
-    new_node=0;
-    my_free(828, &node_mult);
-    node_mult_size=0;
+    xctx->new_node=0;
+    my_free(828, &xctx->node_mult);
+    xctx->node_mult_size=0;
     return 0;
   }
   else if (what==1) /* get a new unique unnamed node */
   {
-    ++new_node;
-    if (new_node>= node_mult_size)  /* enlarge array and zero it */
+    ++xctx->new_node;
+    if (xctx->new_node>= xctx->node_mult_size)  /* enlarge array and zero it */
     {
-      node_mult_size += CADCHUNKALLOC;
-      my_realloc(242, &node_mult, sizeof(int) * node_mult_size );
-      for (i=node_mult_size-CADCHUNKALLOC;i<node_mult_size;i++) node_mult[i]=0;
+      xctx->node_mult_size += CADCHUNKALLOC;
+      my_realloc(242, &xctx->node_mult, sizeof(int) * xctx->node_mult_size );
+      for (i=xctx->node_mult_size-CADCHUNKALLOC;i<xctx->node_mult_size;i++) xctx->node_mult[i]=0;
   }
-    node_mult[new_node]=mult;
-    return new_node;
+    xctx->node_mult[xctx->new_node]=mult;
+    return xctx->new_node;
   }
   else if(what==2)    /* update node multiplicity if given mult is lower */
   {
-    if (node_mult[node]==0) node_mult[node]=mult;
-    else if (mult<node_mult[node]) node_mult[node]=mult;
+    if (xctx->node_mult[node]==0) xctx->node_mult[node]=mult;
+    else if (mult<xctx->node_mult[node]) xctx->node_mult[node]=mult;
     return 0;
   }
   else /* what=3 , return node multiplicity */
   {
-    dbg(2, "get_unnamed_node(): returning mult=%d\n", node_mult[node]);
-    return node_mult[node];
+    dbg(2, "get_unnamed_node(): returning mult=%d\n", xctx->node_mult[node]);
+    return xctx->node_mult[node];
   }
 }
 /*------------ */
@@ -624,8 +622,8 @@ void prepare_netlist_structs(int for_netlist)
   char tmp_str[30]; /* overflow safe */
   char nn[PATH_MAX+30];
   double x0, y0;
-  int rot = 0;
-  int flip = 0;
+  short rot = 0;
+  short flip = 0;
   int sqx, sqy;
   int port;
   int touches=0;
@@ -701,7 +699,7 @@ void prepare_netlist_structs(int for_netlist)
         my_snprintf(str, S(str), "instance: %d (%s): no name attribute set", i, inst[i].name);
         statusmsg(str,2);
         inst[i].flags |=4;
-        hilight_nets=1;
+        xctx->hilight_nets=1;
       }
     }
     if(print_erc && (!type || !type[0]) ) {
@@ -709,7 +707,7 @@ void prepare_netlist_structs(int for_netlist)
       my_snprintf(str, S(str), "Symbol: %s: no type attribute set", inst[i].name);
       statusmsg(str,2);
       inst[i].flags |=4;
-      hilight_nets=1;
+      xctx->hilight_nets=1;
     }
     if(type && inst[i].node && IS_LABEL_OR_PIN(type) ) { /* instance must have a pin! */
       if (for_netlist>0) {
@@ -1062,6 +1060,7 @@ int sym_vs_sch_pins()
   double tmpd;
   FILE *fd;
   int tmpi;
+  short tmps;
   int endfile;
   char tag[1];
   char filename[PATH_MAX];
@@ -1131,7 +1130,7 @@ int sym_vs_sch_pins()
               break;
             case 'T':
               load_ascii_string(&tmp,fd);
-              if(fscanf(fd, "%lf %lf %d %d %lf %lf ", &tmpd, &tmpd, &tmpi, &tmpi, &tmpd, &tmpd) < 6 ) {
+              if(fscanf(fd, "%lf %lf %hd %hd %lf %lf ", &tmpd, &tmpd, &tmps, &tmps, &tmpd, &tmpd) < 6 ) {
                 fprintf(errfp,"WARNING:  missing fields for TEXT object, ignoring\n");
                 read_line(fd, 0);
                 break;
@@ -1147,7 +1146,7 @@ int sym_vs_sch_pins()
                 my_strncpy(name, add_ext(name, ".sym"), S(name));
               }
 
-              if(fscanf(fd, "%lf %lf %d %d", &tmpd, &tmpd, &tmpi, &tmpi) < 4) {
+              if(fscanf(fd, "%lf %lf %hd %hd", &tmpd, &tmpd, &tmps, &tmps) < 4) {
                 fprintf(errfp,"sym_vs_sch_pins() WARNING: missing fields for INST object, filename=%s\n",
                   filename);
                 read_line(fd, 0);
@@ -1186,7 +1185,7 @@ int sym_vs_sch_pins()
                       for(j = 0; j < xctx->instances; j++) {
                         if(!strcmp(xctx->inst[j].name, xctx->sym[i].name)) {
                           xctx->inst[j].flags |=4;
-                          hilight_nets=1;
+                          xctx->hilight_nets=1;
                         }
                       }
                     }
@@ -1202,7 +1201,7 @@ int sym_vs_sch_pins()
                   for(j = 0; j < xctx->instances; j++) {
                     if(!strcmp(xctx->inst[j].name, xctx->sym[i].name)) {
                       xctx->inst[j].flags |=4;
-                      hilight_nets=1;
+                      xctx->hilight_nets=1;
                     }
                   }
                 }
@@ -1235,7 +1234,7 @@ int sym_vs_sch_pins()
           for(j = 0; j < xctx->instances; j++) {
             if(!strcmp(xctx->inst[j].name, xctx->sym[i].name)) {
               xctx->inst[j].flags |=4;
-              hilight_nets=1;
+              xctx->hilight_nets=1;
             }
           }
         }
@@ -1258,7 +1257,7 @@ int sym_vs_sch_pins()
             for(k = 0; k < xctx->instances; k++) {
               if(!strcmp(xctx->inst[k].name, xctx->sym[i].name)) {
                 xctx->inst[k].flags |=4;
-                hilight_nets=1;
+                xctx->hilight_nets=1;
               }
             }
           }

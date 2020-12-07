@@ -23,7 +23,7 @@
 #include <stdarg.h>
 #include "xschem.h"
 
-static int rot = 0, flip = 0;
+static short rot = 0, flip = 0;
 
 char *my_strtok_r(char *str, const char *delim, char **saveptr)
 {
@@ -702,7 +702,7 @@ void edit_polygon_property(void)
 /* x=0 use text widget   x=1 use vim editor */
 void edit_text_property(int x)
 {
-   #ifdef HAS_CAIRO
+   #if HAS_CAIRO==1
    int customfont;
    #endif
    int sel, k, text_changed;
@@ -756,15 +756,15 @@ void edit_text_property(int x)
 
        rot = xctx->text[sel].rot;      /* calculate bbox, some cleanup needed here */
        flip = xctx->text[sel].flip;
-       #ifdef HAS_CAIRO
+       #if HAS_CAIRO==1
        customfont = set_text_custom_font(&xctx->text[sel]);
        #endif
        text_bbox(xctx->text[sel].txt_ptr, xctx->text[sel].xscale,
                  xctx->text[sel].yscale, rot, flip, xctx->text[sel].hcenter, xctx->text[sel].vcenter,
                  xctx->text[sel].x0, xctx->text[sel].y0,
                  &xx1,&yy1,&xx2,&yy2);
-       #ifdef HAS_CAIRO
-       if(customfont) cairo_restore(cairo_ctx);
+       #if HAS_CAIRO==1
+       if(customfont) cairo_restore(xctx->cairo_ctx);
        #endif
 
        bbox(ADD, xx1, yy1, xx2, yy2 );
@@ -777,15 +777,15 @@ void edit_text_property(int x)
          for(l=0;l<c;l++) {
            if(!strcmp( (get_tok_value(xctx->rect[PINLAYER][l].prop_ptr, "name",0)),
                         xctx->text[sel].txt_ptr) ) {
-             #ifdef HAS_CAIRO
+             #if HAS_CAIRO==1
              customfont = set_text_custom_font(&xctx->text[sel]);
              #endif
              text_bbox(xctx->text[sel].txt_ptr, xctx->text[sel].xscale,
              xctx->text[sel].yscale, rot, flip, xctx->text[sel].hcenter, xctx->text[sel].vcenter,
              xctx->text[sel].x0, xctx->text[sel].y0,
              &xx1,&yy1,&xx2,&yy2);
-             #ifdef HAS_CAIRO
-             if(customfont) cairo_restore(cairo_ctx);
+             #if HAS_CAIRO==1
+             if(customfont) cairo_restore(xctx->cairo_ctx);
              #endif
 
              pcx = (xctx->rect[PINLAYER][l].x1+xctx->rect[PINLAYER][l].x2)/2.0;
@@ -841,15 +841,15 @@ void edit_text_property(int x)
        }
 
                                 /* calculate bbox, some cleanup needed here */
-       #ifdef HAS_CAIRO
+       #if HAS_CAIRO==1
        customfont = set_text_custom_font(&xctx->text[sel]);
        #endif
        text_bbox(xctx->text[sel].txt_ptr, xctx->text[sel].xscale,
                  xctx->text[sel].yscale, rot, flip, xctx->text[sel].hcenter, xctx->text[sel].vcenter,
                  xctx->text[sel].x0, xctx->text[sel].y0,
                  &xx1,&yy1,&xx2,&yy2);
-       #ifdef HAS_CAIRO
-       if(customfont) cairo_restore(cairo_ctx);
+       #if HAS_CAIRO==1
+       if(customfont) cairo_restore(xctx->cairo_ctx);
        #endif
 
        bbox(ADD, xx1, yy1, xx2, yy2 );
@@ -902,10 +902,10 @@ void edit_symbol_property(int x)
      else if(x==2)    tcleval("viewdata $::retval");
      my_strdup(78, &result, tclresult());
    }
-   dbg(1, "edit_symbol_property(): before update_symbol, xctx->modified=%d\n", xctx->modified);
+   dbg(1, "edit_symbol_property(): before update_symbol, modified=%d\n", xctx->modified);
    update_symbol(result, x);
    my_free(728, &result);
-   dbg(1, "edit_symbol_property(): done update_symbol, xctx->modified=%d\n", xctx->modified);
+   dbg(1, "edit_symbol_property(): done update_symbol, modified=%d\n", xctx->modified);
    i=-1;
 }
 
@@ -1030,7 +1030,7 @@ void update_symbol(const char *result, int x)
       dbg(1, "update_symbol(): prefix!='\\0', name=%s\n", name);
       /* 20110325 only modify prefix if prefix not NUL */
       if(prefix) name[0]=prefix; /* change prefix if changing symbol type; */
-      dbg(1, "update_symbol(): name=%s, xctx->inst[i].prop_ptr=%s\n", name, xctx->inst[i].prop_ptr);
+      dbg(1, "update_symbol(): name=%s, inst[i].prop_ptr=%s\n", name, xctx->inst[i].prop_ptr);
       my_strdup(89, &ptr,subst_token(xctx->inst[i].prop_ptr, "name", name) );
                      /* set name of current inst */
 
@@ -1062,7 +1062,7 @@ void update_symbol(const char *result, int x)
      and drawn back unhilighted .
                                 |
                                \|/  */
-  if(show_pin_net_names || hilight_nets) {
+  if(show_pin_net_names || xctx->hilight_nets) {
     prepare_netlist_structs(0);
     for(k = 0;  k < (xctx->inst[i].ptr + xctx->sym)->rects[PINLAYER]; k++) {
       if( xctx->inst[i].node && xctx->inst[i].node[k]) {

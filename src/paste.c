@@ -34,7 +34,7 @@ void merge_text(FILE *fd)
     i=xctx->texts;
      xctx->text[i].txt_ptr=NULL;
      load_ascii_string(&xctx->text[i].txt_ptr,fd);
-     fscanf(fd, "%lf %lf %d %d %lf %lf ",
+     fscanf(fd, "%lf %lf %hd %hd %lf %lf ",
       &xctx->text[i].x0, &xctx->text[i].y0, &xctx->text[i].rot,
       &xctx->text[i].flip, &xctx->text[i].xscale,
       &xctx->text[i].yscale);
@@ -206,7 +206,7 @@ void merge_inst(int k,FILE *fd)
     ptr=xctx->inst;
     ptr[i].name=NULL;
     load_ascii_string(&ptr[i].name,fd);
-    if(fscanf(fd, "%lf %lf %d %d",&ptr[i].x0, &ptr[i].y0,&ptr[i].rot, &ptr[i].flip) < 4) {
+    if(fscanf(fd, "%lf %lf %hd %hd",&ptr[i].x0, &ptr[i].y0,&ptr[i].rot, &ptr[i].flip) < 4) {
       fprintf(errfp,"WARNING: missing fields for INSTANCE object, ignoring.\n");
       read_line(fd, 0);
       return;
@@ -393,7 +393,7 @@ void merge_file(int selection_load, const char ext[])
      match_merged_inst(old);
      fclose(fd);
      xctx->ui_state |= STARTMERGE;
-     dbg(1, "merge_file(): loaded file:wire=%d inst=%d xctx->ui_state=%ld\n",
+     dbg(1, "merge_file(): loaded file:wire=%d inst=%d ui_state=%ld\n",
              xctx->wires , xctx->instances, xctx->ui_state);
      move_objects(START,0,0,0);
      xctx->mousex_snap = xctx->mx_double_save;

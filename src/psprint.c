@@ -201,7 +201,7 @@ static void ps_drawline(int gc, double linex1,double liney1,double linex2,double
 }
 
 static void ps_draw_string(int gctext,  const char *str,
-                 int rot, int flip, int hcenter, int vcenter,
+                 short rot, short flip, int hcenter, int vcenter,
                  double x1,double y1,
                  double xscale, double yscale)
 
@@ -211,7 +211,7 @@ static void ps_draw_string(int gctext,  const char *str,
  int i;
 
  if(str==NULL) return;
- #ifdef HAS_CAIRO
+ #if HAS_CAIRO==1
  text_bbox_nocairo(str, xscale, yscale, rot, flip, hcenter, vcenter, x1,y1, &rx1,&ry1,&rx2,&ry2);
  #else
  text_bbox(str, xscale, yscale, rot, flip, hcenter, vcenter, x1,y1, &rx1,&ry1,&rx2,&ry2);
@@ -283,13 +283,13 @@ static void ps_drawgrid()
 
 
 
-static void ps_draw_symbol(int n,int layer,int tmp_flip, int rot,
-        double xoffset, double yoffset)
+static void ps_draw_symbol(int n,int layer, short tmp_flip, short rot, double xoffset, double yoffset)
                             /* draws current layer only, should be called within  */
 {                           /* a "for(i=0;i<cadlayers;i++)" loop */
  int j;
  double x0,y0,x1,y1,x2,y2;
- int flip, textlayer;
+ short flip; 
+ int textlayer;
  xLine line;
  xRect box;
  xText text;
@@ -583,7 +583,7 @@ void ps_draw(void)
 
 
 
- dbg(1, "ps_draw(): INT_WIDTH(xctx->lw)=%d plotfile=%s\n",INT_WIDTH(xctx->lw), plotfile);
+ dbg(1, "ps_draw(): INT_WIDTH(lw)=%d plotfile=%s\n",INT_WIDTH(xctx->lw), plotfile);
  fprintf(fd, "showpage\n\n");
  fprintf(fd, "%%%%EOF\n");
  fclose(fd);

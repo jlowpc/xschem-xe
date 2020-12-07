@@ -105,27 +105,27 @@ void print_image()
   Tk_FreePixmap(display, xctx->save_pixmap);
   xctx->save_pixmap = Tk_GetPixmap(display, xctx->window, w, h, depth);
 #endif
-  XSetTile(display, gctiled, xctx->save_pixmap);
+  XSetTile(display, xctx->gctiled, xctx->save_pixmap);
 
-  #ifdef HAS_CAIRO
+  #if HAS_CAIRO==1
   cairo_destroy(xctx->cairo_save_ctx);
-  cairo_surface_destroy(xctx->save_sfc);
+  cairo_surface_destroy(xctx->cairo_save_sfc);
 
   #if HAS_XRENDER==1
   #if HAS_XCB==1
-  xctx->save_sfc = cairo_xcb_surface_create_with_xrender_format(xcbconn, screen_xcb, xctx->save_pixmap, &format_rgb, w, h);
+  xctx->cairo_save_sfc = cairo_xcb_surface_create_with_xrender_format(xcbconn, screen_xcb, xctx->save_pixmap, &format_rgb, w, h);
   #else
-  xctx->save_sfc = cairo_xlib_surface_create_with_xrender_format(display,
-             xctx->save_pixmap, DefaultScreenOfDisplay(display), format, w, h);
+  xctx->cairo_save_sfc = cairo_xlib_surface_create_with_xrender_format(display,
+             xctx->save_pixmap, DefaultScreenOfDisplay(display), render_format, w, h);
   #endif /*HAS_XCB */
   #else
-  xctx->save_sfc = cairo_xlib_surface_create(display, xctx->save_pixmap, visual, w, h);
+  xctx->cairo_save_sfc = cairo_xlib_surface_create(display, xctx->save_pixmap, visual, w, h);
   #endif /*HAS_XRENDER */
-  if(cairo_surface_status(xctx->save_sfc)!=CAIRO_STATUS_SUCCESS) {
+  if(cairo_surface_status(xctx->cairo_save_sfc)!=CAIRO_STATUS_SUCCESS) {
     fprintf(errfp, "ERROR: invalid cairo xcb surface\n");
      exit(-1);
   }
-  xctx->cairo_save_ctx = cairo_create(xctx->save_sfc);
+  xctx->cairo_save_ctx = cairo_create(xctx->cairo_save_sfc);
   cairo_set_line_width(xctx->cairo_save_ctx, 1);
   cairo_set_line_join(xctx->cairo_save_ctx, CAIRO_LINE_JOIN_ROUND);
   cairo_set_line_cap(xctx->cairo_save_ctx, CAIRO_LINE_CAP_ROUND);
@@ -138,7 +138,7 @@ void print_image()
     XSetClipRectangles(display, gc[tmp], 0,0, xctx->xrect, 1, Unsorted);
     XSetClipRectangles(display, gcstipple[tmp], 0,0, xctx->xrect, 1, Unsorted);
   }
-  XSetClipRectangles(display, gctiled, 0,0, xctx->xrect, 1, Unsorted);
+  XSetClipRectangles(display, xctx->gctiled, 0,0, xctx->xrect, 1, Unsorted);
   save_draw_grid = draw_grid;
   draw_grid=0;
   draw_pixmap=1;
@@ -180,28 +180,28 @@ void print_image()
   Tk_FreePixmap(display, xctx->save_pixmap);
   xctx->save_pixmap = Tk_GetPixmap(display, xctx->window, xctx->areaw, xctx->areah, depth);
 #endif
-  XSetTile(display, gctiled, xctx->save_pixmap);
+  XSetTile(display, xctx->gctiled, xctx->save_pixmap);
 
 
-#ifdef HAS_CAIRO
+#if HAS_CAIRO==1
   cairo_destroy(xctx->cairo_save_ctx);
-  cairo_surface_destroy(xctx->save_sfc);
+  cairo_surface_destroy(xctx->cairo_save_sfc);
 
   #if HAS_XRENDER==1
   #if HAS_XCB==1
-  xctx->save_sfc = cairo_xcb_surface_create_with_xrender_format(xcbconn, screen_xcb, xctx->save_pixmap, &format_rgb, w, h);
+  xctx->cairo_save_sfc = cairo_xcb_surface_create_with_xrender_format(xcbconn, screen_xcb, xctx->save_pixmap, &format_rgb, w, h);
   #else
-  xctx->save_sfc = cairo_xlib_surface_create_with_xrender_format (display,
-             xctx->save_pixmap, DefaultScreenOfDisplay(display), format, w, h);
+  xctx->cairo_save_sfc = cairo_xlib_surface_create_with_xrender_format (display,
+             xctx->save_pixmap, DefaultScreenOfDisplay(display), render_format, w, h);
   #endif /*HAS_XCB */
   #else
-  xctx->save_sfc = cairo_xlib_surface_create(display, xctx->save_pixmap, visual, w, h);
+  xctx->cairo_save_sfc = cairo_xlib_surface_create(display, xctx->save_pixmap, visual, w, h);
   #endif /*HAS_XRENDER */
-  if(cairo_surface_status(xctx->save_sfc)!=CAIRO_STATUS_SUCCESS) {
+  if(cairo_surface_status(xctx->cairo_save_sfc)!=CAIRO_STATUS_SUCCESS) {
     fprintf(errfp, "ERROR: invalid cairo xcb surface\n");
      exit(-1);
   }
-  xctx->cairo_save_ctx = cairo_create(xctx->save_sfc);
+  xctx->cairo_save_ctx = cairo_create(xctx->cairo_save_sfc);
   cairo_set_line_width(xctx->cairo_save_ctx, 1);
   cairo_set_line_join(xctx->cairo_save_ctx, CAIRO_LINE_JOIN_ROUND);
   cairo_set_line_cap(xctx->cairo_save_ctx, CAIRO_LINE_CAP_ROUND);
@@ -214,7 +214,7 @@ void print_image()
     XSetClipMask(display, gc[tmp], None); /*20171110 no need to clip, already done in software */
     XSetClipMask(display, gcstipple[tmp], None);
   }
-  XSetClipMask(display, gctiled, None);
+  XSetClipMask(display, xctx->gctiled, None);
 
   XMapWindow(display, xctx->window);
   draw_grid=save_draw_grid;
@@ -223,10 +223,10 @@ void print_image()
 }
 
 
-#ifdef HAS_CAIRO
+#if HAS_CAIRO==1
 void set_cairo_color(int layer) 
 {
-  cairo_set_source_rgb(cairo_ctx,
+  cairo_set_source_rgb(xctx->cairo_ctx,
     (double)xcolor_array[layer].red/65535.0,
     (double)xcolor_array[layer].green/65535.0,
     (double)xcolor_array[layer].blue/65535.0);
@@ -236,7 +236,7 @@ void set_cairo_color(int layer)
     (double)xcolor_array[layer].blue/65535.0);
 }
 
-/* remember to call cairo_restore(cairo_ctx) when done !! */
+/* remember to call cairo_restore(xctx->cairo_ctx) when done !! */
 int set_text_custom_font(xText *txt) /* 20171122 for correct text_bbox calculation */
 {
   char *textfont;
@@ -250,8 +250,8 @@ int set_text_custom_font(xText *txt) /* 20171122 for correct text_bbox calculati
     slant = CAIRO_FONT_SLANT_NORMAL;
     if(txt->flags & TEXT_ITALIC) slant = CAIRO_FONT_SLANT_ITALIC;
     if(txt->flags & TEXT_OBLIQUE) slant = CAIRO_FONT_SLANT_OBLIQUE;
-    cairo_save(cairo_ctx);
-    cairo_select_font_face (cairo_ctx, textfont, slant, weight);
+    cairo_save(xctx->cairo_ctx);
+    cairo_select_font_face (xctx->cairo_ctx, textfont, slant, weight);
     return 1;
   }
   return 0;
@@ -264,19 +264,17 @@ int set_text_custom_font(xText *txt)
 #endif
 
 
-#ifdef HAS_CAIRO
+#if HAS_CAIRO==1
 static void cairo_draw_string_line(cairo_t *c_ctx, char *s,
-    double x, double y, int rot, int flip,
+    double x, double y, short rot, short flip,
     int lineno, double fontheight, double fontascent, double fontdescent, int llength)
 {
   double ix, iy;
-  int rot1;
+  short rot1;
   int line_delta;
   int line_offset;
   double lines;
   double vc; /* 20171121 vert correct */
-  /*int rx1, ry1, rx2, ry2, save_rot, save_flip; */
-  /* GC gcclear; */
   if(s==NULL) return;
   if(llength==0) return;
 
@@ -311,7 +309,7 @@ static void cairo_draw_string_line(cairo_t *c_ctx, char *s,
 }
 
 /* CAIRO version */
-void draw_string(int layer, int what, const char *str, int rot, int flip, int hcenter, int vcenter,
+void draw_string(int layer, int what, const char *str, short rot, short flip, int hcenter, int vcenter,
                  double x, double y, double xscale, double yscale)
 {
   char *tt, *ss, *sss=NULL;
@@ -355,9 +353,9 @@ void draw_string(int layer, int what, const char *str, int rot, int flip, int hc
   }
 
   set_cairo_color(layer);
-  cairo_set_font_size (cairo_ctx, size*xctx->mooz);
+  cairo_set_font_size (xctx->cairo_ctx, size*xctx->mooz);
   cairo_set_font_size (xctx->cairo_save_ctx, size*xctx->mooz);
-  cairo_font_extents(cairo_ctx, &fext);
+  cairo_font_extents(xctx->cairo_ctx, &fext);
   dbg(1, "draw_string(): size * mooz=%g height=%g ascent=%g descent=%g\n",
        size * xctx->mooz, fext.height, fext.ascent, fext.descent);
   llength=0;
@@ -368,7 +366,7 @@ void draw_string(int layer, int what, const char *str, int rot, int flip, int hc
     if(c=='\n' || c==0) {
       *ss='\0';
       /*fprintf(errfp, "cairo_draw_string(): tt=%s, longest line: %d\n", tt, cairo_longest_line); */
-      if(draw_window) cairo_draw_string_line(cairo_ctx, tt, x, y, rot, flip,
+      if(draw_window) cairo_draw_string_line(xctx->cairo_ctx, tt, x, y, rot, flip,
          lineno, fext.height, fext.ascent, fext.descent, llength);
       if(draw_pixmap) cairo_draw_string_line(xctx->cairo_save_ctx, tt, x, y, rot, flip,
          lineno, fext.height, fext.ascent, fext.descent, llength);
@@ -388,7 +386,7 @@ void draw_string(int layer, int what, const char *str, int rot, int flip, int hc
 #else /* !HAS_CAIRO */
 
 /* no CAIRO version */
-void draw_string(int layer, int what, const char *str, int rot, int flip, int hcenter, int vcenter,
+void draw_string(int layer, int what, const char *str, short rot, short flip, int hcenter, int vcenter,
                  double x1,double y1, double xscale, double yscale)
 {
  double a=0.0,yy;
@@ -449,7 +447,7 @@ void draw_string(int layer, int what, const char *str, int rot, int flip, int hc
 
 #endif /* HAS_CAIRO */
 
-void draw_temp_string(GC gctext, int what, const char *str, int rot, int flip, int hcenter, int vcenter,
+void draw_temp_string(GC gctext, int what, const char *str, short rot, short flip, int hcenter, int vcenter,
                  double x1,double y1, double xscale, double yscale)
 {
  if(!has_x) return;
@@ -458,13 +456,13 @@ void draw_temp_string(GC gctext, int what, const char *str, int rot, int flip, i
  drawtemprect(gctext,what, textx1,texty1,textx2,texty2);
 }
 
-void draw_symbol(int what,int c, int n,int layer,int tmp_flip, int rot,
+void draw_symbol(int what,int c, int n,int layer,short tmp_flip, short rot,
         double xoffset, double yoffset)
                             /* draws current layer only, should be called within  */
 {                           /* a "for(i=0;i<cadlayers;i++)" loop */
   register int j;
   register double x0,y0,x1,y1,x2,y2;
-  int flip;
+  short flip;
   int hide = 0;
   xLine line;
   xRect box;
@@ -474,7 +472,7 @@ void draw_symbol(int what,int c, int n,int layer,int tmp_flip, int rot,
   register xSymbol *symptr;
   int textlayer;
   double angle;
-  #ifdef HAS_CAIRO
+  #if HAS_CAIRO==1
   char *textfont;
   #endif
   if(xctx->inst[n].ptr == -1) return;
@@ -591,7 +589,7 @@ void draw_symbol(int what,int c, int n,int layer,int tmp_flip, int rot,
         if(textlayer < 0 || textlayer >= cadlayers) textlayer = c;
       }
       if((c == PINLAYER && xctx->inst[n].flags & 4) ||  enable_layer[textlayer]) {
-        #ifdef HAS_CAIRO
+        #if HAS_CAIRO==1
         textfont = symptr->text[j].font;
         if((textfont && textfont[0]) || symptr->text[j].flags) {
           cairo_font_slant_t slant;
@@ -602,9 +600,9 @@ void draw_symbol(int what,int c, int n,int layer,int tmp_flip, int rot,
           if(symptr->text[j].flags & TEXT_ITALIC) slant = CAIRO_FONT_SLANT_ITALIC;
           if(symptr->text[j].flags & TEXT_OBLIQUE) slant = CAIRO_FONT_SLANT_OBLIQUE;
 
-          cairo_save(cairo_ctx);
+          cairo_save(xctx->cairo_ctx);
           cairo_save(xctx->cairo_save_ctx);
-          cairo_select_font_face (cairo_ctx, textfont, slant, weight);
+          cairo_select_font_face (xctx->cairo_ctx, textfont, slant, weight);
           cairo_select_font_face (xctx->cairo_save_ctx, textfont, slant, weight);
         }
         #endif
@@ -613,13 +611,13 @@ void draw_symbol(int what,int c, int n,int layer,int tmp_flip, int rot,
           (text.rot + ( (flip && (text.rot & 1) ) ? rot+2 : rot) ) & 0x3,
           flip^text.flip, text.hcenter, text.vcenter,
           x0+x1, y0+y1, text.xscale, text.yscale);
-        #ifndef HAS_CAIRO
+        #if HAS_CAIRO!=1
         drawrect(textlayer, END, 0.0, 0.0, 0.0, 0.0, 0);
         drawline(textlayer, END, 0.0, 0.0, 0.0, 0.0, 0);
         #endif
-        #ifdef HAS_CAIRO
+        #if HAS_CAIRO==1
         if( (textfont && textfont[0]) || symptr->text[j].flags) {
-          cairo_restore(cairo_ctx);
+          cairo_restore(xctx->cairo_ctx);
           cairo_restore(xctx->cairo_save_ctx);
         }
         #endif
@@ -628,13 +626,13 @@ void draw_symbol(int what,int c, int n,int layer,int tmp_flip, int rot,
   }
 }
 
-void draw_temp_symbol(int what, GC gc, int n,int layer,int tmp_flip, int rot,
+void draw_temp_symbol(int what, GC gc, int n,int layer,short tmp_flip, short rot,
         double xoffset, double yoffset)
                             /* draws current layer only, should be called within */
 {                           /* a "for(i=0;i<cadlayers;i++)" loop */
  int j;
  double x0,y0,x1,y1,x2,y2;
- int flip;
+ short flip;
  xLine line;
  xPoly polygon;
  xRect box;
@@ -643,7 +641,7 @@ void draw_temp_symbol(int what, GC gc, int n,int layer,int tmp_flip, int rot,
  register xSymbol *symptr;
  double angle;
 
- #ifdef HAS_CAIRO
+ #if HAS_CAIRO==1
  int customfont;
  #endif
 
@@ -738,14 +736,14 @@ void draw_temp_symbol(int what, GC gc, int n,int layer,int tmp_flip, int rot,
    if(text.xscale*FONTWIDTH*xctx->mooz<1) continue;
    txtptr= translate(n, text.txt_ptr);
    ROTATION(rot, flip, 0.0,0.0,text.x0,text.y0,x1,y1);
-   #ifdef HAS_CAIRO
+   #if HAS_CAIRO==1
    customfont = set_text_custom_font(&text);
    #endif
    if(txtptr[0]) draw_temp_string(gc, what, txtptr,
      (text.rot + ( (flip && (text.rot & 1) ) ? rot+2 : rot) ) & 0x3,
      flip^text.flip, text.hcenter, text.vcenter, x0+x1, y0+y1, text.xscale, text.yscale);
-   #ifdef HAS_CAIRO
-   if(customfont) cairo_restore(cairo_ctx);
+   #if HAS_CAIRO==1
+   if(customfont) cairo_restore(xctx->cairo_ctx);
    #endif
 
   }
@@ -1363,6 +1361,7 @@ void drawpolygon(int c, int what, double *x, double *y, int points, int poly_fil
   double x1,y1,x2,y2;
   XPoint *p;
   int i;
+  short sx, sy;
   if(!has_x) return;
 
   polygon_bbox(x, y, points, &x1,&y1,&x2,&y2);
@@ -1377,8 +1376,9 @@ void drawpolygon(int c, int what, double *x, double *y, int points, int poly_fil
 
   p = my_malloc(38, sizeof(XPoint) * points);
   for(i=0;i<points; i++) {
-    p[i].x = X_TO_SCREEN(x[i]);
-    p[i].y = Y_TO_SCREEN(y[i]);
+    clip_xy_to_short(X_TO_SCREEN(x[i]), Y_TO_SCREEN(y[i]), &sx, &sy);
+    p[i].x = sx;
+    p[i].y = sy;
   }
   if(dash) {
     char dash_arr[2];
@@ -1408,6 +1408,7 @@ void drawtemppolygon(GC g, int what, double *x, double *y, int points)
   double x1,y1,x2,y2;
   XPoint *p;
   int i;
+  short sx, sy;
   if(!has_x) return;
   polygon_bbox(x, y, points, &x1,&y1,&x2,&y2);
   x1=X_TO_SCREEN(x1);
@@ -1417,8 +1418,9 @@ void drawtemppolygon(GC g, int what, double *x, double *y, int points)
   p = my_malloc(39, sizeof(XPoint) * points);
   if( rectclip(xctx->areax1,xctx->areay1,xctx->areax2,xctx->areay2,&x1,&y1,&x2,&y2) ) {
     for(i=0;i<points; i++) {
-      p[i].x = X_TO_SCREEN(x[i]);
-      p[i].y = Y_TO_SCREEN(y[i]);
+      clip_xy_to_short(X_TO_SCREEN(x[i]), Y_TO_SCREEN(y[i]), &sx, &sy);
+      p[i].x = sx;
+      p[i].y = sy;
     }
     XDrawLines(display, xctx->window, g, p, points, CoordModeOrigin);
   }
@@ -1557,7 +1559,7 @@ void draw(void)
  register xSymbol *symptr;
  int textlayer;
 
-  #ifdef HAS_CAIRO
+  #if HAS_CAIRO==1
   char *textfont;
   #endif
 
@@ -1627,7 +1629,7 @@ void draw(void)
 
                   type = symptr->type;
                   if(!(
-                       hilight_nets &&
+                       xctx->hilight_nets &&
                        type  &&
                        (
                         (
@@ -1661,7 +1663,7 @@ void draw(void)
 
                 type = (xctx->inst[i].ptr+ xctx->sym)->type;
                 if(!(
-                     hilight_nets &&
+                     xctx->hilight_nets &&
                      type  &&
                      (
                       (
@@ -1723,7 +1725,7 @@ void draw(void)
             textlayer = xctx->text[i].layer;
             if(textlayer < 0 ||  textlayer >= cadlayers) textlayer = TEXTLAYER;
             dbg(1, "draw(): drawing string %d = %s\n",i, xctx->text[i].txt_ptr);
-            #ifdef HAS_CAIRO
+            #if HAS_CAIRO==1
             if(!enable_layer[textlayer]) continue;
             textfont = xctx->text[i].font;
             if( (textfont && textfont[0]) || xctx->text[i].flags) {
@@ -1735,9 +1737,9 @@ void draw(void)
               if(xctx->text[i].flags & TEXT_ITALIC) slant = CAIRO_FONT_SLANT_ITALIC;
               if(xctx->text[i].flags & TEXT_OBLIQUE) slant = CAIRO_FONT_SLANT_OBLIQUE;
 
-              cairo_save(cairo_ctx);
+              cairo_save(xctx->cairo_ctx);
               cairo_save(xctx->cairo_save_ctx);
-              cairo_select_font_face (cairo_ctx, textfont, slant, weight);
+              cairo_select_font_face (xctx->cairo_ctx, textfont, slant, weight);
               cairo_select_font_face (xctx->cairo_save_ctx, textfont, slant, weight);
             }
             #endif
@@ -1746,13 +1748,13 @@ void draw(void)
               xctx->text[i].rot, xctx->text[i].flip, xctx->text[i].hcenter, xctx->text[i].vcenter,
               xctx->text[i].x0,xctx->text[i].y0,
               xctx->text[i].xscale, xctx->text[i].yscale);
-            #ifdef HAS_CAIRO
+            #if HAS_CAIRO==1
             if((textfont && textfont[0]) || xctx->text[i].flags ) {
-              cairo_restore(cairo_ctx);
+              cairo_restore(xctx->cairo_ctx);
               cairo_restore(xctx->cairo_save_ctx);
             }
             #endif
-            #ifndef HAS_CAIRO
+            #if HAS_CAIRO!=1
             drawrect(textlayer, END, 0.0, 0.0, 0.0, 0.0, 0);
             drawline(textlayer, END, 0.0, 0.0, 0.0, 0.0, 0);
             #endif
@@ -1761,12 +1763,12 @@ void draw(void)
     } /* !only_probes, 20110112 */
     draw_hilight_net(draw_window);
     if(!draw_window) {
-      XCopyArea(display, xctx->save_pixmap, xctx->window, gctiled, xctx->xrect[0].x, xctx->xrect[0].y,
+      XCopyArea(display, xctx->save_pixmap, xctx->window, xctx->gctiled, xctx->xrect[0].x, xctx->xrect[0].y,
          xctx->xrect[0].width, xctx->xrect[0].height, xctx->xrect[0].x, xctx->xrect[0].y);
     }
     draw_selection(gc[SELLAYER], 0); /* 20181009 moved outside of cadlayers loop */
 
-    dbg(1, "draw(): INT_WIDTH(xctx->lw)=%d\n",INT_WIDTH(xctx->lw));
+    dbg(1, "draw(): INT_WIDTH(lw)=%d\n",INT_WIDTH(xctx->lw));
  } /* if(has_x) */
 }
 
@@ -1777,7 +1779,7 @@ int XSetClipRectangles(register Display* dpy, GC gc, int clip_x_origin, int clip
 {
   return 0;
 }
-int XSetTile(Display* display, GC gc, Pixmap save_pixmap)
+int XSetTile(Display* display, GC gc, Pixmap s_pixmap)
 {
   return 0;
 }
