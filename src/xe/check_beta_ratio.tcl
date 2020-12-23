@@ -39,7 +39,7 @@ proc get_net_min_beta {net subckt_nm net_nm ht} {
   return $min_beta
 }
 
-proc xetcl_check_beta_ratio {} {
+proc xetcl_check_beta_ratio {{fd {}}} {
   global xetcl_beta_ratio_min_ratio xetcl_beta_ratio_max_ratio
   global xetcl_beta_ratio_fatal_adj xetcl_beta_ratio_error_adj xetcl_beta_ratio_warn_adj
   array set cache_max_ht {}
@@ -48,8 +48,11 @@ proc xetcl_check_beta_ratio {} {
   set num_checked_objects 0 
   #set fn "${design_name}_self_$check_name.csv"
   #set fd [open $fn "w"]
-  #puts $fd "subckt,net,min_beta,max_beta,severity,min_limit,max_limit"
-  puts "subckt,net,min_beta,max_beta,severity,min_limit,max_limit"
+  if {$fd eq ""} {
+    puts "subckt,net,min_beta,max_beta,severity,min_limit,max_limit"
+  } else {
+    puts $fd "subckt,net,min_beta,max_beta,severity,min_limit,max_limit"
+  }
   set subckts [xe_get_subckts]
   foreach subckt $subckts {
     set subckt_nm [xe_get_subckt_name $subckt]  
@@ -90,8 +93,11 @@ proc xetcl_check_beta_ratio {} {
         } else {
           set severity Normal
         }
-        #puts $fd "$subckt_nm,$name,$min_beta,$max_beta,$severity,$xetcl_beta_ratio_min_ratio,$xetcl_beta_ratio_max_ratio"
-        puts "$subckt_nm,$name,$min_beta,$max_beta,$severity,$xetcl_beta_ratio_min_ratio,$xetcl_beta_ratio_max_ratio"
+        if {$fd eq ""} {
+          puts "$subckt_nm,$name,$min_beta,$max_beta,$severity,$xetcl_beta_ratio_min_ratio,$xetcl_beta_ratio_max_ratio"
+        } else {
+          puts $fd "$subckt_nm,$name,$min_beta,$max_beta,$severity,$xetcl_beta_ratio_min_ratio,$xetcl_beta_ratio_max_ratio"
+        }
       }
     }
   }

@@ -28,9 +28,8 @@ proc xetcl_clear_global {} {
 }
 
 # Global variables
-global XSCHEM_SHAREDIR sim
+global XSCHEM_SHAREDIR sim XE_ROOT_DIR
 xetcl_clear_global
-
 set xe_cm_wcounter 1
 set XE_ROOT_DIR $XSCHEM_SHAREDIR/XE
 
@@ -981,7 +980,7 @@ proc xetcl_see_report_win {{msg {}}} {
       set xe_report_ht(xe_lm_entry_unclassify_device) $file
     } elseif [regexp {xe_weff\.csv} $file] {
       set xe_report_ht(xe_ckc_weff) $file
-    } else {lappend list_checks $file}
+    } else {lappend list_checks $file;}
   }
 
   panedwindow  .xe_report_dialog.l -orient horizontal
@@ -1415,6 +1414,7 @@ proc xetcl_report_win_cm_filter_update_table {w} {
 }
 
 proc xetcl_run_all_xe {cmd} {
+  global XE_ROOT_DIR
   xetcl_run_xe_lm $cmd
   xetcl_run_xe_ckc
 }
@@ -1422,10 +1422,14 @@ proc xetcl_run_all_xe {cmd} {
 
 proc xetcl_run_xe_lm {cmd} {
   set xe_lm_cmd "xe_lm_shell $cmd"
+  #puts $xe_lm_cmd
+  #eval exec $xe_lm_cmd
 }
 
 proc xetcl_run_xe_ckc {} {
-  global XE_ROOT_DIR
+  global XE_ROOT_DIR xe_conf_dict
+  set wd $xe_conf_dict(xe_wd)
+  set design [file tail [file rootname [xschem get schname]]]
   source $XE_ROOT_DIR/xe_ckc_limits.tcl
   source $XE_ROOT_DIR/xe_ckc_helpers.tcl
   set check_scripts [lsort [glob -nocomplain -directory $XE_ROOT_DIR -tails check_*.{tcl}]]
@@ -1433,7 +1437,15 @@ proc xetcl_run_xe_ckc {} {
     source $XE_ROOT_DIR/$script
   }
   xetcl_load
-  xetcl_check_beta_ratio
+  set filename $wd/${design}_beta_ratio.csv
+  set fd [open $filename w]
+  set a [catch "open \"$filename\" w" fd]
+  if {$a} {
+    puts stderr "Can not open file to run beta_ratio: $filename"
+  } else {   
+    xetcl_check_beta_ratio $fd   
+    close $fd
+  } 
   #xetcl_driver_weff
   #xetcl_finfet_device_size
   #xetcl_sram6t_device_size
