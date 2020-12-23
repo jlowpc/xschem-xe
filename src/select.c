@@ -30,7 +30,7 @@ static double xx1,yy1,xx2,yy2;
 
 void symbol_bbox(int i, double *x1,double *y1, double *x2, double *y2)
 {
-   int j;
+   int j, tmp;
    xText text;
    const char *tmp_txt;
    short rot,flip;
@@ -38,8 +38,6 @@ void symbol_bbox(int i, double *x1,double *y1, double *x2, double *y2)
    double text_x0, text_y0;
    short sym_rot, sym_flip;
    double xx1,yy1,xx2,yy2;
-
-
    #if HAS_CAIRO==1
    int customfont;
    #endif
@@ -59,20 +57,16 @@ void symbol_bbox(int i, double *x1,double *y1, double *x2, double *y2)
    xctx->inst[i].yy1 = *y1;               /* for easier select */
    xctx->inst[i].xx2 = *x2;
    xctx->inst[i].yy2 = *y2;
-    dbg(2, "symbol_bbox(): instance=%d %.16g %.16g %.16g %.16g\n",i,*x1, *y1, *x2, *y2);
-
+   dbg(2, "symbol_bbox(): instance=%d %.16g %.16g %.16g %.16g\n",i,*x1, *y1, *x2, *y2);
    /* strings bbox */
    for(j=0;j< (xctx->inst[i].ptr+ xctx->sym)->texts;j++)
    {
-    sym_flip = flip;
-    sym_rot = rot;
-    text = (xctx->inst[i].ptr+ xctx->sym)->text[j];
-     dbg(2, "symbol_bbox(): instance %d text n: %d text str=%s\n",
-           i,j, text.txt_ptr? text.txt_ptr:"NULL");
-
+     sym_flip = flip;
+     sym_rot = rot;
+     text = (xctx->inst[i].ptr+ xctx->sym)->text[j];
+     dbg(2, "symbol_bbox(): instance %d text n: %d text str=%s\n", i,j, text.txt_ptr? text.txt_ptr:"NULL");
      tmp_txt = translate(i, text.txt_ptr);
-
-      dbg(2, "symbol_bbox(): translated text: %s\n", tmp_txt);
+     dbg(2, "symbol_bbox(): translated text: %s\n", tmp_txt);
      ROTATION(rot, flip, 0.0,0.0,text.x0, text.y0,text_x0,text_y0);
      #if HAS_CAIRO==1
      customfont=set_text_custom_font(&text);
@@ -80,7 +74,7 @@ void symbol_bbox(int i, double *x1,double *y1, double *x2, double *y2)
      text_bbox(tmp_txt, text.xscale, text.yscale,
        (text.rot + ( (sym_flip && (text.rot & 1) ) ? sym_rot+2 : sym_rot)) &0x3,
        sym_flip ^ text.flip, text.hcenter, text.vcenter,
-       x0+text_x0,y0+text_y0, &xx1,&yy1,&xx2,&yy2);
+       x0+text_x0,y0+text_y0, &xx1,&yy1,&xx2,&yy2, &tmp, &tmp);
      #if HAS_CAIRO==1
      if(customfont) cairo_restore(xctx->cairo_ctx);
      #endif
@@ -89,7 +83,6 @@ void symbol_bbox(int i, double *x1,double *y1, double *x2, double *y2)
      if(xx2>*x2) *x2=xx2;
      if(yy2>*y2) *y2=yy2;
       dbg(2, "symbol_bbox(): instance=%d text=%d %.16g %.16g %.16g %.16g\n",i,j, *x1, *y1, *x2, *y2);
-
    }
 }
 
@@ -206,7 +199,7 @@ static void del_rect_line_arc_poly(void)
 
 void delete(void)
 {
-  int i, j, n;
+  int i, j, n, tmp;
   #if HAS_CAIRO==1
   int customfont;
   #endif
@@ -275,9 +268,9 @@ void delete(void)
       customfont = set_text_custom_font(&xctx->text[i]);
       #endif
       text_bbox(xctx->text[i].txt_ptr, xctx->text[i].xscale,
-                xctx->text[i].yscale, select_rot, select_flip, xctx->text[i].hcenter, xctx->text[i].vcenter,
-                xctx->text[i].x0, xctx->text[i].y0,
-                &xx1,&yy1, &xx2,&yy2);
+                xctx->text[i].yscale, select_rot, select_flip, xctx->text[i].hcenter,
+                xctx->text[i].vcenter, xctx->text[i].x0, xctx->text[i].y0,
+                &xx1,&yy1, &xx2,&yy2, &tmp, &tmp);
       #if HAS_CAIRO==1
       if(customfont) cairo_restore(xctx->cairo_ctx);
       #endif
@@ -311,6 +304,7 @@ void delete(void)
       delete_inst_node(i);
       my_free(939, &xctx->inst[i].name);
       my_free(940, &xctx->inst[i].instname);
+      my_free(878, &xctx->inst[i].lab);
       j++;
       continue;
     }
@@ -399,7 +393,7 @@ void bbox(int what,double x1,double y1, double x2, double y2)
      fprintf(errfp, "ERROR: rentrant bbox() call\n");
      tcleval("alert_ {ERROR: reentrant bbox() call} {}");
    }
-   bbx1 = 300000000;
+   bbx1 = 300000000; /* screen coordinates */
    bbx2 = 0;
    bby1 = 300000000;
    bby2 = 0;
@@ -443,17 +437,18 @@ void bbox(int what,double x1,double y1, double x2, double y2)
    xctx->xrect[0].width = xctx->areaw-4*INT_WIDTH(xctx->lw);
    xctx->xrect[0].height = xctx->areah-4*INT_WIDTH(xctx->lw);
 
-   XSetClipMask(display, xctx->gctiled, None); /* 20171110 optimization, clipping already done in software */
-
-   for(i=0;i<cadlayers;i++)
-   {
-    XSetClipMask(display, gc[i], None); /* 20171110 optimization, clipping already done in software */
-    XSetClipMask(display, gcstipple[i], None); /* 20171110 optimization, clipping already done in software */
+   if(has_x) {
+     XSetClipMask(display, xctx->gctiled, None); /* clipping already done in software */
+     for(i=0;i<cadlayers;i++)
+     {
+      XSetClipMask(display, gc[i], None); /* clipping already done in software */
+      XSetClipMask(display, gcstipple[i], None); /* optimization, clipping already done in software */
+     }
+     #if HAS_CAIRO==1
+     cairo_reset_clip(xctx->cairo_ctx);
+     cairo_reset_clip(xctx->cairo_save_ctx);
+     #endif
    }
-   #if HAS_CAIRO==1
-   cairo_reset_clip(xctx->cairo_ctx);
-   cairo_reset_clip(xctx->cairo_save_ctx);
-   #endif
    sem=0;
    break;
   case SET:
@@ -472,19 +467,23 @@ void bbox(int what,double x1,double y1, double x2, double y2)
    xctx->xrect[0].y = bby1-INT_WIDTH(xctx->lw);
    xctx->xrect[0].width = bbx2-bbx1+2*INT_WIDTH(xctx->lw);
    xctx->xrect[0].height = bby2-bby1+2*INT_WIDTH(xctx->lw);
-   for(i=0;i<cadlayers;i++)
-   {
-     XSetClipRectangles(display, gc[i], 0,0, xctx->xrect, 1, Unsorted);
-     XSetClipRectangles(display, gcstipple[i], 0,0, xctx->xrect, 1, Unsorted);
+   if(has_x) {
+     for(i=0;i<cadlayers;i++)
+     {
+       XSetClipRectangles(display, gc[i], 0,0, xctx->xrect, 1, Unsorted);
+       XSetClipRectangles(display, gcstipple[i], 0,0, xctx->xrect, 1, Unsorted);
+     }
+     XSetClipRectangles(display, xctx->gctiled, 0,0, xctx->xrect, 1, Unsorted);
+     dbg(1, "bbox(): bbox= %d %d %d %d\n",xctx->areax1,xctx->areay1,xctx->areax2,xctx->areay2);
+     #if HAS_CAIRO==1
+     cairo_rectangle(xctx->cairo_ctx, xctx->xrect[0].x, xctx->xrect[0].y, 
+                     xctx->xrect[0].width, xctx->xrect[0].height);
+     cairo_clip(xctx->cairo_ctx);
+     cairo_rectangle(xctx->cairo_save_ctx, xctx->xrect[0].x, xctx->xrect[0].y,
+                     xctx->xrect[0].width, xctx->xrect[0].height);
+     cairo_clip(xctx->cairo_save_ctx);
+     #endif
    }
-   XSetClipRectangles(display, xctx->gctiled, 0,0, xctx->xrect, 1, Unsorted);
-   dbg(1, "bbox(): bbox= %d %d %d %d\n",xctx->areax1,xctx->areay1,xctx->areax2,xctx->areay2);
-   #if HAS_CAIRO==1
-   cairo_rectangle(xctx->cairo_ctx, xctx->xrect[0].x, xctx->xrect[0].y, xctx->xrect[0].width, xctx->xrect[0].height);
-   cairo_clip(xctx->cairo_ctx);
-   cairo_rectangle(xctx->cairo_save_ctx, xctx->xrect[0].x, xctx->xrect[0].y, xctx->xrect[0].width, xctx->xrect[0].height);
-   cairo_clip(xctx->cairo_save_ctx);
-   #endif
    break;
   default:
    break;
@@ -887,9 +886,9 @@ unsigned short select_object(double mx,double my, unsigned short select_mode, in
    return sel.type;
 }
 
-void select_inside(double x1,double y1, double x2, double y2, int sel) /* 20150927 added unselect (sel param) */
+void select_inside(double x1,double y1, double x2, double y2, int sel) /*added unselect (sel param) */
 {
- int c,i;
+ int c,i, tmpint;
  double x, y, r, a, b, xa, ya, xb, yb; /* arc */
  xRect tmp;
  #if HAS_CAIRO==1
@@ -925,7 +924,7 @@ void select_inside(double x1,double y1, double x2, double y2, int sel) /* 201509
              xctx->text[i].xscale, xctx->text[i].yscale, select_rot, select_flip, 
              xctx->text[i].hcenter, xctx->text[i].vcenter,
              xctx->text[i].x0, xctx->text[i].y0,
-             &xx1,&yy1, &xx2,&yy2);
+             &xx1,&yy1, &xx2,&yy2, &tmpint, &tmpint);
   #if HAS_CAIRO==1
   if(customfont) cairo_restore(xctx->cairo_ctx);
   #endif

@@ -181,7 +181,7 @@ int callback(int event, int mx, int my, KeySym key,
     dbg(1, "callback(): Expose\n");
     break;
   case ConfigureNotify:
-    resetwin(1, 1, 0);
+    resetwin(1, 1, 0, 0, 0);
     draw();
     break;
 
@@ -212,7 +212,7 @@ int callback(int event, int mx, int my, KeySym key,
       statusmsg(str,1);
     }
     if(xctx->ui_state & STARTPAN)    pan(RUBBER);
-    if(xctx->ui_state & STARTZOOM)   zoom_box(RUBBER);
+    if(xctx->ui_state & STARTZOOM)   zoom_rectangle(RUBBER);
     if(xctx->ui_state & STARTSELECT && !(xctx->ui_state & PLACE_SYMBOL) && !(xctx->ui_state & STARTPAN2)) {
       if( (state & Button1Mask)  && (state & Mod1Mask)) { /* 20171026 added unselect by area  */
           select_rect(RUBBER,0);
@@ -578,8 +578,8 @@ int callback(int event, int mx, int my, KeySym key,
    }
    if(key=='z' && state == 0)                   /* zoom box */
    {
-    dbg(1, "callback(): zoom_box call\n");
-    zoom_box(START);break;
+    dbg(1, "callback(): zoom_rectangle call\n");
+    zoom_rectangle(START);break;
    }
    if(key=='Z' && state == ShiftMask)                   /* zoom in */
    {
@@ -694,26 +694,7 @@ int callback(int event, int mx, int my, KeySym key,
    if(key=='V' && state == ShiftMask)                           /* toggle spice/vhdl netlist  */
    {
     netlist_type++; if(netlist_type==6) netlist_type=1;
-    if(netlist_type == CAD_VHDL_NETLIST)
-    {
-     tclsetvar("netlist_type","vhdl");
-    }
-    else if(netlist_type == CAD_SPICE_NETLIST)
-    {
-     tclsetvar("netlist_type","spice");
-    }
-    else if(netlist_type == CAD_VERILOG_NETLIST)
-    {
-     tclsetvar("netlist_type","verilog");
-    }
-    else if(netlist_type == CAD_TEDAX_NETLIST)
-    {
-     tclsetvar("netlist_type","tedax");
-    }
-    else if(netlist_type == CAD_SYMBOL_ATTRS)
-    {
-     tclsetvar("netlist_type","symbol");
-    }
+    override_netlist_type(-1);
     break;
    }
 
@@ -1054,7 +1035,7 @@ int callback(int event, int mx, int my, KeySym key,
    {
     int mult;
     remove_symbol(2);
-    link_symbols_to_instances();
+    link_symbols_to_instances(0);
     expandlabel("/RST", &mult);
     expandlabel("/CCC[3:0]", &mult);
     expandlabel("CCC[AA:BB:DD]", &mult);
@@ -1364,7 +1345,7 @@ int callback(int event, int mx, int my, KeySym key,
     xctx->prep_net_structs = 0;
     xctx->prep_hi_structs = 0;
     xctx->prep_hash_wires = 0;
-    zoom_full(1, 0);
+    zoom_full(1, 0, 1, 0.97);
     break;
    }
 
@@ -1376,7 +1357,7 @@ int callback(int event, int mx, int my, KeySym key,
    }
    if(key=='f' && state == 0 )                  /* full zoom */
    {
-    zoom_full(1, 0);
+    zoom_full(1, 0, 1, 0.97);
     break;
    }
    if((key=='z' && state==ControlMask))                         /* zoom out */
@@ -1545,7 +1526,7 @@ int callback(int event, int mx, int my, KeySym key,
        break;
      }
      if(xctx->ui_state & MENUSTARTZOOM) {
-       zoom_box(START);
+       zoom_rectangle(START);
        xctx->ui_state &=~MENUSTARTZOOM;
        break;
      }
@@ -1554,7 +1535,7 @@ int callback(int event, int mx, int my, KeySym key,
        break;
      }
      if(xctx->ui_state & STARTZOOM) {
-       zoom_box(END);
+       zoom_rectangle(END);
        break;
      }
      if(xctx->ui_state & STARTWIRE) {

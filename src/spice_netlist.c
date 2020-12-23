@@ -100,9 +100,7 @@ void global_spice_netlist(int global)  /* netlister driver */
     continue;
   }
   if( type && IS_PIN(type)) {
-   str_tmp = expandlabel ( get_tok_value(xctx->inst[i].prop_ptr,"lab",0) ,&multip);
-   dbg(1, "global_spice_netlist(): |%s|\n",
-       get_tok_value(xctx->inst[i].prop_ptr,"lab",0));
+   str_tmp = expandlabel ( (xctx->inst[i].lab ? xctx->inst[i].lab : ""), &multip);
    /*must handle  invalid node names */
    fprintf(fd, " %s", str_tmp ? str_tmp : "(NULL)" );
   }
@@ -158,10 +156,11 @@ void global_spice_netlist(int global)  /* netlister driver */
 
  /* preserve current level instance flags before descending hierarchy for netlisting, restore later */
  stored_flags = my_calloc(146, xctx->instances, sizeof(unsigned int));
- for(i=0;i<xctx->instances;i++) stored_flags[i] = xctx->inst[i].flags & 4;
-
+ for(i=0;i<xctx->instances;i++) stored_flags[i] = xctx->inst[i].color;
+ 
  if(global)
- {
+ { 
+   int saved_hilight_nets = xctx->hilight_nets;
    unselect_all();
    remove_symbols(); /* 20161205 ensure all unused symbols purged before descending hierarchy */
    load_schematic(1, xctx->sch[xctx->currsch], 0);
@@ -204,10 +203,12 @@ void global_spice_netlist(int global)  /* netlister driver */
    prepare_netlist_structs(1); /* so 'lab=...' attributes for unnamed nets are set */
    /* symbol vs schematic pin check, we do it here since now we have ALL symbols loaded */
    sym_vs_sch_pins();
-   /* restore hilight flags from errors found analyzing top level before descending hierarchy */
-   for(i=0;i<xctx->instances; i++) xctx->inst[i].flags |= stored_flags[i];
-   draw_hilight_net(1);
+   if(!xctx->hilight_nets) xctx->hilight_nets = saved_hilight_nets;
  }
+ /* restore hilight flags from errors found analyzing top level before descending hierarchy */
+ for(i=0;i<xctx->instances; i++) xctx->inst[i].color = stored_flags[i];
+ propagate_hilights(1);
+ draw_hilight_net(1);
  my_free(945, &stored_flags);
 
  /* print globals nodes found in netlist 28032003 */
@@ -345,12 +346,11 @@ void spice_block_netlist(FILE *fd, int i)
 
   if((str_tmp = get_tok_value(xctx->sym[i].prop_ptr, "schematic",0 ))[0]) {
     my_strncpy(filename, abs_sym_path(str_tmp, ""), S(filename));
-    load_schematic(1,filename, 0);
+    spice_stop? load_schematic(0,filename, 0) : 
+                load_schematic(1,filename, 0);
   } else {
-    dbg(1, "spice_block_netlist(): loading: %s -> %s\n", 
-      xctx->sym[i].name, add_ext(abs_sym_path(xctx->sym[i].name, ""), ".sch"));
-    dbg(1, "spice_block_netlist(): current_dirname=%s\n", xctx->current_dirname);
-    load_schematic(1, add_ext(abs_sym_path(xctx->sym[i].name, ""), ".sch") ,0);
+    spice_stop? load_schematic(0, add_ext(abs_sym_path(xctx->sym[i].name, ""), ".sch") ,0) : 
+                load_schematic(1, add_ext(abs_sym_path(xctx->sym[i].name, ""), ".sch") ,0);
   }
   spice_netlist(fd, spice_stop);  /* 20111113 added spice_stop */
   netlist_count++;
@@ -376,10 +376,10 @@ void spice_netlist(FILE *fd, int spice_stop )
   int i;
   char *type=NULL;
  
-  xctx->prep_net_structs = 0;
-  prepare_netlist_structs(1);
-  traverse_node_hash();  /* print all warnings about unconnected floatings etc */
   if(!spice_stop) {
+    xctx->prep_net_structs = 0;
+    prepare_netlist_structs(1);
+    traverse_node_hash();  /* print all warnings about unconnected floatings etc */
     for(i=0;i<xctx->instances;i++) /* print first ipin/opin defs ... */
     {
      if( strcmp(get_tok_value(xctx->inst[i].prop_ptr,"spice_ignore",0),"true")==0 ) continue;
@@ -426,7 +426,7 @@ void spice_netlist(FILE *fd, int spice_stop )
      }
     }
   }
-  if(!netlist_count) redraw_hilights(); /* draw_hilight_net(1); */
+  if(!spice_stop && !netlist_count) redraw_hilights(); /* draw_hilight_net(1); */
   my_free(952, &type);
 }
 

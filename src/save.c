@@ -135,8 +135,8 @@ const char *create_tmpdir(char *prefix)
 
 /* */
 
-/* try to create a tmp file in $HOME */
-/* ${HOME}/<prefix><trailing random chars> */
+/* try to create a tmp file in $XSCHEM_TMP_DIR */
+/* ${XSCHEM_TMP_DIR}/<prefix><trailing random chars> */
 /* after 5 unsuccessfull attemps give up */
 /* and return NULL */
 /* */
@@ -400,10 +400,17 @@ void save_line(FILE *fd)
 void write_xschem_file(FILE *fd)
 {
   int ty=0;
+  char *ptr;
 
-  my_strdup2(1183, &xctx->version_string, subst_token(xctx->version_string, "version", XSCHEM_VERSION));
-  my_strdup2(1184, &xctx->version_string, subst_token(xctx->version_string, "file_version", XSCHEM_FILE_VERSION));
-  fprintf(fd, "v {%s}\n", xctx->version_string);
+  if(xctx->version_string && (ptr = strstr(xctx->version_string, "xschem")) &&
+    (ptr - xctx->version_string < 50)) {
+    my_strdup2(59, &xctx->version_string, subst_token(xctx->version_string, "xschem", NULL));
+  }
+  my_strdup2(1183, &xctx->version_string, subst_token(xctx->version_string, "version", NULL));
+  my_strdup2(1184, &xctx->version_string, subst_token(xctx->version_string, "file_version", NULL));
+  ptr = xctx->version_string;
+  while(*ptr == ' ' || *ptr == '\t') ptr++; /* strip leading spaces */
+  fprintf(fd, "v {xschem version=%s file_version=%s %s}\n", XSCHEM_VERSION, XSCHEM_FILE_VERSION, ptr);
 
 
   if(xctx->schvhdlprop && !xctx->schsymbolprop) {
@@ -544,15 +551,19 @@ static void load_inst(int k, FILE *fd)
       fprintf(errfp,"WARNING: missing fields for INSTANCE object, ignoring.\n");
       read_line(fd, 0);
     } else {
+      xctx->inst[i].color=0;
       xctx->inst[i].flags=0;
       xctx->inst[i].sel=0;
       xctx->inst[i].ptr=-1; /*04112003 was 0 */
       xctx->inst[i].prop_ptr=NULL;
       xctx->inst[i].instname=NULL;
+      xctx->inst[i].lab=NULL; /* assigned in link_symbols_to_instances */
       xctx->inst[i].node=NULL;
       load_ascii_string(&prop_ptr,fd);
       my_strdup(319, &xctx->inst[i].prop_ptr, prop_ptr);
       my_strdup2(320, &xctx->inst[i].instname, get_tok_value(xctx->inst[i].prop_ptr, "name", 0));
+      if(!strcmp(get_tok_value(xctx->inst[i].prop_ptr,"highlight",0), "true")) xctx->inst[i].flags |= 4;
+
       dbg(2, "load_inst(): n=%d name=%s prop=%s\n", i, xctx->inst[i].name? xctx->inst[i].name:"<NULL>",
                xctx->inst[i].prop_ptr? xctx->inst[i].prop_ptr:"<NULL>");
       xctx->instances++;
@@ -941,29 +952,35 @@ int save_schematic(const char *schname) /* 20171020 added return value */
   return 0;
 }
 
-void link_symbols_to_instances(void) /* 20150326 separated from load_schematic() */
+void link_symbols_to_instances(int from) /* from > 0 : linking symbols from pasted schematic / clipboard */
 {
   int i;
-  char *type=NULL; /* 20150407 added static  */
+  char *type=NULL;
   int cond;
 
-  for(i=0;i<xctx->instances;i++)
-  {
+  for(i = from; i < xctx->instances; i++) {
     dbg(2, "link_symbols_to_instances(): inst=%d\n", i);
     dbg(2, "link_symbols_to_instances(): matching inst %d name=%s \n",i, xctx->inst[i].name);
     dbg(2, "link_symbols_to_instances(): -------\n");
     xctx->inst[i].ptr = match_symbol(xctx->inst[i].name);
   }
-  for(i=0;i<xctx->instances;i++) {
-    symbol_bbox(i, &xctx->inst[i].x1, &xctx->inst[i].y1,
-                      &xctx->inst[i].x2, &xctx->inst[i].y2);
+  for(i = from; i < xctx->instances; i++) {
+    if(from) select_element(i,SELECTED,1, 0); /* leave elements selected if a paste/copy from windows is done */
     type=xctx->sym[xctx->inst[i].ptr].type;
     cond= !type || !IS_LABEL_SH_OR_PIN(type);
     if(cond) xctx->inst[i].flags|=2; /* ordinary symbol */
-    else xctx->inst[i].flags &=~2; /* label or pin */
+    else {
+      xctx->inst[i].flags &=~2; /* label or pin */
+      my_strdup(1216, &xctx->inst[i].lab, get_tok_value(xctx->inst[i].prop_ptr,"lab",0));
+    }
   }
-
+  /* symbol_bbox() might call translate() that might call prepare_netlist_structs() that 
+   * needs .lab field set above, so this must be done last */
+  for(i = from; i < xctx->instances; i++) {
+    symbol_bbox(i, &xctx->inst[i].x1, &xctx->inst[i].y1, &xctx->inst[i].x2, &xctx->inst[i].y2);
+  }
 }
+
 /* ALWAYS use absolute pathname for filename!!! */
 void load_schematic(int load_symbols, const char *filename, int reset_undo) /* 20150327 added reset_undo */
 {
@@ -1003,7 +1020,7 @@ void load_schematic(int load_symbols, const char *filename, int reset_undo) /* 2
       fclose(fd); /* 20150326 moved before load symbols */
       set_modify(0);
       dbg(2, "load_schematic(): loaded file:wire=%d inst=%d\n",xctx->wires , xctx->instances);
-      if(load_symbols) link_symbols_to_instances();
+      if(load_symbols) link_symbols_to_instances(0);
       if(reset_undo) {
         Tcl_VarEval(interp, "is_xschem_file ", xctx->sch[xctx->currsch], NULL);
         if(!strcmp(tclresult(), "SYMBOL")) {
@@ -1014,11 +1031,7 @@ void load_schematic(int load_symbols, const char *filename, int reset_undo) /* 2
         } else {
           if(loaded_symbol) {
             netlist_type = save_netlist_type;
-            if(netlist_type==CAD_VHDL_NETLIST)  tclsetvar("netlist_type","vhdl");
-            else if(netlist_type==CAD_VERILOG_NETLIST)  tclsetvar("netlist_type","verilog");
-            else if(netlist_type==CAD_TEDAX_NETLIST)  tclsetvar("netlist_type","tedax");
-            else if(netlist_type==CAD_SYMBOL_ATTRS)  tclsetvar("netlist_type","symbol");
-            else tclsetvar("netlist_type","spice");
+            override_netlist_type(-1);
           }
           loaded_symbol = 0;
         }
@@ -1222,7 +1235,7 @@ void pop_undo(int redo)
   fclose(fd);
   #endif
   dbg(2, "pop_undo(): loaded file:wire=%d inst=%d\n",xctx->wires , xctx->instances);
-  link_symbols_to_instances();
+  link_symbols_to_instances(0);
   set_modify(1);
   xctx->prep_hash_inst=0;
   xctx->prep_hash_wires=0;
@@ -1484,10 +1497,11 @@ void calc_symbol_bbox(int pos)
 *
 *   for(i=0;i<lastt;i++)
 *   {
+     int tmp;
 *    count++;
 *    rot=tt[i].rot;flip=tt[i].flip;
 *    text_bbox(tt[i].txt_ptr, tt[i].xscale, tt[i].yscale, rot, flip,
-*    tt[i].x0, tt[i].y0, &rx1,&ry1,&rx2,&ry2);
+*    tt[i].x0, tt[i].y0, &rx1,&ry1,&rx2,&ry2, &tmp);
 *    tmp.x1=rx1;tmp.y1=ry1;tmp.x2=rx2;tmp.y2=ry2;
 *    updatebbox(count,&boundbox,&tmp);
 *  }
@@ -1626,6 +1640,9 @@ int load_sym_def(const char *name, FILE *embed_fd)
                   get_tok_value(symbol[symbols].prop_ptr, "template", 0));
        my_strdup2(515, &symbol[symbols].type,
                   get_tok_value(symbol[symbols].prop_ptr, "type",0));
+       if(!strcmp(get_tok_value(symbol[symbols].prop_ptr,"highlight",0), "true")) symbol[symbols].flags |= 4;
+       else symbol[symbols].flags &= ~4;
+
      }
      else {
        load_ascii_string(&aux_ptr, lcc[level].fd);
@@ -1639,6 +1656,8 @@ int load_sym_def(const char *name, FILE *embed_fd)
                   get_tok_value(symbol[symbols].prop_ptr, "template", 0));
        my_strdup2(342, &symbol[symbols].type,
                   get_tok_value(symbol[symbols].prop_ptr, "type",0));
+       if(!strcmp(get_tok_value(symbol[symbols].prop_ptr,"highlight",0), "true")) symbol[symbols].flags |= 4;
+       else symbol[symbols].flags &= ~4;
      }
      else {
        load_ascii_string(&aux_ptr, lcc[level].fd);
@@ -2236,7 +2255,7 @@ void descend_symbol(void)
     remove_symbols(); /* must follow save (if) embedded */
     load_schematic(1, abs_sym_path(name, ""), 1);
   }
-  zoom_full(1, 0);
+  zoom_full(1, 0, 1, 0.97);
 }
 
 /* 20111023 align selected object to current grid setting */

@@ -98,8 +98,8 @@ unsigned char pixdata_init[22][32]={    /* fill patterns... indexed by laynumb. 
 GC *gcstipple,*gc;
 Pixmap *pixmap = NULL;
 Display *display;
+int screen_number;
 Pixmap cad_icon_pixmap=0, cad_icon_mask=0;
-XPoint *gridpoint;         /* pointer to array of gridpoints, used in draw() */
 XColor xcolor_array[256];
 Visual *visual;
 #if HAS_XRENDER==1
@@ -123,12 +123,12 @@ int change_lw=0; /* allow change lw */
 int incr_hilight=1;
 unsigned short enable_stretch=0;
 int auto_hilight=0;
-int a3page=-1;
 int has_x=1;
 int split_files=0; /* split netlist files 20081202 */
 double cadgrid = CADGRID;
 double cadsnap = CADSNAP;
 int draw_grid=1;
+int big_grid_points=0;
 int rainbow_colors=0;
 int dis_uniq_names=0; /* if set allow instances with duplicate names */
 int persistent_command=0; /* remember last command 20181022 */
@@ -139,8 +139,8 @@ int flat_netlist=0;
 int cadlayers=0;
 int hide_symbols = 0; /* draw only a bounding box for component instances and @symname, @name texts */
 int dark_colorscheme=1;
-char cairo_font_name[1024]="Sans Serif";
-char svg_font_name[1024]="Sans Serif";
+char cairo_font_name[80]="Sans-Serif";
+char svg_font_name[80]="Sans-Serif";
 double cairo_font_scale=1.0; /* default: 1.0, allows to adjust font size */
 double nocairo_font_xscale=0.85; /* match with cairo sizing */
 double nocairo_font_yscale=0.88; /* match with cairo sizing */
@@ -186,6 +186,7 @@ int fill=1; /* filled rectangles */
 int draw_pixmap=1; /* use pixmap for double buffer */
 int draw_window=0;
 int text_svg=1; /* use <text> svg element for text instead of xschem's internal vector font */
+int text_ps=1;  /* use ps font for text instead of xschem's internal vector font */
 double cadhalfdotsize = CADHALFDOTSIZE;
 unsigned int color_index[256]; /* layer color lookup table */
 int max_undo=MAX_UNDO;
@@ -196,7 +197,7 @@ int *enable_layer;
 int n_active_layers=0;
 int *active_layer;
 int depth;
-int *fill_type; /*20171117 for every layer: 0: no fill, 1, solid fill, 2: stipple fill */
+int *fill_type; /* for every layer: 0: no fill, 1, solid fill, 2: stipple fill */
 char **color_array;
 char *xschem_executable=NULL;
 double *character[256]; /* array or per-char coordinates of xschem internal vector font */
@@ -212,12 +213,10 @@ int vertical_move=0;
 int pending_fullzoom=0;
 double color_dim=0.0;
 int no_undo=0;
-int enable_drill=0; /* 20171211 pass net hilights through components with 'propagate_to' property set on pins */
+int enable_drill=0; /* pass net hilights through components with 'propagate_to' property set on pins */
 size_t get_tok_value_size;
 size_t get_tok_size;
 int batch_mode = 0; /* no tcl console if set; batch mode */
-int cairo_longest_line;
-int cairo_lines;
 int show_erc=1;
 
 /* following data is relative to the current schematic */

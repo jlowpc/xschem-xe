@@ -23,7 +23,7 @@
 #ifndef CADGLOBALS
 #define CADGLOBALS
 
-#define XSCHEM_VERSION "2.9.8"
+#define XSCHEM_VERSION "2.9.9"
 #define XSCHEM_FILE_VERSION "1.2"
 
 #if HAS_PIPE == 1
@@ -436,7 +436,9 @@ typedef struct
    char *prop_ptr;
    char *type;
    char *templ;
-   short flags; /* currently only used for embedded symbols (EMBEDDED) */
+   short flags; /* bit 0: embedded flag 
+                 * bit 1: **free**
+                 * bit 2: highight if connected wire highlighted */
 } xSymbol;
 
 typedef struct
@@ -456,11 +458,13 @@ typedef struct
    short rot;
    short flip;
    short sel;
-   short flags; /*  bit 0: skip field, bit 1: flag for different textlayer for pin/labels
-               *  bit 2 : hilight flag.
-               */
+   short color; /* hilight color */
+   short flags; /* bit 0: skip field, 
+                 * bit 1: flag for different textlayer for pin/labels , 1: ordinary symbol, 0: label/pin/show 
+                 * bit 2: highlight if connected net/label is highlighted */
    char *prop_ptr;
    char **node;
+   char *lab;      /*  lab attribute if any (pin/label) */
    char *instname; /*  20150409 instance name (example: I23)  */
 } xInstance;
 
@@ -551,7 +555,6 @@ typedef struct {
   int head_undo_ptr;
   struct node_hashentry *node_table[HASHSIZE];
   struct hilight_hashentry *hilight_table[HASHSIZE];
-  int *inst_color;
   int hilight_nets;
   int hilight_color;
   unsigned int rectcolor; /* current layer */
@@ -584,8 +587,8 @@ typedef struct {
   /* select_rect */
   double nl_xr, nl_yr, nl_xr2, nl_yr2;
   int nl_sel, nl_sem;
-
-
+  XSegment *biggridpoint;
+  XPoint *gridpoint;
 } Xschem_ctx;
 
 struct Lcc { /* used for symbols containing schematics as instances (LCC, Local Custom Cell) */
@@ -663,7 +666,6 @@ struct instentry {
 extern Xschem_ctx *xctx;
 extern int help;
 extern char *cad_icon[];
-extern int a3page;
 extern int manhattan_lines;
 extern int cadlayers;
 extern int *active_layer;
@@ -698,7 +700,9 @@ extern int incr_hilight;
 extern int auto_hilight;
 extern int fill; /*  fill rectangles */
 extern int draw_grid;
+extern int big_grid_points;
 extern int text_svg;
+extern int text_ps;
 extern double cadgrid;
 extern double cadhalfdotsize;
 extern int draw_pixmap; /*  pixmap used as 2nd buffer */
@@ -751,11 +755,9 @@ extern size_t get_tok_size;
 extern int batch_mode; /* no TCL console */
 extern int hide_symbols; /* draw only a bounding box for component instances and @symname, @name texts */
 extern int show_pin_net_names;
-extern char svg_font_name[1024];
+extern char svg_font_name[80];
 /* CAIRO specific global variables */
-extern char cairo_font_name[1024];
-extern int cairo_longest_line;
-extern int cairo_lines;
+extern char cairo_font_name[80];
 extern double cairo_font_scale; /*  default: 1.0, allows to adjust font size */
 extern double nocairo_font_xscale;
 extern double nocairo_font_yscale;
@@ -772,8 +774,8 @@ extern unsigned char **pixdata;
 extern unsigned char pixdata_init[22][32];
 extern GC *gc, *gcstipple, gctiled;
 extern Display *display;
+extern int screen_number;
 extern XRectangle *rectangle;
-extern XPoint *gridpoint;
 extern Pixmap cad_icon_pixmap, cad_icon_mask, *pixmap;
 extern XColor xcolor_array[];
 extern Visual *visual;
@@ -797,7 +799,7 @@ extern void set_grid(double);
 extern void create_plot_cmd(int viewer);
 extern void set_modify(int mod);
 extern void dbg(int level, char *fmt, ...);
-extern void here(void);
+extern void here(int i);
 extern void print_version(void);
 extern int set_netlist_dir(int force, char *dir);
 extern void netlist_options(int i);
@@ -819,6 +821,7 @@ extern int process_options(int argc, char **argv);
 extern void calc_drawing_bbox(xRect *boundbox, int selected);
 extern void ps_draw(void);
 extern void svg_draw(void);
+extern void set_viewport_size(int w, int h, double lw);
 extern void print_image();
 extern const char *skip_dir(const char *str);
 extern const char *get_cell(const char *str, int no_of_dir);
@@ -828,20 +831,24 @@ extern const char *abs_sym_path(const char *s, const char *ext);
 extern const char *add_ext(const char *f, const char *ext);
 extern void make_symbol(void);
 extern const char *get_sym_template(char *s, char *extra);
-extern void zoom_full(int draw, int sel);
+/* bit0: invoke change_linewidth(), bit1: centered zoom */
+extern void zoom_full(int draw, int sel, int flags, double shrink);
 extern void updatebbox(int count,xRect *boundbox,xRect *tmp);
 extern void draw_selection(GC g, int interruptable);
 extern void delete(void);
 extern void delete_only_rect_line_arc_poly(void);
 extern void polygon_bbox(double *x, double *y, int points, double *bx1, double *by1, double *bx2, double *by2);
-extern void arc_bbox(double x, double y, double r, double a, double b, double *bx1, double *by1, double *bx2, double *by2);
+extern void arc_bbox(double x, double y, double r, double a, double b,
+                     double *bx1, double *by1, double *bx2, double *by2);
 extern void bbox(int what,double x1,double y1, double x2, double y2);
 extern int set_text_custom_font(xText *txt);
 extern int text_bbox(const char * str,double xscale, double yscale,
-            short rot, short flip, int hcenter, int vcenter, double x1,double y1, double *rx1, double *ry1,
-            double *rx2, double *ry2);
+            short rot, short flip, int hcenter, int vcenter, 
+            double x1,double y1, double *rx1, double *ry1,
+            double *rx2, double *ry2, int *cairo_lines, int *longest_line);
 
 
+extern int get_color(int value);
 extern void hash_inst(int what, int n);
 extern void hash_inst_pin(int what, int i, int j);
 extern void del_inst_table(void);
@@ -852,8 +859,9 @@ extern void hash_instances(void); /*  20171203 insert instance bbox in spatial h
 
 #if HAS_CAIRO==1
 extern int text_bbox_nocairo(const char * str,double xscale, double yscale,
-            short rot, short flip, int hcenter, int vcenter, double x1,double y1, double *rx1, double *ry1,
-            double *rx2, double *ry2);
+            short rot, short flip, int hcenter, int vcenter,
+            double x1,double y1, double *rx1, double *ry1,
+            double *rx2, double *ry2, int *cairo_lines, int *longest_line);
 #endif
 
 extern unsigned short select_object(double mx,double my, unsigned short sel_mode,
@@ -866,7 +874,7 @@ extern int Tcl_AppInit(Tcl_Interp *interp);
 extern int source_tcl_file(char *s);
 extern int callback(int event, int mx, int my, KeySym key,
                         int button, int aux, int state);
-extern void resetwin(int create_pixmap, int clear_pixmap, int force);
+extern void resetwin(int create_pixmap, int clear_pixmap, int force, int w, int h);
 extern void find_closest_net(double mx,double my);
 extern void find_closest_box(double mx,double my);
 extern void find_closest_arc(double mx,double my);
@@ -964,7 +972,7 @@ extern void pop_undo(int redo);
 extern void delete_undo(void);
 extern void clear_undo(void);
 extern void load_schematic(int load_symbol, const char *abs_name, int reset_undo);
-extern void link_symbols_to_instances(void);
+extern void link_symbols_to_instances(int from);
 extern void load_ascii_string(char **ptr, FILE *fd);
 extern void read_xschem_file(FILE *fd);
 extern char *read_line(FILE *fp, int dbg_level);
@@ -986,7 +994,9 @@ extern void find_inst_to_be_redrawn(const char *node);
 extern void find_inst_hash_clear(void);
 extern void pan(int what);
 extern void pan2(int what, int mx, int my);
-extern void zoom_box(int what);
+extern void zoom_rectangle(int what);
+extern void zoom_box(double x1, double y1, double x2, double y2, double factor);
+extern void save_restore_zoom(int save);
 extern void select_rect(int what, int select);
 extern void new_rect(int what);
 extern void new_polygon(int what);
@@ -1096,6 +1106,7 @@ extern void print_verilog_param(FILE *fd, int symbol);
 extern void hilight_net(int to_waveform);
 extern int hilight_netname(const char *name);
 extern void unhilight_net();
+extern void propagate_hilights(int set);
 extern void draw_hilight_net(int on_window);
 extern void display_hilights(char **str);
 extern void redraw_hilights(void);

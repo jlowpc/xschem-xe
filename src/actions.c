@@ -25,9 +25,9 @@
 #include <sys/wait.h>  /* waitpid */
 #endif
 
-void here(void)
+void here(int i)
 {
-  fprintf(stderr, "here\n");
+  fprintf(stderr, "here %d\n", i);
 }
 
 void set_modify(int mod)
@@ -414,7 +414,7 @@ void ask_new_file(void)
      Tcl_VarEval(interp, "update_recent_file {", fullname, "}", NULL);
      my_strdup(1, &xctx->sch_path[xctx->currsch],".");
      xctx->sch_inst_number[xctx->currsch] = 1;
-     zoom_full(1, 0);
+     zoom_full(1, 0, 1, 0.97);
     }
 }
 
@@ -531,6 +531,7 @@ void clear_drawing(void)
   my_free(693, &xctx->inst[i].prop_ptr);
   my_free(694, &xctx->inst[i].name);
   my_free(695, &xctx->inst[i].instname);
+  my_free(874, &xctx->inst[i].lab);
   delete_inst_node(i);
  }
  xctx->instances = 0;
@@ -838,6 +839,7 @@ int place_symbol(int pos, const char *symbol_name, double x, double y, short rot
   xctx->inst[n].ptr = i;
   xctx->inst[n].name=NULL;
   xctx->inst[n].instname=NULL;
+  xctx->inst[n].lab=NULL;
   dbg(1, "place_symbol(): entering my_strdup: name=%s\n",name);  /*  03-02-2000 */
   my_strdup(12, &xctx->inst[n].name ,name);
   dbg(1, "place_symbol(): done my_strdup: name=%s\n",name);  /*  03-02-2000 */
@@ -849,6 +851,7 @@ int place_symbol(int pos, const char *symbol_name, double x, double y, short rot
   xctx->inst[n].flip=symbol_name ? flip : 0;
 
   xctx->inst[n].flags=0;
+  xctx->inst[n].color=0;
   xctx->inst[n].sel=0;
   xctx->inst[n].node=NULL;
   xctx->inst[n].prop_ptr=NULL;
@@ -863,11 +866,11 @@ int place_symbol(int pos, const char *symbol_name, double x, double y, short rot
   dbg(1, "place_symbol(): done set_inst_prop()\n");  /*  03-02-2000 */
 
   my_strdup2(13, &xctx->inst[n].instname, get_tok_value(xctx->inst[n].prop_ptr,"name",0) );
-
+  if(!strcmp(get_tok_value(xctx->inst[n].prop_ptr,"highlight",0), "true")) xctx->inst[n].flags |= 4;
   type = xctx->sym[xctx->inst[n].ptr].type;
   cond= !type || !IS_LABEL_SH_OR_PIN(type);
   if(cond) xctx->inst[n].flags|=2;
-  else xctx->inst[n].flags &=~2;
+  else my_strdup(145, &xctx->inst[n].lab, get_tok_value(xctx->inst[n].prop_ptr,"lab",0));
 
   if(first_call && (draw_sym & 3) ) bbox(START, 0.0 , 0.0 , 0.0 , 0.0);
 
@@ -997,6 +1000,7 @@ void descend_schematic(int instnumber)
  int inst_mult, inst_number;
  int save_ok = 0;
 
+
  rebuild_selected_array();
  if(xctx->lastsel !=1 || xctx->sel_array[0].type!=ELEMENT)
  {
@@ -1101,10 +1105,11 @@ void descend_schematic(int instnumber)
   if(xctx->hilight_nets)
   {
     prepare_netlist_structs(0);
+    propagate_hilights(1);
     if(enable_drill) drill_hilight();
   }
   dbg(1, "descend_schematic(): before zoom(): prep_hash_inst=%d\n", xctx->prep_hash_inst);
-  zoom_full(1, 0);
+  zoom_full(1, 0, 1, 0.97);
  }
 }
 
@@ -1114,8 +1119,10 @@ void go_back(int confirm) /*  20171006 add confirm */
  int from_embedded_sym;
  int save_modified;
  char filename[PATH_MAX];
+ int prev_sch_type;
 
  save_ok=0;
+ prev_sch_type = netlist_type; /* if CAD_SYMBOL_ATTRS do not hilight_parent_pins */
  if(xctx->currsch>0)
  {
   /* if current sym/schematic is changed ask save before going up */
@@ -1149,7 +1156,10 @@ void go_back(int confirm) /*  20171006 add confirm */
   load_schematic(1, filename, 1);
   if(from_embedded_sym) xctx->modified=save_modified; /* to force ask save embedded sym in parent schematic */
 
-  hilight_parent_pins();
+  if(xctx->hilight_nets) {
+    if(prev_sch_type != CAD_SYMBOL_ATTRS) hilight_parent_pins();
+    propagate_hilights(1);
+  }
   if(enable_drill) drill_hilight();
   xctx->xorigin=xctx->zoom_array[xctx->currsch].x;
   xctx->yorigin=xctx->zoom_array[xctx->currsch].y;
@@ -1273,7 +1283,8 @@ void calc_drawing_bbox(xRect *boundbox, int selected)
    updatebbox(count,boundbox,&tmp);
  }
  if(has_x) for(i=0;i<xctx->texts;i++)
- {
+ { 
+   int no_of_lines, longest_line;
    if(selected == 1 && !xctx->text[i].sel) continue;
    if(selected == 2) continue;
    #if HAS_CAIRO==1
@@ -1283,7 +1294,7 @@ void calc_drawing_bbox(xRect *boundbox, int selected)
          xctx->text[i].yscale,xctx->text[i].rot, xctx->text[i].flip,
          xctx->text[i].hcenter, xctx->text[i].vcenter,
          xctx->text[i].x0, xctx->text[i].y0,
-         &tmp.x1,&tmp.y1, &tmp.x2,&tmp.y2) ) {
+         &tmp.x1,&tmp.y1, &tmp.x2,&tmp.y2, &no_of_lines, &longest_line) ) {
      count++;
      updatebbox(count,boundbox,&tmp);
    }
@@ -1318,10 +1329,10 @@ void calc_drawing_bbox(xRect *boundbox, int selected)
       }
     }
     else if( type && IS_LABEL_OR_PIN(type)) {
-      entry=bus_hilight_lookup( get_tok_value(xctx->inst[i].prop_ptr,"lab",0) , 0, XLOOKUP );
+      entry=bus_hilight_lookup(xctx->inst[i].lab, 0, XLOOKUP );
       if(entry) found = 1;
     }
-    else if( (xctx->inst[i].flags & 4) ) {
+    else if( (xctx->inst[i].color) ) {
       found = 1;
     }
     if(!found) continue;
@@ -1342,40 +1353,48 @@ void calc_drawing_bbox(xRect *boundbox, int selected)
 
 }
 
-void zoom_full(int dr, int sel)
+/* flags: bit0: invoke change_linewidth()/XSetLineAttributes, bit1: centered zoom */
+void zoom_full(int dr, int sel, int flags, double shrink)
 {
   xRect boundbox;
-  double yy1;
+  double yzoom;
+  double bboxw, bboxh, schw, schh;
 
-  if(change_lw) {
-    xctx->lw = 1.;
+  if(flags & 1) {
+    if(change_lw) {
+      xctx->lw = 1.;
+    }
+    xctx->areax1 = -2*INT_WIDTH(xctx->lw);
+    xctx->areay1 = -2*INT_WIDTH(xctx->lw);
+    xctx->areax2 = xctx->xrect[0].width+2*INT_WIDTH(xctx->lw);
+    xctx->areay2 = xctx->xrect[0].height+2*INT_WIDTH(xctx->lw);
+    xctx->areaw = xctx->areax2-xctx->areax1;
+    xctx->areah = xctx->areay2 - xctx->areay1;
   }
-  xctx->areax1 = -2*INT_WIDTH(xctx->lw);
-  xctx->areay1 = -2*INT_WIDTH(xctx->lw);
-  xctx->areax2 = xctx->xrect[0].width+2*INT_WIDTH(xctx->lw);
-  xctx->areay2 = xctx->xrect[0].height+2*INT_WIDTH(xctx->lw);
-  xctx->areaw = xctx->areax2-xctx->areax1;
-  xctx->areah = xctx->areay2 - xctx->areay1;
-
   calc_drawing_bbox(&boundbox, sel);
-  xctx->zoom=(boundbox.x2-boundbox.x1)/(xctx->areaw-4*INT_WIDTH(xctx->lw));
-  yy1=(boundbox.y2-boundbox.y1)/(xctx->areah-4*INT_WIDTH(xctx->lw));
-  if(yy1>xctx->zoom) xctx->zoom=yy1;
-  xctx->zoom*=1.05;
-  xctx->mooz=1/xctx->zoom;
-  xctx->xorigin=-boundbox.x1+(xctx->areaw-4*INT_WIDTH(xctx->lw))/40*xctx->zoom;
-  xctx->yorigin=(xctx->areah-4*INT_WIDTH(xctx->lw))*xctx->zoom-boundbox.y2 -
-                (xctx->areah-4*INT_WIDTH(xctx->lw))/40*xctx->zoom;
-  dbg(1, "zoom_full(): areaw=%d, areah=%d\n", xctx->areaw, xctx->areah);
+  schw = xctx->areaw-4*INT_WIDTH(xctx->lw);
+  schh = xctx->areah-4*INT_WIDTH(xctx->lw);
+  bboxw = boundbox.x2-boundbox.x1;
+  bboxh = boundbox.y2-boundbox.y1;
+  xctx->zoom = bboxw / schw;
+  yzoom = bboxh / schh;
+  if(yzoom > xctx->zoom) xctx->zoom = yzoom;
+  xctx->zoom /= shrink;
+  /* we do this here since change_linewidth may not be called  if flags & 1 == 0*/
+  cadhalfdotsize = CADHALFDOTSIZE +  0.04 * (cadsnap-10);
 
-  change_linewidth(-1.);
-  if(dr)
-  {
-   if(!has_x) return;
-   draw();
+  xctx->mooz = 1 / xctx->zoom;
+  if(flags & 2) {
+    xctx->xorigin = -boundbox.x1 + (xctx->zoom * schw - bboxw) / 2; /* centered */
+    xctx->yorigin = -boundbox.y1 + (xctx->zoom * schh - bboxh) / 2; /* centered */
+  } else {
+    xctx->xorigin = -boundbox.x1 + (1 - shrink) / 2 * xctx->zoom * schw;
+    xctx->yorigin = -boundbox.y1 + xctx->zoom * schh - bboxh - (1 - shrink) / 2 * xctx->zoom * schh;
   }
+  dbg(1, "zoom_full(): areaw=%d, areah=%d\n", xctx->areaw, xctx->areah);
+  if(flags & 1) change_linewidth(-1.);
+  if(dr && has_x) draw();
 }
-
 
 void view_zoom(double z)
 {
@@ -1412,7 +1431,68 @@ void view_unzoom(double z)
   draw();
 }
 
-void zoom_box(int what)
+void set_viewport_size(int w, int h, double lw)
+{
+    xctx->xrect[0].x = 0;
+    xctx->xrect[0].y = 0;
+    xctx->xschem_w = xctx->xrect[0].width = w;
+    xctx->xschem_h = xctx->xrect[0].height = h;
+    xctx->areax2 = w+2*INT_WIDTH(lw);
+    xctx->areay2 = h+2*INT_WIDTH(lw);
+    xctx->areax1 = -2*INT_WIDTH(lw);
+    xctx->areay1 = -2*INT_WIDTH(lw);
+    xctx->lw = lw;
+    xctx->areaw = xctx->areax2-xctx->areax1;
+    xctx->areah = xctx->areay2-xctx->areay1;
+}
+
+void save_restore_zoom(int save)
+{
+  static int savew, saveh;
+  static double savexor, saveyor, savezoom, savelw;
+
+  if(save) {
+    savew = xctx->xschem_w;
+    saveh = xctx->xschem_h;
+    savelw = xctx->lw;
+    savexor = xctx->xorigin;
+    saveyor = xctx->yorigin;
+    savezoom = xctx->zoom;
+  } else {
+    xctx->xrect[0].x = 0;
+    xctx->xrect[0].y = 0;
+    xctx->xschem_w = xctx->xrect[0].width = savew;
+    xctx->xschem_h = xctx->xrect[0].height = saveh;
+    xctx->areax2 = savew+2*INT_WIDTH(savelw);
+    xctx->areay2 = saveh+2*INT_WIDTH(savelw);
+    xctx->areax1 = -2*INT_WIDTH(savelw);
+    xctx->areay1 = -2*INT_WIDTH(savelw);
+    xctx->lw = savelw;
+    xctx->areaw = xctx->areax2-xctx->areax1;
+    xctx->areah = xctx->areay2-xctx->areay1;
+    xctx->xorigin = savexor;
+    xctx->yorigin = saveyor;
+    xctx->zoom = savezoom;
+    xctx->mooz = 1 / savezoom;
+  }
+}
+
+void zoom_box(double x1, double y1, double x2, double y2, double factor)
+{
+  double yy1;
+  if(factor == 0.) factor = 1.;
+  RECTORDER(x1,y1,x2,y2);
+  xctx->xorigin=-x1;xctx->yorigin=-y1;
+  xctx->zoom=(x2-x1)/(xctx->areaw-4*INT_WIDTH(xctx->lw));
+  yy1=(y2-y1)/(xctx->areah-4*INT_WIDTH(xctx->lw));
+  if(yy1>xctx->zoom) xctx->zoom=yy1;
+  xctx->zoom*= factor;
+  xctx->mooz=1/xctx->zoom;
+  xctx->xorigin=xctx->xorigin+xctx->areaw*xctx->zoom*(1-1/factor)/2;
+  xctx->yorigin=xctx->yorigin+xctx->areah*xctx->zoom*(1-1/factor)/2;
+}
+
+void zoom_rectangle(int what)
 {
   if( (what & START) )
   {
@@ -1431,7 +1511,7 @@ void zoom_box(int what)
     xctx->mooz=1/xctx->zoom;
     change_linewidth(-1.);
     draw();
-    dbg(1, "zoom_box(): coord: %.16g %.16g %.16g %.16g zoom=%.16g\n",
+    dbg(1, "zoom_rectangle(): coord: %.16g %.16g %.16g %.16g zoom=%.16g\n",
       xctx->nl_x1,xctx->nl_y1,xctx->mousex_snap, xctx->mousey_snap,xctx->zoom);
   }
   if(what & RUBBER)
@@ -1552,6 +1632,7 @@ void new_wire(int what, double mx_snap, double my_snap)
           xctx->nl_xx2 = xctx->nl_x2; xctx->nl_yy2 = xctx->nl_y2;
           ORDER(xctx->nl_xx1,xctx->nl_yy1,xctx->nl_xx2,xctx->nl_yy1);
           storeobject(-1, xctx->nl_xx1,xctx->nl_yy1,xctx->nl_xx2,xctx->nl_yy1,WIRE,0,0,NULL);
+          hash_wire(XINSERT, xctx->wires-1, 1);
           drawline(WIRELAYER,NOW, xctx->nl_xx1,xctx->nl_yy1,xctx->nl_xx2,xctx->nl_yy1, 0);
         }
         if(xctx->nl_yy2!=xctx->nl_yy1) {
@@ -1559,6 +1640,7 @@ void new_wire(int what, double mx_snap, double my_snap)
           xctx->nl_xx2 = xctx->nl_x2; xctx->nl_yy2 = xctx->nl_y2;
           ORDER(xctx->nl_xx2,xctx->nl_yy1,xctx->nl_xx2,xctx->nl_yy2);
           storeobject(-1, xctx->nl_xx2,xctx->nl_yy1,xctx->nl_xx2,xctx->nl_yy2,WIRE,0,0,NULL);
+          hash_wire(XINSERT, xctx->wires-1, 1);
           drawline(WIRELAYER,NOW, xctx->nl_xx2,xctx->nl_yy1,xctx->nl_xx2,xctx->nl_yy2, 0);
         }
       } else if(manhattan_lines==2) {
@@ -1567,6 +1649,7 @@ void new_wire(int what, double mx_snap, double my_snap)
           xctx->nl_xx2 = xctx->nl_x2; xctx->nl_yy2 = xctx->nl_y2;
           ORDER(xctx->nl_xx1,xctx->nl_yy1,xctx->nl_xx1,xctx->nl_yy2);
           storeobject(-1, xctx->nl_xx1,xctx->nl_yy1,xctx->nl_xx1,xctx->nl_yy2,WIRE,0,0,NULL);
+          hash_wire(XINSERT, xctx->wires-1, 1);
           drawline(WIRELAYER,NOW, xctx->nl_xx1,xctx->nl_yy1,xctx->nl_xx1,xctx->nl_yy2, 0);
         }
         if(xctx->nl_xx2!=xctx->nl_xx1) {
@@ -1574,6 +1657,7 @@ void new_wire(int what, double mx_snap, double my_snap)
           xctx->nl_xx2=xctx->nl_x2;xctx->nl_yy2=xctx->nl_y2;
           ORDER(xctx->nl_xx1,xctx->nl_yy2,xctx->nl_xx2,xctx->nl_yy2);
           storeobject(-1, xctx->nl_xx1,xctx->nl_yy2,xctx->nl_xx2,xctx->nl_yy2,WIRE,0,0,NULL);
+          hash_wire(XINSERT, xctx->wires-1, 1);
           drawline(WIRELAYER,NOW, xctx->nl_xx1,xctx->nl_yy2,xctx->nl_xx2,xctx->nl_yy2, 0);
         }
       } else {
@@ -1581,9 +1665,9 @@ void new_wire(int what, double mx_snap, double my_snap)
         xctx->nl_xx2 = xctx->nl_x2; xctx->nl_yy2 = xctx->nl_y2;
         ORDER(xctx->nl_xx1,xctx->nl_yy1,xctx->nl_xx2,xctx->nl_yy2);
         storeobject(-1, xctx->nl_xx1,xctx->nl_yy1,xctx->nl_xx2,xctx->nl_yy2,WIRE,0,0,NULL);
+        hash_wire(XINSERT, xctx->wires-1, 1);
         drawline(WIRELAYER,NOW, xctx->nl_xx1,xctx->nl_yy1,xctx->nl_xx2,xctx->nl_yy2, 0);
       }
-      hash_wire(XINSERT, xctx->wires-1, 1);
       /* xctx->prep_hash_wires = 0; */
       xctx->prep_hi_structs = 0;
 
@@ -2018,7 +2102,7 @@ void new_polygon(int what)
 #if HAS_CAIRO==1
 int text_bbox(const char *str, double xscale, double yscale,
     short rot, short flip, int hcenter, int vcenter, double x1,double y1, double *rx1, double *ry1,
-    double *rx2, double *ry2)
+    double *rx2, double *ry2, int *cairo_lines, int *cairo_longest_line)
 {
   int c=0;
   char *str_ptr, *s = NULL;
@@ -2027,7 +2111,9 @@ int text_bbox(const char *str, double xscale, double yscale,
   cairo_font_extents_t fext;
   double ww, hh, maxw;
 
-  if(!has_x) return 0;
+  /*                will not match exactly font metrics when doing ps/svg output , but better than nothing */
+  if(!has_x) return text_bbox_nocairo(str, xscale, yscale, rot, flip, hcenter, vcenter, x1, y1,
+                                      rx1, ry1, rx2, ry2, cairo_lines, cairo_longest_line);
   size = xscale*52.*cairo_font_scale;
 
   /*  if(size*xctx->mooz>800.) { */
@@ -2038,14 +2124,14 @@ int text_bbox(const char *str, double xscale, double yscale,
 
   ww=0.; hh=1.;
   c=0;
-  cairo_lines=1;
+  *cairo_lines=1;
   my_strdup2(1158, &s, str);
   str_ptr = s;
   while( s && s[c] ) {
     if(s[c] == '\n') {
       s[c]='\0';
       hh++;
-      cairo_lines++;
+      (*cairo_lines)++;
       if(str_ptr[0]!='\0') {
         cairo_text_extents(xctx->cairo_ctx, str_ptr, &ext);
         maxw = ext.x_advance > ext.width ? ext.x_advance : ext.width;
@@ -2064,7 +2150,7 @@ int text_bbox(const char *str, double xscale, double yscale,
   }
   my_free(1159, &s);
   hh = hh*fext.height*cairo_font_line_spacing;
-  cairo_longest_line = ww;
+  *cairo_longest_line = ww;
 
   *rx1=x1;*ry1=y1;
   if(hcenter) {
@@ -2101,25 +2187,27 @@ int text_bbox(const char *str, double xscale, double yscale,
 }
 int text_bbox_nocairo(const char * str,double xscale, double yscale,
     short rot, short flip, int hcenter, int vcenter, double x1,double y1, double *rx1, double *ry1,
-    double *rx2, double *ry2)
+    double *rx2, double *ry2, int *cairo_lines, int *cairo_longest_line)
 #else
 int text_bbox(const char * str,double xscale, double yscale,
     short rot, short flip, int hcenter, int vcenter, double x1,double y1, double *rx1, double *ry1,
-    double *rx2, double *ry2)
+    double *rx2, double *ry2, int *cairo_lines, int *cairo_longest_line)
 #endif
 {
  register int c=0, length =0;
  double w, h;
 
   w=0;h=1;
+  *cairo_lines = 1;
   if(str!=NULL) while( str[c] )
   {
-   if((str)[c++]=='\n') {h++;length=0;}
+   if((str)[c++]=='\n') {(*cairo_lines)++; h++; length=0;}
    else length++;
    if(length > w)
      w = length;
   }
   w *= (FONTWIDTH+FONTWHITESPACE)*xscale*nocairo_font_xscale;
+  *cairo_longest_line = w;
   h *= (FONTHEIGHT+FONTDESCENT+FONTWHITESPACE)*yscale*nocairo_font_yscale;
   *rx1=x1;*ry1=y1;
   if(     rot==0) *ry1-=nocairo_vert_correct;

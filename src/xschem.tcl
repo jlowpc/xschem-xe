@@ -116,15 +116,22 @@ proc netlist {source_file show netlist_file} {
  if {$tcl_debug <= -1} { puts "netlist: source_file=$source_file, netlist_type=$netlist_type" }
  if {$netlist_type eq {spice}} {
    if { $hspice_netlist == 1 } {
-     set hspice {-hspice}
+     set simulator {-hspice}
    } else {
-     set hspice {}
+     set simulator {}
+   }
+   if { [sim_is_xyce] } {
+     set xyce  {-xyce}
+   } else {
+     set xyce  {}
    }
    if {$flat_netlist==0} {
-     eval exec {awk -f ${XSCHEM_SHAREDIR}/spice.awk -- $hspice $source_file | \
-          awk -f ${XSCHEM_SHAREDIR}/break.awk > $netlist_dir/$netlist_file}
+     eval exec {awk -f ${XSCHEM_SHAREDIR}/spice.awk -- $simulator $xyce $source_file | \
+                awk -f ${XSCHEM_SHAREDIR}/break.awk | \
+                awk -f ${XSCHEM_SHAREDIR}/flatten_savenodes.awk -- $simulator $xyce \
+                > $netlist_dir/$netlist_file}
    } else {
-     eval exec {awk -f ${XSCHEM_SHAREDIR}/spice.awk -- $hspice $source_file | \
+     eval exec {awk -f ${XSCHEM_SHAREDIR}/spice.awk -- $simulator $xyce $source_file | \
           awk -f ${XSCHEM_SHAREDIR}/flatten.awk | awk -f ${XSCHEM_SHAREDIR}/break.awk > $netlist_dir/$netlist_file}
    }
    if ![string compare $show "show"] {
@@ -165,16 +172,20 @@ proc netlist {source_file show netlist_file} {
 
 # 20161121
 proc convert_to_pdf {filename dest} {
-  global a3page
-  if { $a3page == 1 } { set paper a3 } else { set paper a4 }
-  if { ![catch "exec ps2pdf -sPAPERSIZE=$paper $filename" msg] } {
-    # ps2pdf succeeded, so remove original .ps file
-    file rename -force [file rootname $filename].pdf $dest
-    if { ![xschem get debug_var] } {
-      file delete $filename
+  # puts "convert_to_pdf: $filename --> $dest"
+  if { [regexp -nocase {\.pdf$} $dest] } {
+    set pdffile [file rootname $filename].pdf]
+    if { ![catch "exec ps2pdf $filename $pdffile" msg] } {
+      file rename -force $pdffile $dest
+      # ps2pdf succeeded, so remove original .ps file
+      if { ![xschem get debug_var] } {
+        file delete $filename
+      }
+    } else {
+      puts stderr "problems converting postscript to pdf: $msg"
     }
   } else {
-    puts stderr "problems converting postscript to pdf: $msg"
+    file rename -force $filename $dest
   }
 }
 
@@ -651,12 +662,12 @@ proc xschem_server {sock addr port} {
   fileevent $sock readable [list xschem_getdata $sock]
 }
 
-
 ## given a path (x1.x2.m4) descend into x1.x2 and return m4 whether m4 found or not 
 proc descend_hierarchy {path {redraw 1}} {
-  # return to top level if not already there
   xschem set no_draw 1
+  # return to top level if not already there
   while { [xschem get currsch] } { xschem go_back } 
+  # recursively descend into sub-schematics
   while { [regexp {\.} $path] } {
     xschem unselect_all
     set inst $path
@@ -673,7 +684,6 @@ proc descend_hierarchy {path {redraw 1}} {
   if {$redraw} {xschem redraw}
   return $path
 }
-
 
 ## given a hierarchical instname name (x1.xamp.m1) go down in the hierarchy and 
 ## select the specified instance (m1).
@@ -756,7 +766,7 @@ proc reroute_inst {fullinst pinattr pinval newnet} {
 proc reroute_net {old new} {
   xschem push_undo
   xschem set no_undo 1
-  xschem clear_hilights
+  xschem unhilight
   probe_net $old
   set old_nopath [regsub {.*\.} $old {}]
   set new_nopath [regsub {.*\.} $new {}]
@@ -3180,7 +3190,9 @@ global env has_x
   bind $window_path <Double-Button-3> {xschem callback -3 %x %y 0 %b 0 %s}
   bind $window_path <Expose> {xschem callback %T %x %y 0 %w %h %s}
   bind $window_path <Configure> {xschem windowid; xschem callback %T %x %y 0 %w %h 0}
-  bind $window_path <ButtonPress> {xschem callback %T %x %y 0 %b 0 %s}
+  bind $window_path <ButtonPress> {
+    xschem callback %T %x %y 0 %b 0 %s
+  }
   if {$::OS == "Windows"} {
     bind $window_path <MouseWheel> {
       if {%D<0} {
@@ -3197,7 +3209,9 @@ global env has_x
     bind $window_path <Control-Alt-KeyPress> {xschem callback %T %x %y %N 0 0 [expr {$ControlMask + $Mod1Mask}]}
     bind $window_path <Shift-Alt-KeyPress> {xschem callback %T %x %y %N 0 0 [expr {$ShiftMask + $Mod1Mask}]}
   }
-  bind $window_path <KeyPress> {xschem callback %T %x %y %N 0 0 %s}
+  bind $window_path <KeyPress> {
+    xschem callback %T %x %y %N 0 0 %s
+  }
   bind $window_path <KeyRelease> {xschem callback %T %x %y %N 0 0 %s} ;# 20161118
   bind $window_path <Motion> {xschem callback %T %x %y 0 0 0 %s}
   bind $window_path  <Enter> {xschem callback %T %x %y 0 0 0 0 }
@@ -3412,16 +3426,17 @@ set_ne netlist_type vhdl
 set_ne netlist_show 0
 set_ne color_ps 0
 set_ne only_probes 0  ; # 20110112
-set_ne a3page 0
 set_ne fullscreen 0
 set_ne unzoom_nodrift 1
-set_ne change_lw 0
+set_ne change_lw 1
+set_ne line_width 0
 set_ne draw_window 0
 set_ne incr_hilight 1
 set_ne enable_stretch 0
 set_ne horizontal_move 0 ; # 20171023
 set_ne vertical_move 0 ; # 20171023
 set_ne draw_grid 1
+set_ne big_grid_points 0
 set_ne snap 10
 set_ne grid 20
 set_ne persistent_command 0
@@ -3475,8 +3490,8 @@ set_ne cairo_vert_correct 0
 set_ne nocairo_vert_correct 0
 
 # Arial, Monospace
-set_ne cairo_font_name {Sans Serif}
-set_ne svg_font_name {Sans Serif}
+set_ne cairo_font_name {Sans-Serif}
+set_ne svg_font_name {Sans-Serif}
 
 # has_cairo set by c program if cairo enabled
 set has_cairo 0 
@@ -3683,7 +3698,7 @@ if { ( $::OS== "Windows" || [string length [lindex [array get env DISPLAY] 1] ] 
   .menubar.file.menu add command -label "Save as symbol" \
      -command "xschem saveas {} SYMBOL" -accelerator {Ctrl+Alt+S}
   # added svg, png 20171022
-  .menubar.file.menu add command -label "PDF Export" -command "xschem print pdf" -accelerator {*}
+  .menubar.file.menu add command -label "PDF/PS Export" -command "xschem print pdf" -accelerator {*}
   .menubar.file.menu add command -label "PNG Export" -command "xschem print png" -accelerator {Ctrl+*}
   .menubar.file.menu add command -label "SVG Export" -command "xschem print svg" -accelerator {Alt+*}
   .menubar.file.menu add separator
@@ -3692,10 +3707,6 @@ if { ( $::OS== "Windows" || [string length [lindex [array get env DISPLAY] 1] ] 
   .menubar.option.menu add checkbutton -label "Color Postscript/SVG" -variable color_ps \
      -command {
         if { $color_ps==1 } {xschem set color_ps 1} else { xschem set color_ps 0}
-     }
-  .menubar.option.menu add checkbutton -label "A3 page" -variable a3page \
-     -command {
-        if { $a3page==1 } {xschem set a3page 1} else { xschem set a3page 0}
      }
   .menubar.option.menu add checkbutton -label "Debug mode" -variable menu_tcl_debug \
      -command {
@@ -3733,12 +3744,21 @@ if { ( $::OS== "Windows" || [string length [lindex [array get env DISPLAY] 1] ] 
          set bus_replacement_char $tmp_bus_char
        } 
      }
-  .menubar.option.menu add checkbutton -label "Verilog 2001 netlist variant" -variable verilog_2001 \
-  
+  .menubar.option.menu add checkbutton -label "Verilog 2001 netlist variant" -variable verilog_2001
   .menubar.option.menu add checkbutton -label "Draw grid" -variable draw_grid \
      -accelerator {%} \
      -command {
        if { $draw_grid == 1} { xschem set draw_grid 1; xschem redraw} else { xschem set draw_grid 0; xschem redraw}
+     }
+  .menubar.option.menu add checkbutton -label "Variable grid point size" -variable big_grid_points \
+     -command {
+       if { $big_grid_points == 1} {
+         xschem set big_grid_points 1
+         xschem redraw
+       } else {
+         xschem set big_grid_points 0
+         xschem redraw
+       }
      }
   .menubar.option.menu add checkbutton -label "Symbol text" -variable sym_txt \
      -accelerator {Ctrl+B} \
@@ -3763,10 +3783,6 @@ if { ( $::OS== "Windows" || [string length [lindex [array get env DISPLAY] 1] ] 
        -command {
          input_line "Enter Symbol width ($symbol_width)" "set symbol_width" $symbol_width 
        }
-  .menubar.option.menu add checkbutton -label "Allow duplicated instance names (refdes)" \
-      -variable disable_unique_names -command {
-         xschem set disable_unique_names $disable_unique_names
-      }
 
   .menubar.option.menu add separator
   .menubar.option.menu add radiobutton -label "Spice netlist" -variable netlist_type -value spice \
@@ -3952,7 +3968,10 @@ if { ( $::OS== "Windows" || [string length [lindex [array get env DISPLAY] 1] ] 
           -command "xschem print_hilight_net 2" -accelerator Alt-Shift-J
   .menubar.sym.menu add command -label "Create pins from highlight nets" \
           -command "xschem print_hilight_net 0" -accelerator Ctrl-J
-
+  .menubar.sym.menu add checkbutton -label "Allow duplicated instance names (refdes)" \
+      -variable disable_unique_names -command {
+         xschem set disable_unique_names $disable_unique_names
+      }
   .menubar.tools.menu add checkbutton -label "Remember last command" -variable persistent_command \
      -accelerator {} \
      -command {
@@ -4003,7 +4022,7 @@ if { ( $::OS== "Windows" || [string length [lindex [array get env DISPLAY] 1] ] 
   .menubar.hilight.menu add command -label {Select hilight nets / pins} -command "xschem select_hilight_net" \
      -accelerator Alt+K
   .menubar.hilight.menu add command -label {Un-highlight all net/pins} \
-     -command "xschem clear_hilights" -accelerator Shift+K
+     -command "xschem unhilight" -accelerator Shift+K
   .menubar.hilight.menu add command -label {Un-highlight selected net/pins} \
      -command "xschem unhilight" -accelerator Ctrl+K
   # 20160413

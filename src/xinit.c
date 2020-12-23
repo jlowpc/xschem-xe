@@ -27,7 +27,6 @@
 
 static int init_done=0; /* 20150409 to avoid double call by Xwindows close and TclExitHandler */
 static XSetWindowAttributes winattr;
-static int screen_number;
 static Tk_Window  tkwindow, mainwindow;
 static XWMHints *hints_ptr;
 static Window topwindow;
@@ -362,6 +361,8 @@ void free_xschem_data()
   my_free(1133, &xctx->maxl);
   my_free(1108, &xctx->sel_array);
   for(i=0;i<CADMAXHIER;i++) my_free(1139, &xctx->sch_path[i]);
+  my_free(1099, &xctx->gridpoint);
+  my_free(1214, &xctx->biggridpoint);
   my_free(269, &xctx);
 }
 
@@ -422,9 +423,9 @@ void alloc_xschem_data()
     xctx->hilight_table[i] = NULL;
     xctx->node_redraw_table[i] = NULL; /* move.c */
   }
-  xctx->inst_color=NULL;
   xctx->window = xctx->save_pixmap = 0;
   xctx->xrect[0].width = xctx->xrect[0].height = xctx->xrect[0].x = xctx->xrect[0].y = 0;
+  xctx->xschem_w = xctx->xschem_h = 0;
 #if HAS_CAIRO==1
   xctx->cairo_ctx = xctx->cairo_save_ctx = NULL;
   xctx->cairo_sfc = xctx->cairo_save_sfc = NULL;
@@ -507,6 +508,8 @@ void alloc_xschem_data()
   xctx->lines=my_calloc(635, cadlayers, sizeof(int));
   xctx->maxsel=MAXGROUP;
   xctx->sel_array=my_calloc(619, xctx->maxsel, sizeof(Selected));
+  xctx->biggridpoint=(XSegment*)my_calloc(1213, CADMAXGRIDPOINTS,sizeof(XSegment));
+  xctx->gridpoint=(XPoint*)my_calloc(608, CADMAXGRIDPOINTS,sizeof(XPoint));
 }
 
 void alloc_data()
@@ -515,7 +518,6 @@ void alloc_data()
 
  alloc_xschem_data();
  /* global context / graphic preferences/settings */
- gridpoint=(XPoint*)my_calloc(608, CADMAXGRIDPOINTS,sizeof(XPoint));
  color_array=my_calloc(637, cadlayers, sizeof(char*));
  gc=my_calloc(638, cadlayers, sizeof(GC));
  gcstipple=my_calloc(639, cadlayers, sizeof(GC));
@@ -542,7 +544,7 @@ void xwin_exit(void)
  delete_hilight_net();
  get_unnamed_node(0, 0, 0);
  if(has_x) {
-    resetwin(0, 1, 1); /* create_pixmap, clear_pixmap, force */
+    resetwin(0, 1, 1, 0, 0); /* create_pixmap, clear_pixmap, force */
     dbg(1, "xwin_exit(): Releasing pixmaps and cairo data structures\n");
     for(i=0;i<cadlayers;i++)
     {
@@ -580,7 +582,6 @@ void xwin_exit(void)
  my_free(1121, &active_layer);
  my_free(1122, &pixdata);
  my_free(1123, &enable_layer);
- my_free(1099, &gridpoint);
  my_free(1135, &gc);
  my_free(1136, &gcstipple);
  my_free(1137, &color_array);
@@ -742,7 +743,7 @@ void delete_schematic_data(void)
   get_unnamed_node(0, 0, 0); /* net### enumerator used for netlisting */
   remove_symbols();
   clear_drawing();    /* delete instances, wires, lines, rects, ... */
-  resetwin(0, 1, 1);  /* delete preview pixmap, delete cairo surfaces */
+  resetwin(0, 1, 1, 0, 0);  /* delete preview pixmap, delete cairo surfaces */
   free_xschem_data(); /* delete the xctx struct */
 }
 
@@ -774,11 +775,11 @@ void preview_window(const char *what, const char *tk_win_path, const char *filen
       alloc_xschem_data(); /* alloc data into xctx */
       preview_xctx = xctx;
       preview_xctx->window = pre_window;
-      resetwin(1, 0, 1);  /* create preview pixmap.  resetwin(create_pixmap, clear_pixmap, force) */
+      resetwin(1, 0, 1, 0, 0);  /* create preview pixmap.  resetwin(create_pixmap, clear_pixmap, force) */
       dbg(1, "preview_window() draw, load schematic\n");
       load_schematic(1,filename, 0);
     }
-    zoom_full(1, 0); /* draw */
+    zoom_full(1, 0, 1, 0.97); /* draw */
     xctx = save_xctx;
   }
   else if(!strcmp(what, "destroy")) {
@@ -821,9 +822,9 @@ void new_schematic(const char *what, const char *tk_win_path, const char *filena
     save_xctx[cnt] = xctx;
     dbg(1, "new_schematic() draw, load schematic\n");
     xctx->window = new_window;
-    resetwin(1, 0, 1);  /* create preview pixmap.  resetwin(create_pixmap, clear_pixmap, force) */
+    resetwin(1, 0, 1, 0, 0);  /* create preview pixmap.  resetwin(create_pixmap, clear_pixmap, force) */
     load_schematic(1,filename, 0);
-    zoom_full(1, 0); /* draw */
+    zoom_full(1, 0, 1, 0.97); /* draw */
   } else if(!strcmp(what, "redraw")) {
     Xschem_ctx *save;
     save = xctx;
@@ -962,22 +963,38 @@ void resetcairo(int create, int clear, int force_or_resize)
   #endif /* HAS_CAIRO */
 }
 
-void resetwin(int create_pixmap, int clear_pixmap, int force)
+/* w and h (if > 0 ) parameters force reset pixmap to w x h, regardless of window size */
+void resetwin(int create_pixmap, int clear_pixmap, int force, int w, int h)
 {
   unsigned int width, height;
   XWindowAttributes wattr;
+  int status;
+  #ifndef __unix__
+  HWND hwnd = Tk_GetHWND(xctx->window);
+  RECT rct;
+  #endif
+
   if(has_x) {
-#ifdef __unix__
-    if( XGetWindowAttributes(display, xctx->window, &wattr) ) {
-      width = wattr.width;
-      height = wattr.height;
-#else
-    HWND hwnd = Tk_GetHWND(xctx->window);
-    RECT rct;
-    if (GetWindowRect(hwnd, &rct)) {
-      width = rct.right - rct.left;
-      height = rct.bottom - rct.top;
-#endif
+    if(w && h) {
+      width = w;
+      height = h;
+      status = 1;
+    } else {
+      #ifdef __unix__
+      status = XGetWindowAttributes(display, xctx->window, &wattr);
+      if(status) {
+        width = wattr.width;
+        height = wattr.height;
+      }
+      #else
+      status = GetWindowRect(hwnd, &rct);
+      if(status) {
+        width = rct.right - rct.left;
+        height = rct.bottom - rct.top;
+      }
+      #endif
+    }
+    if(status) {
       /* if(wattr.map_state==IsUnmapped) return; */
       xctx->xschem_w=width;
       xctx->xschem_h=height;
@@ -1019,7 +1036,7 @@ void resetwin(int create_pixmap, int clear_pixmap, int force)
       }
     }
     if(pending_fullzoom) {
-      zoom_full(0, 0);
+      zoom_full(0, 0, 1, 0.97);
       pending_fullzoom=0;
     }
     dbg(1, "resetwin(): Window reset\n");
@@ -1031,6 +1048,7 @@ int Tcl_AppInit(Tcl_Interp *inter)
  char name[PATH_MAX]; /* overflow safe 20161122 */
  char tmp[2*PATH_MAX+100]; /* 20161122 overflow safe */
  int i;
+ double l_width;
  struct stat buf;
  const char *home_buff;
  int running_in_src_dir;
@@ -1309,11 +1327,7 @@ int Tcl_AppInit(Tcl_Interp *inter)
   else if(!strcmp(tclgetvar("netlist_type"),"symbol") ) netlist_type=CAD_SYMBOL_ATTRS;
   else netlist_type=CAD_SPICE_NETLIST;
  } else {
-  if(netlist_type==CAD_VHDL_NETLIST)  tclsetvar("netlist_type","vhdl");
-  else if(netlist_type==CAD_VERILOG_NETLIST)  tclsetvar("netlist_type","verilog");
-  else if(netlist_type==CAD_TEDAX_NETLIST)  tclsetvar("netlist_type","tedax");
-  else if(netlist_type==CAD_SYMBOL_ATTRS)  tclsetvar("netlist_type","symbol");
-  else tclsetvar("netlist_type","spice");
+   override_netlist_type(-1); /* set tcl netlist_type */
  }
 
  split_files=atoi(tclgetvar("split_files"));
@@ -1328,15 +1342,12 @@ int Tcl_AppInit(Tcl_Interp *inter)
    tclsetvar("color_ps",tmp);
  }
  change_lw=atoi(tclgetvar("change_lw"));
+ l_width=atoi(tclgetvar("line_width"));
+ if(change_lw == 1) l_width = 0.0;
  draw_window=atoi(tclgetvar("draw_window"));
  incr_hilight=atoi(tclgetvar("incr_hilight"));
- if(a3page==-1)
-   a3page=atoi(tclgetvar("a3page"));
- else  {
-   my_snprintf(tmp, S(tmp), "%d",a3page);
-   tclsetvar("a3page",tmp);
- }
  enable_stretch=atoi(tclgetvar("enable_stretch"));
+ big_grid_points=atoi(tclgetvar("big_grid_points"));
  draw_grid=atoi(tclgetvar("draw_grid"));
  cadlayers=atoi(tclgetvar("cadlayers"));
  if(debug_var==-10) debug_var=0;
@@ -1470,7 +1481,7 @@ int Tcl_AppInit(Tcl_Interp *inter)
     #if HAS_XRENDER==1
     render_format = XRenderFindStandardFormat(display, PictStandardRGB24);
     #endif
-    resetwin(1, 0, 1);
+    resetwin(1, 0, 1, 0, 0);
     #if HAS_CAIRO==1
     /* load font from tcl 20171112 */
     tcleval("xschem set svg_font_name $svg_font_name");
@@ -1478,7 +1489,7 @@ int Tcl_AppInit(Tcl_Interp *inter)
     tclsetvar("has_cairo","1");
     #endif
 
-    change_linewidth(0.);
+    change_linewidth(l_width);
     dbg(1, "Tcl_AppInit(): done xinit()\n");
     winattr.backing_store = WhenMapped;
     /* winattr.backing_store = NotUseful;*/
@@ -1567,7 +1578,7 @@ int Tcl_AppInit(Tcl_Interp *inter)
        to tcl is_xschem_file that could change netlist_type to symbol */
     load_schematic(1, f, !do_netlist);
     Tcl_VarEval(interp, "update_recent_file {", f, "}", NULL);
- } else {
+ } else if(!tcl_script[0]) {
    char * tmp;
    char filename[PATH_MAX];
    tmp = (char *) tclgetvar("XSCHEM_START_WINDOW");
@@ -1580,7 +1591,7 @@ int Tcl_AppInit(Tcl_Interp *inter)
 
 
 
- zoom_full(0, 0);   /* Necessary to tell xschem the
+ zoom_full(0, 0, 1, 0.97);   /* Necessary to tell xschem the
                   * initial area to display
                   */
  pending_fullzoom=1;
@@ -1611,8 +1622,21 @@ int Tcl_AppInit(Tcl_Interp *inter)
      dbg(0, "xschem: can't do a print without a filename\n");
      tcleval( "exit");
    }
-   if(do_print==1) ps_draw();
-   else if(do_print == 2) {
+   if(do_print==1) {
+
+     xctx->xrect[0].x = 0;
+     xctx->xrect[0].y = 0;
+     xctx->xschem_w = xctx->xrect[0].width = 842;
+     xctx->xschem_h = xctx->xrect[0].height = 595;
+     xctx->areax2 = 842+2;
+     xctx->areay2 = 595+2;
+     xctx->areax1 = -2;
+     xctx->areay1 = -2;
+     xctx->areaw = xctx->areax2-xctx->areax1;
+     xctx->areah = xctx->areay2-xctx->areay1;
+     zoom_full(0, 0, 2, 0.97);
+     ps_draw();
+   } else if(do_print == 2) {
      if(!has_x) {
        dbg(0, "xschem: can not do a png export if no X11 present / Xserver running (check if DISPLAY set).\n");
      } else {
@@ -1640,7 +1664,8 @@ int Tcl_AppInit(Tcl_Interp *inter)
  }
 
  if(tcl_script[0]) {
-   Tcl_VarEval(interp, "source ", tcl_script, NULL);
+   
+   Tcl_VarEval(interp, "update; source ", tcl_script, NULL);
  }
 
  if(quit) {

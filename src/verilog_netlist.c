@@ -112,7 +112,7 @@ void global_verilog_netlist(int global)  /* netlister driver */
   {
    if(tmp) fprintf(fd, " ,\n");
    tmp++;
-   str_tmp = get_tok_value(xctx->inst[i].prop_ptr,"lab",0);
+   str_tmp = xctx->inst[i].lab ? xctx->inst[i].lab : "";
    fprintf(fd, "  %s", str_tmp ? str_tmp : "(NULL)");
   }
  }
@@ -130,7 +130,7 @@ void global_verilog_netlist(int global)  /* netlister driver */
   {
    if(tmp) fprintf(fd, " ,\n");
    tmp++;
-   str_tmp = get_tok_value(xctx->inst[i].prop_ptr,"lab",0);
+   str_tmp = xctx->inst[i].lab ? xctx->inst[i].lab : "";
    fprintf(fd, "  %s", str_tmp ? str_tmp : "(NULL)");
   }
  }
@@ -148,7 +148,7 @@ void global_verilog_netlist(int global)  /* netlister driver */
   {
    if(tmp) fprintf(fd, " ,\n");
    tmp++;
-   str_tmp = get_tok_value(xctx->inst[i].prop_ptr,"lab",0);
+   str_tmp = xctx->inst[i].lab ? xctx->inst[i].lab : "";
    fprintf(fd, "  %s", str_tmp ? str_tmp : "<NULL>");
   }
  }
@@ -181,7 +181,7 @@ void global_verilog_netlist(int global)  /* netlister driver */
    my_strdup(550, &port_value,get_tok_value(xctx->inst[i].prop_ptr,"value",0));
    my_strdup(551, &sig_type,get_tok_value(xctx->inst[i].prop_ptr,"verilog_type",0));
    if(!sig_type || sig_type[0]=='\0') my_strdup(552, &sig_type,"wire"); /* 20070720 changed reg to wire */
-   str_tmp = get_tok_value(xctx->inst[i].prop_ptr,"lab",0);
+   str_tmp = xctx->inst[i].lab ? xctx->inst[i].lab : "";
    fprintf(fd, "  output %s ;\n", str_tmp ? str_tmp : "(NULL)");
    fprintf(fd, "  %s %s ", sig_type, str_tmp ? str_tmp : "(NULL)");
 
@@ -204,7 +204,7 @@ void global_verilog_netlist(int global)  /* netlister driver */
    my_strdup(554, &port_value,get_tok_value(xctx->inst[i].prop_ptr,"value",0));
    my_strdup(555, &sig_type,get_tok_value(xctx->inst[i].prop_ptr,"verilog_type",0));
    if(!sig_type || sig_type[0]=='\0') my_strdup(556, &sig_type,"wire");
-   str_tmp = get_tok_value(xctx->inst[i].prop_ptr,"lab",0);
+   str_tmp = xctx->inst[i].lab ? xctx->inst[i].lab : "";
    fprintf(fd, "  inout %s ;\n", str_tmp ? str_tmp : "(NULL)");
    fprintf(fd, "  %s %s ", sig_type, str_tmp ? str_tmp : "(NULL)");
 
@@ -227,7 +227,7 @@ void global_verilog_netlist(int global)  /* netlister driver */
    my_strdup(558, &port_value,get_tok_value(xctx->inst[i].prop_ptr,"value",0));
    my_strdup(559, &sig_type,get_tok_value(xctx->inst[i].prop_ptr,"verilog_type",0));
    if(!sig_type || sig_type[0]=='\0') my_strdup(560, &sig_type,"wire");
-   str_tmp = get_tok_value(xctx->inst[i].prop_ptr,"lab",0);
+   str_tmp = xctx->inst[i].lab ? xctx->inst[i].lab : "";
    fprintf(fd, "  input %s ;\n", str_tmp ? str_tmp : "<NULL>");
    fprintf(fd, "  %s %s ", sig_type, str_tmp ? str_tmp : "<NULL>");
 
@@ -271,10 +271,11 @@ void global_verilog_netlist(int global)  /* netlister driver */
 
  /* preserve current level instance flags before descending hierarchy for netlisting, restore later */
  stored_flags = my_calloc(150, xctx->instances, sizeof(unsigned int));
- for(i=0;i<xctx->instances;i++) stored_flags[i] = xctx->inst[i].flags & 4;
+ for(i=0;i<xctx->instances;i++) stored_flags[i] = xctx->inst[i].color;
 
  if(global)
  {
+   int saved_hilight_nets = xctx->hilight_nets;
    unselect_all();
    remove_symbols(); /* 20161205 ensure all unused symbols purged before descending hierarchy */
 
@@ -316,12 +317,12 @@ void global_verilog_netlist(int global)  /* netlister driver */
    prepare_netlist_structs(1); /* so 'lab=...' attributes for unnamed nets are set */
    /* symbol vs schematic pin check, we do it here since now we have ALL symbols loaded */
    sym_vs_sch_pins();
-
-   /* restore hilight flags from errors found analyzing top level before descending hierarchy */
-   for(i=0;i<xctx->instances; i++) xctx->inst[i].flags |= stored_flags[i];
-
-   draw_hilight_net(1);
+   if(!xctx->hilight_nets) xctx->hilight_nets = saved_hilight_nets;
  }
+ /* restore hilight flags from errors found analyzing top level before descending hierarchy */
+ for(i=0;i<xctx->instances; i++) xctx->inst[i].color = stored_flags[i];
+ propagate_hilights(1);
+ draw_hilight_net(1);
  my_free(1074, &stored_flags);
 
  dbg(1, "global_verilog_netlist(): starting awk on netlist!\n");
@@ -382,7 +383,8 @@ void verilog_block_netlist(FILE *fd, int i)
 
   if((str_tmp = get_tok_value(xctx->sym[i].prop_ptr, "schematic",0 ))[0]) {
     my_strncpy(filename, abs_sym_path(str_tmp, ""), S(filename));
-    load_schematic(1,filename, 0);
+    verilog_stop? load_schematic(0,filename, 0) :
+                  load_schematic(1,filename, 0);
   } else {
     verilog_stop? load_schematic(0, add_ext(abs_sym_path(xctx->sym[i].name, ""), ".sch"), 0) :
                   load_schematic(1, add_ext(abs_sym_path(xctx->sym[i].name, ""), ".sch"), 0);
@@ -505,17 +507,17 @@ void verilog_netlist(FILE *fd , int verilog_stop)
  int i;
  char *type=NULL;
 
- xctx->prep_net_structs = 0;
- prepare_netlist_structs(1);
- /* set_modify(1); */ /* 20160302 prepare_netlist_structs could change schematic (wire node naming for example) */
- dbg(2, "verilog_netlist(): end prepare_netlist_structs\n");
- traverse_node_hash();  /* print all warnings about unconnected floatings etc */
+ if(!verilog_stop) {
+   xctx->prep_net_structs = 0;
+   prepare_netlist_structs(1);
+   dbg(2, "verilog_netlist(): end prepare_netlist_structs\n");
+   traverse_node_hash();  /* print all warnings about unconnected floatings etc */
+   dbg(2, "verilog_netlist(): end traverse_node_hash\n");
+ }
 
- dbg(2, "verilog_netlist(): end traverse_node_hash\n");
-
- fprintf(fd,"---- begin signal list\n");
+ fprintf(fd,"---- begin signal list\n"); /* these are needed even if signal list empty */
  if(!verilog_stop) print_verilog_signals(fd);
- fprintf(fd,"---- end signal list\n");
+ fprintf(fd,"---- end signal list\n");   /* these are needed even if signal list empty */
 
 
  if(!verilog_stop)
@@ -547,5 +549,5 @@ void verilog_netlist(FILE *fd , int verilog_stop)
    my_free(1084, &type);
  }
  dbg(1, "verilog_netlist():       end\n");
- if(!netlist_count) redraw_hilights(); /*draw_hilight_net(1); */
+ if(!verilog_stop && !netlist_count) redraw_hilights(); /*draw_hilight_net(1); */
 }

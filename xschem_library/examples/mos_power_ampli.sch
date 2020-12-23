@@ -1,21 +1,19 @@
-v {xschem version=2.9.8 file_version=1.2}
+v {xschem version=2.9.9 file_version=1.2 }
 G {}
 K {}
 V {}
-S {
-* .probe v(ga,sa) v(gb,sb)
-* .probe p(q*) p(r*) i(r*) p(xm1) p(xm2) i(d*)}
+S {}
 E {}
 L 15 270 -460 340 -390 {}
 L 15 270 -330 340 -390 {}
 T {ANALOG AUDIO AMPLIFIER
-N-Channel only power stage} 430 -270 0 0 0.5 0.5 {layer=8 font="Liberation Sans"}
+N-Channel only power stage} 430 -270 0 0 0.5 0.5 {layer=8}
 N 180 -500 180 -470 {lab=E9}
 N 260 -470 340 -470 {lab=E9}
 N 340 -500 340 -470 {lab=E9}
 N 1110 -700 1110 -670 {lab=SA}
 N 840 -1020 840 -980 {lab=E4}
-N 1110 -590 1110 -570 {lab=OUTI}
+N 1110 -590 1110 -570 {lab=xxx}
 N 1110 -510 1110 -470 {lab=#net1}
 N 180 -1020 180 -980 {lab=E1}
 N 390 -790 520 -790 {lab=C2}
@@ -51,9 +49,9 @@ N 260 -180 260 -130 {lab=E3}
 N 150 -150 150 -70 {lab=VSS}
 N 50 -150 50 -70 {lab=VSS}
 N 50 -70 150 -70 {lab=VSS}
-N 690 -600 1110 -600 {lab=OUTI}
+N 690 -600 1110 -600 {lab=xxx}
 N 180 -470 260 -470 {lab=E9}
-N 1110 -610 1110 -600 {lab=OUTI}
+N 1110 -610 1110 -600 {lab=xxx}
 N 860 -380 1110 -380 {lab=SB}
 N 860 -700 1110 -700 {lab=SA}
 N 1240 -1120 1240 -960 {lab=VBOOST}
@@ -66,8 +64,8 @@ N 220 -630 340 -630 {lab=C9}
 N 180 -600 180 -560 {lab=C5}
 N 1110 -320 1110 -280 {lab=VNN}
 N 1330 -590 1390 -590 {lab=OUT}
-N 1110 -590 1240 -590 {lab=OUTI}
-N 1110 -600 1110 -590 {lab=OUTI}
+N 1110 -590 1240 -590 {lab=xxx}
+N 1110 -600 1110 -590 {lab=xxx}
 N 340 -860 340 -820 {lab=#net4}
 N 560 -860 560 -820 {lab=#net5}
 N 560 -1020 560 -920 {lab=E6}
@@ -75,16 +73,16 @@ N 340 -1020 340 -920 {lab=E2}
 N 260 -280 260 -240 {lab=C3}
 N 730 -440 770 -440 {lab=#net6}
 N 560 -440 670 -440 {lab=C8}
-N 690 -650 690 -600 {lab=OUTI}
+N 690 -650 690 -600 {lab=xxx}
 N 690 -730 690 -710 {lab=#net7}
 N 180 -840 180 -660 {lab=C7}
 N 840 -860 840 -840 {lab=E11}
-N 1240 -810 1240 -590 {lab=OUTI}
+N 1240 -810 1240 -590 {lab=xxx}
 N 860 -760 860 -750 {lab=GA}
 N 860 -710 860 -700 {lab=SA}
 N 860 -440 860 -430 {lab=GB}
 N 860 -390 860 -380 {lab=SB}
-N 1240 -590 1270 -590 {lab=OUTI}
+N 1240 -590 1270 -590 {lab=xxx}
 N 830 -440 860 -440 {lab=GB}
 N 840 -760 860 -760 {lab=GA}
 N 340 -1180 340 -1080 { lab=VPP}
@@ -218,8 +216,8 @@ C {ammeter.sym} 700 -440 3 0 {name=v4  net_name=true current=0.01939}
 C {ammeter.sym} 690 -680 0 0 {name=v5  net_name=true current=0.006273}
 C {ammeter.sym} 180 -870 0 1 {name=v6  net_name=true current=0.01952}
 C {ammeter.sym} 840 -890 0 0 {name=v7  net_name=true current=0.01947}
-C {spice_probe_vdiff.sym} 860 -410 0 0 {name=p37 analysis=tran voltage=3.684}
-C {spice_probe_vdiff.sym} 860 -730 0 0 {name=p38 analysis=tran voltage=3.685}
+C {spice_probe_vdiff.sym} 860 -410 0 0 {name=p37 voltage=3.684}
+C {spice_probe_vdiff.sym} 860 -730 0 0 {name=p38 voltage=3.685}
 C {ammeter.sym} 1300 -590 3 0 {name=v8  net_name=true current=0.02782}
 C {opin.sym} 600 -130 0 0 {name=p5 lab=OUT}
 C {ipin.sym} 530 -180 0 0 {name=p1 lab=MINUS}
@@ -408,3 +406,9 @@ load $netlist_dir/$rawfile
 table_set $rawfile\\"
 unset rawfile"
 }
+C {spice_probe.sym} 1010 -760 0 0 {name=p40 }
+C {spice_probe.sym} 1000 -440 0 0 {name=p56 }
+C {spice_probe.sym} 420 -790 0 0 {name=p57}
+C {spice_probe.sym} 280 -950 0 0 {name=p58 }
+C {spice_probe.sym} 180 -720 0 0 {name=p59 }
+C {spice_probe.sym} 1020 -1120 0 0 {name=p62 }
