@@ -49,23 +49,23 @@ int textclip(int x1,int y1,int x2,int y2,
 
 void print_image()
 {
-  int modified_save, save_draw_grid;
+  int save_draw_grid;
   char cmd[PATH_MAX+100];
+  static char lastdir[PATH_MAX] = "";
   const char *r;
-  char *tmpstring=NULL;
 
   if(!has_x) return ;
+  if(!lastdir[0]) my_strncpy(lastdir, pwd_dir, S(lastdir));
   if(!plotfile[0]) {
-    my_strdup(60, &tmpstring, "tk_getSaveFile -title {Select destination file} -initialdir [pwd]");
-    tcleval(tmpstring);
+    Tcl_VarEval(interp, "tk_getSaveFile -title {Select destination file} -initialdir ", lastdir, NULL);
     r = tclresult();
-    my_free(717, &tmpstring);
-    if(r[0]) my_strncpy(plotfile, r, S(plotfile));
+    if(r[0]) {
+      my_strncpy(plotfile, r, S(plotfile));
+      Tcl_VarEval(interp, "file dirname ", plotfile, NULL);
+      my_strncpy(lastdir, tclresult(), S(lastdir));
+    }
     else return;
   }
-  modified_save=xctx->modified; /* 20161121 save state */
-  push_undo();
-  trim_wires();    /* 20161121 add connection boxes on wires but undo at end */
   #if 0
   for(tmp=0;tmp<cadlayers;tmp++) {
     XSetClipRectangles(display, gc[tmp], 0,0, xctx->xrect, 1, Unsorted);
@@ -86,8 +86,6 @@ void print_image()
     tcleval(cmd);
   } else tcleval( "convert_to_png plot.xpm plot.png");
   my_strncpy(plotfile,"", S(plotfile));
-  pop_undo(0); /* 20161121 restore state */
-  xctx->modified=modified_save;
   draw_grid=save_draw_grid;
   draw_pixmap=1;
 }
@@ -262,11 +260,11 @@ void draw_string(int layer, int what, const char *str, short rot, short flip, in
  double a=0.0,yy;
  register double rx1=0,rx2=0,ry1=0,ry2=0;
  double curr_x1,curr_y1,curr_x2,curr_y2;
- register double zx1, invxscale;
- register int pos=0,pos2=0;
- register unsigned int cc;
- register double *char_ptr_x1,*char_ptr_y1,*char_ptr_x2,*char_ptr_y2;
- register int i,lines, no_of_lines, longest_line;
+ double zx1, invxscale;
+ int pos=0,pos2=0;
+ unsigned int cc;
+ double *char_ptr_x1,*char_ptr_y1,*char_ptr_x2,*char_ptr_y2;
+ int i,lines, no_of_lines, longest_line;
 
  if(str==NULL || !has_x ) return;
  dbg(2, "draw_string(): string=%s\n",str);
@@ -383,7 +381,7 @@ void draw_symbol(int what,int c, int n,int layer,short tmp_flip, short rot,
           (                                     /* ... and inst is hilighted ...          */
             IS_LABEL_SH_OR_PIN(type) && xctx->inst[n].node && xctx->inst[n].node[0] &&
             bus_hilight_lookup(xctx->inst[n].node[0], 0, XLOOKUP )
-          ) || ( !IS_LABEL_SH_OR_PIN(type) && (xctx->inst[n].color)) )) {
+          ) || ( !IS_LABEL_SH_OR_PIN(type) && (xctx->inst[n].color != -10000)) )) {
       xctx->inst[n].flags|=1;                    /* ... then SKIP instance now and for following layers */
       return;
     }

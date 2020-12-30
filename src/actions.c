@@ -406,7 +406,7 @@ void ask_new_file(void)
 
     if( fullname[0] ) {
      dbg(1, "ask_new_file(): load file: %s\n", fullname);
-     delete_hilight_net();
+     clear_all_hilights();
      xctx->currsch = 0;
      unselect_all();
      remove_symbols();
@@ -851,7 +851,7 @@ int place_symbol(int pos, const char *symbol_name, double x, double y, short rot
   xctx->inst[n].flip=symbol_name ? flip : 0;
 
   xctx->inst[n].flags=0;
-  xctx->inst[n].color=0;
+  xctx->inst[n].color=-10000; /* small negative values used for simulation */
   xctx->inst[n].sel=0;
   xctx->inst[n].node=NULL;
   xctx->inst[n].prop_ptr=NULL;
@@ -898,12 +898,11 @@ int place_symbol(int pos, const char *symbol_name, double x, double y, short rot
 
   if(draw_sym & 4 ) {
     select_element(n, SELECTED,0, 0);
-    xctx->ui_state |= SELECTION;
     drawtemparc(gc[SELLAYER], END, 0.0, 0.0, 0.0, 0.0, 0.0);
     drawtemprect(gc[SELLAYER], END, 0.0, 0.0, 0.0, 0.0);
     drawtempline(gc[SELLAYER], END, 0.0, 0.0, 0.0, 0.0);
     xctx->need_reb_sel_arr = 1;
-    rebuild_selected_array();
+    rebuild_selected_array(); /* sets  xctx->ui_state |= SELECTION; */
   }
 
  }
@@ -1027,7 +1026,7 @@ void descend_schematic(int instnumber)
     if(save_ok==-1) return;
   }
 
-  dbg(1, "descend_schematic(): type of instance: %s\n", (xctx->inst[xctx->sel_array[0].n].ptr+ xctx->sym)->type);
+  dbg(1, "descend_schematic(): inst type: %s\n", (xctx->inst[xctx->sel_array[0].n].ptr+ xctx->sym)->type);
 
   if(                   /*  do not descend if not subcircuit */
      (xctx->inst[xctx->sel_array[0].n].ptr+ xctx->sym)->type &&
@@ -1105,8 +1104,7 @@ void descend_schematic(int instnumber)
   if(xctx->hilight_nets)
   {
     prepare_netlist_structs(0);
-    propagate_hilights(1);
-    if(enable_drill) drill_hilight();
+    propagate_hilights(1, 0, XINSERT_NOREPLACE);
   }
   dbg(1, "descend_schematic(): before zoom(): prep_hash_inst=%d\n", xctx->prep_hash_inst);
   zoom_full(1, 0, 1, 0.97);
@@ -1158,9 +1156,8 @@ void go_back(int confirm) /*  20171006 add confirm */
 
   if(xctx->hilight_nets) {
     if(prev_sch_type != CAD_SYMBOL_ATTRS) hilight_parent_pins();
-    propagate_hilights(1);
+    propagate_hilights(1, 0, XINSERT_NOREPLACE);
   }
-  if(enable_drill) drill_hilight();
   xctx->xorigin=xctx->zoom_array[xctx->currsch].x;
   xctx->yorigin=xctx->zoom_array[xctx->currsch].y;
   xctx->zoom=xctx->zoom_array[xctx->currsch].zoom;
@@ -1189,9 +1186,9 @@ void change_to_unix_fn(char* fn)
 }
 #endif
 
+/* selected: 0 -> all, 1 -> selected, 2 -> hilighted */
 void calc_drawing_bbox(xRect *boundbox, int selected)
 {
-
  xRect tmp;
  int c, i;
  int count=0;
@@ -1310,36 +1307,18 @@ void calc_drawing_bbox(xRect *boundbox, int selected)
   if(selected == 1 && !xctx->inst[i].sel) continue;
 
   if(selected == 2) {
-    int j, rects, found, hilight_conn_inst;
+    int found;
     type = (xctx->inst[i].ptr+ xctx->sym)->type;
     found = 0;
-    hilight_conn_inst = !strcmp(
-     get_tok_value((xctx->inst[i].ptr+ xctx->sym)->prop_ptr, "highlight", 0), "true") ||
-     !strcmp(get_tok_value(xctx->inst[i].prop_ptr, "highlight", 0), "true");
-    if( hilight_conn_inst && (rects = (xctx->inst[i].ptr+ xctx->sym)->rects[PINLAYER]) > 0 ) {
-      prepare_netlist_structs(0);
-      for(j=0;j<rects;j++) {
-        if( xctx->inst[i].node && xctx->inst[i].node[j]) {
-          entry=bus_hilight_lookup(xctx->inst[i].node[j], 0, XLOOKUP);
-          if(entry) {
-            found = 1;
-            break;
-          }
-        }
-      }
-    }
-    else if( type && IS_LABEL_OR_PIN(type)) {
+    if( type && IS_LABEL_OR_PIN(type)) {
       entry=bus_hilight_lookup(xctx->inst[i].lab, 0, XLOOKUP );
       if(entry) found = 1;
     }
-    else if( (xctx->inst[i].color) ) {
+    else if( xctx->inst[i].color != -10000 ) {
       found = 1;
     }
     if(!found) continue;
   }
-
-
-
 
   /* cpu hog 20171206 */
   /*  symbol_bbox(i, &xctx->inst[i].x1, &xctx->inst[i].y1, &xctx->inst[i].x2, &xctx->inst[i].y2); */
@@ -1350,7 +1329,6 @@ void calc_drawing_bbox(xRect *boundbox, int selected)
   count++;
   updatebbox(count,boundbox,&tmp);
  }
-
 }
 
 /* flags: bit0: invoke change_linewidth()/XSetLineAttributes, bit1: centered zoom */
@@ -1391,23 +1369,27 @@ void zoom_full(int dr, int sel, int flags, double shrink)
     xctx->xorigin = -boundbox.x1 + (1 - shrink) / 2 * xctx->zoom * schw;
     xctx->yorigin = -boundbox.y1 + xctx->zoom * schh - bboxh - (1 - shrink) / 2 * xctx->zoom * schh;
   }
-  dbg(1, "zoom_full(): areaw=%d, areah=%d\n", xctx->areaw, xctx->areah);
+  dbg(1, "zoom_full(): dr=%d sel=%d flags=%d areaw=%d, areah=%d\n", sel, dr, flags, xctx->areaw, xctx->areah);
   if(flags & 1) change_linewidth(-1.);
-  if(dr && has_x) draw();
+  if(dr && has_x) {
+    draw();
+    redraw_w_a_l_r_p_rubbers();
+  }
 }
 
 void view_zoom(double z)
 {
-    double factor;
-    /*  int i; */
-    factor = z!=0.0 ? z : CADZOOMSTEP;
-    if(xctx->zoom<CADMINZOOM) return;
-    xctx->zoom/= factor;
-    xctx->mooz=1/xctx->zoom;
-    xctx->xorigin=-xctx->mousex_snap+(xctx->mousex_snap+xctx->xorigin)/factor;
-    xctx->yorigin=-xctx->mousey_snap+(xctx->mousey_snap+xctx->yorigin)/factor;
-    change_linewidth(-1.);
-    draw();
+  double factor;
+  /*  int i; */
+  factor = z!=0.0 ? z : CADZOOMSTEP;
+  if(xctx->zoom<CADMINZOOM) return;
+  xctx->zoom/= factor;
+  xctx->mooz=1/xctx->zoom;
+  xctx->xorigin=-xctx->mousex_snap+(xctx->mousex_snap+xctx->xorigin)/factor;
+  xctx->yorigin=-xctx->mousey_snap+(xctx->mousey_snap+xctx->yorigin)/factor;
+  change_linewidth(-1.);
+  draw();
+  redraw_w_a_l_r_p_rubbers();
 }
 
 void view_unzoom(double z)
@@ -1429,6 +1411,7 @@ void view_unzoom(double z)
   }
   change_linewidth(-1.);
   draw();
+  redraw_w_a_l_r_p_rubbers();
 }
 
 void set_viewport_size(int w, int h, double lw)
@@ -1511,6 +1494,7 @@ void zoom_rectangle(int what)
     xctx->mooz=1/xctx->zoom;
     change_linewidth(-1.);
     draw();
+    redraw_w_a_l_r_p_rubbers();
     dbg(1, "zoom_rectangle(): coord: %.16g %.16g %.16g %.16g zoom=%.16g\n",
       xctx->nl_x1,xctx->nl_y1,xctx->mousex_snap, xctx->mousey_snap,xctx->zoom);
   }

@@ -409,6 +409,8 @@ void alloc_xschem_data()
   xctx->prep_hash_wires = 0;
   xctx->modified = 0;
   xctx->semaphore = 0;
+  xctx->get_tok_size = 0;
+  xctx->get_tok_value_size = 0;
   xctx->netlist_name[0] = '\0';
   xctx->current_dirname[0] = '\0';
   for(i = 0; i < NBOXES; i++) {
@@ -456,6 +458,7 @@ void alloc_xschem_data()
   xctx->nl_xr = xctx->nl_yr = xctx->nl_xr2 = xctx->nl_yr2 = 0.0;
   xctx->nl_sel = xctx->nl_sem = 0;
 
+  xctx->hilight_time = 0; /* timestamp for sims */
   xctx->hilight_nets = 0;
   xctx->hilight_color = 0;
   xctx->rectcolor = 0;
@@ -541,7 +544,7 @@ void xwin_exit(void)
    return;
  }
  delete_netlist_structs();
- delete_hilight_net();
+ clear_all_hilights();
  get_unnamed_node(0, 0, 0);
  if(has_x) {
     resetwin(0, 1, 1, 0, 0); /* create_pixmap, clear_pixmap, force */
@@ -571,6 +574,7 @@ void xwin_exit(void)
  dbg(1, "xwin_exit(): clearing drawing data structures\n");
  clear_drawing();
  remove_symbols();
+ get_tok_value(NULL, NULL, 0); /* clear static data in function */
  free_xschem_data();
 
  /* global context - graphic preferences/settings */
@@ -588,7 +592,6 @@ void xwin_exit(void)
  my_free(1138, &tcl_command);
  clear_expandlabel_data();
  get_sym_template(NULL, NULL); /* clear static data in function */
- get_tok_value(NULL, NULL, 0); /* clear static data in function */
  list_tokens(NULL, 0); /* clear static data in function */
  translate(0, NULL); /* clear static data in function */
  translate2(NULL, 0, NULL); /* clear static data in function */
@@ -739,7 +742,7 @@ void delete_schematic_data(void)
   dbg(1, "delete_schematic_data()\n");
   unselect_all();
   delete_netlist_structs();  /* netlist - specific data and hash tables */
-  delete_hilight_net();      /* data structs for hilighting nets/instances */
+  clear_all_hilights();      /* data structs for hilighting nets/instances */
   get_unnamed_node(0, 0, 0); /* net### enumerator used for netlisting */
   remove_symbols();
   clear_drawing();    /* delete instances, wires, lines, rects, ... */
@@ -1006,7 +1009,7 @@ void resetwin(int create_pixmap, int clear_pixmap, int force, int w, int h)
       xctx->areah = xctx->areay2-xctx->areay1;
       /* if no force avoid unnecessary work if no resize */
       if( force || xctx->xschem_w !=xctx->xrect[0].width || xctx->xschem_h !=xctx->xrect[0].height) {
-        dbg(1, "resetwin(): %d, %d, %d, xschem_w=%d xschem_h=%d\n",
+        dbg(1, "resetwin(): create: %d, clear: %d, force: %d, xschem_w=%d xschem_h=%d\n",
                 create_pixmap, clear_pixmap, force, xctx->xschem_w,xctx->xschem_h);
         dbg(1, "resetwin(): changing size\n\n");
         xctx->xrect[0].x = 0;
@@ -1031,6 +1034,8 @@ void resetwin(int create_pixmap, int clear_pixmap, int force, int w, int h)
           xctx->gctiled = XCreateGC(display,xctx->window,0L, NULL);
           XSetTile(display,xctx->gctiled, xctx->save_pixmap);
           XSetFillStyle(display,xctx->gctiled,FillTiled);
+          /* whenever a pixmap is recreated all GC attributes must be reissued */
+          change_linewidth(-1.0);
           resetcairo(1, 0, 1); /* create, clear, force */
         }
       }
@@ -1340,6 +1345,12 @@ int Tcl_AppInit(Tcl_Interp *inter)
  else  {
    my_snprintf(tmp, S(tmp), "%d",color_ps);
    tclsetvar("color_ps",tmp);
+ }
+ if(transparent_svg==-1)
+   transparent_svg=atoi(tclgetvar("transparent_svg"));
+ else  {
+   my_snprintf(tmp, S(tmp), "%d",transparent_svg);
+   tclsetvar("transparent_svg",tmp);
  }
  change_lw=atoi(tclgetvar("change_lw"));
  l_width=atoi(tclgetvar("line_width"));

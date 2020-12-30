@@ -134,12 +134,12 @@ void global_vhdl_netlist(int global)  /* netlister driver */
  /* for(i=0;i<xctx->instances;i++) */
  /* { */
  /*  if(xctx->inst[i].ptr<0) continue; */
- /*  my_strdup(573, &type,(xctx->inst[i].ptr+ xctx->sym)->type); */
- /*  my_strdup(574, &sig_type,get_tok_value(xctx->inst[i].prop_ptr,"generic_type",0)); */
- /*  if(!sig_type || sig_type[0]=='\0') my_strdup(575, &sig_type,"std_logic"); */
+ /*  my_strdup(xxx, &type,(xctx->inst[i].ptr+ xctx->sym)->type); */
+ /*  my_strdup(xxx, &sig_type,get_tok_value(xctx->inst[i].prop_ptr,"generic_type",0)); */
+ /*  if(!sig_type || sig_type[0]=='\0') my_strdup(xxx, &sig_type,"std_logic"); */
  /*  if( type && (strcmp(type,"generic"))==0) */
  /*  { */
- /*   my_strdup(576, &port_value,get_tok_value(xctx->inst[i].prop_ptr,"value", 0)); */
+ /*   my_strdup(xxx, &port_value,get_tok_value(xctx->inst[i].prop_ptr,"value", 0)); */
  /*   str_tmp = xctx->inst[i].lab ? xctx->inst[i].lab : ""; */
  /*   if(!tmp)  fprintf(fd,"generic (\n"); */
  /*   if(tmp) fprintf(fd," ;\n"); */
@@ -375,7 +375,7 @@ void global_vhdl_netlist(int global)  /* netlister driver */
  }
  /* restore hilight flags from errors found analyzing top level before descending hierarchy */
  for(i=0;i<xctx->instances; i++) xctx->inst[i].color = stored_flags[i];
- propagate_hilights(1);
+ propagate_hilights(1, 0, XINSERT_NOREPLACE);
  draw_hilight_net(1);
  my_free(1088, &stored_flags);
  dbg(1, "global_vhdl_netlist(): starting awk on netlist!\n");
@@ -689,8 +689,8 @@ void vhdl_netlist(FILE *fd , int vhdl_stop)
      }
     }
    }
+   my_free(1097, &type);
  }
  dbg(1, "vhdl_netlist():       end\n");
  if(!vhdl_stop && !netlist_count) redraw_hilights(); /* draw_hilight_net(1); */
- my_free(1097, &type);
 }

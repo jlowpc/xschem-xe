@@ -344,7 +344,7 @@ static void old_ps_draw_string(int gctext,  const char *str,
                    x1,y1, &rx1,&ry1,&rx2,&ry2, &no_of_lines, &longest_line);
  #else
  text_bbox(str, xscale, yscale, rot, flip, hcenter, vcenter,
-           x1,y1, &rx1,&ry1,&rx2,&ry2, &no_of_lines);
+           x1,y1, &rx1,&ry1,&rx2,&ry2, &no_of_lines, &longest_line);
  #endif
  xscale*=nocairo_font_xscale;
  yscale*=nocairo_font_yscale;
@@ -585,29 +585,26 @@ void ps_draw(void)
  xRect boundbox;
  int c,i, textlayer;
  char tmp[2*PATH_MAX+40];
+ static char lastdir[PATH_MAX] = "";
  int old_grid;
- int modified_save;
  const char *r, *textfont;
  char *psfile;
 
+ if(!lastdir[0]) my_strncpy(lastdir, pwd_dir, S(lastdir));
  if(!plotfile[0]) {
-   my_snprintf(tmp, S(tmp), "tk_getSaveFile -title {Select destination file} -initialdir [pwd]");
-   tcleval(tmp);
+   Tcl_VarEval(interp, "tk_getSaveFile -title {Select destination file} -initialdir ", lastdir, NULL);
    r = tclresult();
-   if(r[0]) my_strncpy(plotfile, r, S(plotfile));
-   else {
-     return;
+   if(r[0]) {
+     my_strncpy(plotfile, r, S(plotfile));
+     Tcl_VarEval(interp, "file dirname ", plotfile, NULL);
+     my_strncpy(lastdir, tclresult(), S(lastdir));
    }
+   else return;
  }
-
  if(!(fd = open_tmpfile("psplot_", &psfile)) ) {
    fprintf(errfp, "ps_draw(): can not create tmpfile %s\n", psfile);
    return;
  }
-
- modified_save=xctx->modified;
- push_undo();
- trim_wires();    /* add connection bubbles on wires but undo at end */
  ps_colors=my_calloc(311, cadlayers, sizeof(Ps_color));
  if(ps_colors==NULL){
    fprintf(errfp, "ps_draw(): calloc error\n");tcleval( "exit");
@@ -781,8 +778,6 @@ void ps_draw(void)
  }
  my_strncpy(plotfile,"", S(plotfile));
  tcleval( tmp);
- pop_undo(0);
- xctx->modified=modified_save;
  Tcl_SetResult(interp,"",TCL_STATIC);
 }
 

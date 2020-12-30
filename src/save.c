@@ -415,7 +415,7 @@ void write_xschem_file(FILE *fd)
 
   if(xctx->schvhdlprop && !xctx->schsymbolprop) {
     get_tok_value(xctx->schvhdlprop,"type",0);
-    ty = get_tok_size;
+    ty = xctx->get_tok_size;
     if(ty && !strcmp(xctx->sch[xctx->currsch] + strlen(xctx->sch[xctx->currsch]) - 4,".sym") ) {
       fprintf(fd, "G {}\nK ");
       save_ascii_string(xctx->schvhdlprop,fd);
@@ -551,7 +551,7 @@ static void load_inst(int k, FILE *fd)
       fprintf(errfp,"WARNING: missing fields for INSTANCE object, ignoring.\n");
       read_line(fd, 0);
     } else {
-      xctx->inst[i].color=0;
+      xctx->inst[i].color=-10000;
       xctx->inst[i].flags=0;
       xctx->inst[i].sel=0;
       xctx->inst[i].ptr=-1; /*04112003 was 0 */
@@ -848,7 +848,7 @@ void read_xschem_file(FILE *fd)
     if(xctx->schvhdlprop) {
       char *str = xctx->sch[xctx->currsch];
       get_tok_value(xctx->schvhdlprop, "type",0);
-      ty = get_tok_size;
+      ty = xctx->get_tok_size;
       if(!xctx->schsymbolprop && ty && !strcmp(str + strlen(str) - 4,".sym")) {
         str = xctx->schsymbolprop;
         xctx->schsymbolprop = xctx->schvhdlprop;

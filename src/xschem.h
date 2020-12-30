@@ -536,6 +536,8 @@ typedef struct {
   int prep_hash_wires;
   int modified;
   int semaphore;
+  int get_tok_size;
+  int get_tok_value_size;
   char netlist_name[PATH_MAX];
   char current_dirname[PATH_MAX];
   struct instpinentry *instpintable[NBOXES][NBOXES];
@@ -557,6 +559,7 @@ typedef struct {
   struct hilight_hashentry *hilight_table[HASHSIZE];
   int hilight_nets;
   int hilight_color;
+  int hilight_time; /* timestamp for sims */
   unsigned int rectcolor; /* current layer */
   /* get_unnamed_node() */
   int new_node;
@@ -641,7 +644,9 @@ struct hilight_hashentry {
                   unsigned int hash;
                   char *token;
                   char *path; /* hierarchy path */
+                  int oldvalue;  /* used for FF simulation */
                   int value;  /* hilight color */
+                  int time; /*delta-time for sims */
                  };
 
 /*  for netlist.c */
@@ -742,6 +747,7 @@ extern char hiersep[20];
 extern int quit;
 extern int show_erc;
 extern int color_ps;
+extern int transparent_svg;
 extern int only_probes;
 extern int pending_fullzoom;
 extern int fullscreen;
@@ -755,6 +761,7 @@ extern size_t get_tok_size;
 extern int batch_mode; /* no TCL console */
 extern int hide_symbols; /* draw only a bounding box for component instances and @symname, @name texts */
 extern int show_pin_net_names;
+extern int en_hilight_conn_inst;
 extern char svg_font_name[80];
 /* CAIRO specific global variables */
 extern char cairo_font_name[80];
@@ -814,9 +821,9 @@ extern int samefile(const char *fa, const char *fb);
 extern void saveas(const char *f, int type);
 extern const char *get_file_path(char *f);
 extern int save(int confirm);
-extern struct hilight_hashentry *bus_hilight_lookup(const char *token, int value, int remove) ;
+extern struct hilight_hashentry *bus_hilight_lookup(const char *token, int value, int what) ;
 extern int  name_strcmp(char *s, char *d) ;
-extern int search(const char *tok, const char *val, int sub, int sel, int what);
+extern int search(const char *tok, const char *val, int sub, int sel);
 extern int process_options(int argc, char **argv);
 extern void calc_drawing_bbox(xRect *boundbox, int selected);
 extern void ps_draw(void);
@@ -989,6 +996,7 @@ extern void new_arc(int what, double sweep);
 extern void arc_3_points(double x1, double y1, double x2, double y2, double x3, double y3,
          double *x, double *y, double *r, double *a, double *b);
 extern void move_objects(int what,int merge, double dx, double dy);
+extern void redraw_w_a_l_r_p_rubbers(void); /* redraw wire, arcs, line, polygon rubbers */
 extern void copy_objects(int what);
 extern void find_inst_to_be_redrawn(const char *node);
 extern void find_inst_hash_clear(void);
@@ -1104,9 +1112,10 @@ extern void print_verilog_signals(FILE *fd);
 extern void print_generic(FILE *fd, char *ent_or_comp, int symbol);
 extern void print_verilog_param(FILE *fd, int symbol);
 extern void hilight_net(int to_waveform);
+extern void logic_set(int v, int num);
 extern int hilight_netname(const char *name);
 extern void unhilight_net();
-extern void propagate_hilights(int set);
+extern void propagate_hilights(int set, int clear, int mode);
 extern void draw_hilight_net(int on_window);
 extern void display_hilights(char **str);
 extern void redraw_hilights(void);
@@ -1114,7 +1123,7 @@ extern void override_netlist_type(int type);
 extern void prepare_netlist_structs(int for_netlist);
 extern void delete_netlist_structs(void);
 extern void delete_inst_node(int i);
-extern void delete_hilight_net(void);
+extern void clear_all_hilights(void);
 extern void hilight_child_pins(void);
 extern void hilight_parent_pins(void);
 extern void hilight_net_pin_mismatches(void);
@@ -1133,7 +1142,7 @@ extern void toggle_only_probes();
 extern void update_symbol(const char *result, int x);
 extern void tclexit(ClientData s);
 extern int build_colors(double dim); /*  reparse the TCL 'colors' list and reassign colors 20171113 */
-extern void drill_hilight(void);
+extern void drill_hilight(int mode);
 extern void get_square(double x, double y, int *xx, int *yy);
 extern void del_wire_table(void);
 extern void del_object_table(void);

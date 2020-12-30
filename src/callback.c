@@ -22,6 +22,31 @@
 
 #include "xschem.h"
 
+void redraw_w_a_l_r_p_rubbers(void)
+{
+  if(xctx->ui_state & STARTWIRE) {
+    if(horizontal_move) xctx->mousey_snap = xctx->my_double_save;
+    if(vertical_move) xctx->mousex_snap = xctx->mx_double_save;
+    new_wire(RUBBER, xctx->mousex_snap, xctx->mousey_snap);
+  }
+  if(xctx->ui_state & STARTARC) {
+    if(horizontal_move) xctx->mousey_snap = xctx->my_double_save;
+    if(vertical_move) xctx->mousex_snap = xctx->mx_double_save;
+    new_arc(RUBBER, 0);
+  }
+  if(xctx->ui_state & STARTLINE) {
+    if(horizontal_move) xctx->mousey_snap = xctx->my_double_save;
+    if(vertical_move) xctx->mousex_snap = xctx->mx_double_save;
+    new_line(RUBBER);
+  }
+  if(xctx->ui_state & STARTRECT) new_rect(RUBBER);
+  if(xctx->ui_state & STARTPOLYGON) {
+    if(horizontal_move) xctx->mousey_snap = xctx->my_double_save;
+    if(vertical_move) xctx->mousex_snap = xctx->mx_double_save;
+    new_polygon(RUBBER);
+  }
+}
+
 void start_line(double mx, double my)
 {
     xctx->last_command = STARTLINE;
@@ -220,21 +245,7 @@ int callback(int event, int mx, int my, KeySym key,
           select_rect(RUBBER,1);
       }
     }
-    if(xctx->ui_state & STARTWIRE) {
-      if(horizontal_move) xctx->mousey_snap = xctx->my_double_save;
-      if(vertical_move) xctx->mousex_snap = xctx->mx_double_save;
-      new_wire(RUBBER, xctx->mousex_snap, xctx->mousey_snap);
-    }
-    if(xctx->ui_state & STARTARC) {
-      if(horizontal_move) xctx->mousey_snap = xctx->my_double_save;
-      if(vertical_move) xctx->mousex_snap = xctx->mx_double_save;
-      new_arc(RUBBER, 0);
-    }
-    if(xctx->ui_state & STARTLINE) {
-      if(horizontal_move) xctx->mousey_snap = xctx->my_double_save;
-      if(vertical_move) xctx->mousex_snap = xctx->mx_double_save;
-      new_line(RUBBER);
-    }
+
     if(xctx->ui_state & STARTMOVE) {
       if(horizontal_move) xctx->mousey_snap = xctx->my_double_save;
       if(vertical_move) xctx->mousex_snap = xctx->mx_double_save;
@@ -245,12 +256,8 @@ int callback(int event, int mx, int my, KeySym key,
       if(vertical_move) xctx->mousex_snap = xctx->mx_double_save;
       copy_objects(RUBBER);
     }
-    if(xctx->ui_state & STARTRECT) new_rect(RUBBER);
-    if(xctx->ui_state & STARTPOLYGON) {
-      if(horizontal_move) xctx->mousey_snap = xctx->my_double_save;
-      if(vertical_move) xctx->mousex_snap = xctx->mx_double_save;
-      new_polygon(RUBBER);
-    }
+
+    redraw_w_a_l_r_p_rubbers();
     /* start of a mouse area select */
     if(!(xctx->ui_state & STARTPOLYGON) && (state&Button1Mask) && !(xctx->ui_state & STARTWIRE) && 
        !(xctx->ui_state & STARTPAN2) && !(state & Mod1Mask) &&
@@ -307,8 +314,7 @@ int callback(int event, int mx, int my, KeySym key,
        new_line(RUBBER);
      } else {
        if(xctx->semaphore<2) {
-         rebuild_selected_array();
-         if(xctx->lastsel==0) xctx->ui_state &=~SELECTION;
+         rebuild_selected_array(); /* sets or clears xctx->ui_state SELECTION flag */
        }
        pan2(START, mx, my);
        xctx->ui_state |= STARTPAN2;
@@ -616,6 +622,7 @@ int callback(int event, int mx, int my, KeySym key,
     xctx->xorigin=-xctx->mousex_snap+xctx->areaw*xctx->zoom/2.0;
     xctx->yorigin=-xctx->mousey_snap+xctx->areah*xctx->zoom/2.0;
     draw();
+    redraw_w_a_l_r_p_rubbers();
     break;
    }
    if(key=='5' && state == 0) { /* 20110112 display only probes */
@@ -640,24 +647,28 @@ int callback(int event, int mx, int my, KeySym key,
    {
     xctx->xorigin+=-CADMOVESTEP*xctx->zoom;
     draw();
+    redraw_w_a_l_r_p_rubbers();
     break;
    }
    if(key==XK_Left)                     /* right */
    {
     xctx->xorigin-=-CADMOVESTEP*xctx->zoom;
     draw();
+    redraw_w_a_l_r_p_rubbers();
     break;
    }
    if(key==XK_Down)                     /* down */
    {
     xctx->yorigin+=-CADMOVESTEP*xctx->zoom;
     draw();
+    redraw_w_a_l_r_p_rubbers();
     break;
    }
    if(key==XK_Up)                       /* up */
    {
     xctx->yorigin-=-CADMOVESTEP*xctx->zoom;
     draw();
+    redraw_w_a_l_r_p_rubbers();
     break;
    }
    if(key=='q' && state == ControlMask) /* exit */
@@ -811,6 +822,11 @@ int callback(int event, int mx, int my, KeySym key,
      new_arc(PLACE, 360.);
      break;
    }
+   if(key=='O' && (state == (ControlMask|ShiftMask)) )   /* load most recent tile */
+   {
+     Tcl_VarEval(interp, "xschem load [lindex $recentfile 0]", NULL);
+     break;
+   }
    if(key=='O' && state == ShiftMask)   /* Toggle light/dark colorscheme 20171113 */
    {
      dark_colorscheme=!dark_colorscheme;
@@ -922,19 +938,8 @@ int callback(int event, int mx, int my, KeySym key,
    }
    if(key=='k' && state==ControlMask)                           /* unhilight net */
    {
-    xRect boundbox;
-    int big =  xctx->wires> 2000 || xctx->instances > 2000 ;
     if(xctx->semaphore >= 2) break;
-    if(!big) calc_drawing_bbox(&boundbox, 2);
     unhilight_net();
-    /* undraw_hilight_net(1); */
-    if(!big) {
-      bbox(START, 0.0 , 0.0 , 0.0 , 0.0);
-      bbox(ADD, boundbox.x1, boundbox.y1, boundbox.x2, boundbox.y2);
-      bbox(SET , 0.0 , 0.0 , 0.0 , 0.0);
-    }
-    draw();
-    if(!big) bbox(END , 0.0 , 0.0 , 0.0 , 0.0);
     break;
    }
    if(key=='K' && state==(ControlMask|ShiftMask))       /* hilight net drilling thru elements  */
@@ -963,7 +968,7 @@ int callback(int event, int mx, int my, KeySym key,
     if(xctx->semaphore >= 2) break;
     enable_drill=0;
     if(!big) calc_drawing_bbox(&boundbox, 2);
-    delete_hilight_net();
+    clear_all_hilights();
     /* undraw_hilight_net(1); */
     if(!big) {
       bbox(START, 0.0 , 0.0 , 0.0 , 0.0);
@@ -1082,6 +1087,12 @@ int callback(int event, int mx, int my, KeySym key,
    }
    if(key=='l' && state == Mod1Mask) {                         /* add pin label*/
     place_net_label(1);
+    break;
+   }
+   if(key >= '0' && key <= '3' && state == 0) {  /* Toggle pin logic level */
+    if(xctx->semaphore >= 2) break;
+    if(key == '3') logic_set(-1, 1);
+    else logic_set(key - '0', 1);
     break;
    }
    if(key=='L' && state == (Mod1Mask | ShiftMask)) {                         /* add pin label*/
@@ -1403,14 +1414,17 @@ int callback(int event, int mx, int my, KeySym key,
    else if(button==Button4 && (state & ShiftMask) && !(state & Button2Mask)) {
     xctx->xorigin+=-CADMOVESTEP*xctx->zoom/2.;
     draw();
+    redraw_w_a_l_r_p_rubbers();
    }
    else if(button==Button5 && (state & ShiftMask) && !(state & Button2Mask)) {
     xctx->xorigin-=-CADMOVESTEP*xctx->zoom/2.;
     draw();
+    redraw_w_a_l_r_p_rubbers();
    }
    else if(button==Button4 && (state & ControlMask) && !(state & Button2Mask)) {
     xctx->yorigin+=-CADMOVESTEP*xctx->zoom/2.;
     draw();
+    redraw_w_a_l_r_p_rubbers();
    }
    else if(button==Button5 && (state & ControlMask) && !(state & Button2Mask)) {
     xctx->yorigin-=-CADMOVESTEP*xctx->zoom/2.;
@@ -1425,12 +1439,10 @@ int callback(int event, int mx, int my, KeySym key,
      /* useless code ? 20200905 */
      /* if(xctx->semaphore<2) {
        rebuild_selected_array();
-       if(xctx->lastsel==0) xctx->ui_state &=~SELECTION;
      } */
 
      select_object(xctx->mousex, xctx->mousey, 0, 0);
-     rebuild_selected_array();
-     if(xctx->lastsel==0) xctx->ui_state &=~SELECTION;
+     rebuild_selected_array(); /* sets or clears xctx->ui_state SELECTION flag */
    }
    else if(button==Button2 && (state == 0)) {
      pan2(START, mx, my);
@@ -1628,7 +1640,7 @@ int callback(int event, int mx, int my, KeySym key,
            if(!prev_last_sel) {
              int big =  xctx->wires> 2000 || xctx->instances > 2000 ;
              if(!big) calc_drawing_bbox(&boundbox, 2);
-             delete_hilight_net();
+             clear_all_hilights();
              /* undraw_hilight_net(1); */
              if(!big) {
                bbox(START, 0.0 , 0.0 , 0.0 , 0.0);
@@ -1657,7 +1669,7 @@ int callback(int event, int mx, int my, KeySym key,
      xctx->mx_save = mx; xctx->my_save = my;
      xctx->mx_double_save=xctx->mousex_snap;
      xctx->my_double_save=xctx->mousey_snap;
-
+     redraw_w_a_l_r_p_rubbers();
      break;
    }
    dbg(1, "callback(): ButtonRelease  ui_state=%ld state=%d\n",xctx->ui_state,state);

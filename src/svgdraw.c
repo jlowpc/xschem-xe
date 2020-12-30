@@ -555,19 +555,21 @@ void svg_draw(void)
   double dx, dy;
   int c,i, textlayer;
   int old_grid;
-  int modified_save;
-  char *tmpstring=NULL;
+  static char lastdir[PATH_MAX] = "";
   const char *r, *textfont;
   int *unused_layer;
   int color;
   struct hilight_hashentry *entry;
   
+  if(!lastdir[0]) my_strncpy(lastdir, pwd_dir, S(lastdir));
   if(!plotfile[0]) {
-    my_strdup(61, &tmpstring, "tk_getSaveFile -title {Select destination file} -initialdir [pwd]");
-    tcleval(tmpstring);
+    Tcl_VarEval(interp, "tk_getSaveFile -title {Select destination file} -initialdir ", lastdir, NULL);
     r = tclresult();
-    my_free(963, &tmpstring);
-    if(r[0]) my_strncpy(plotfile, r, S(plotfile));
+    if(r[0]) {
+      my_strncpy(plotfile, r, S(plotfile));
+      Tcl_VarEval(interp, "file dirname ", plotfile, NULL);
+      my_strncpy(lastdir, tclresult(), S(lastdir));
+    }
     else return;
   }
   svg_restore_lw();
@@ -582,10 +584,6 @@ void svg_draw(void)
   dy=xctx->xschem_h;
   dbg(1, "svg_draw(): dx=%g  dy=%g\n", dx, dy);
  
-  modified_save=xctx->modified;
-  push_undo();
-  /* Warning: sets xctx->prep_hi_structs to 0 */
-  trim_wires();  /* add connection boxes on wires but undo at end */
   if(plotfile[0]) {
     fd=fopen(plotfile, "w");
     if(!fd) { 
@@ -663,6 +661,10 @@ void svg_draw(void)
     fprintf(fd, "  stroke-linecap:round;\n");
     fprintf(fd, "  stroke-linejoin:round;\n");
     fprintf(fd, "  stroke-width: %g;\n", svg_linew);
+    if(i == 0 && transparent_svg) {
+      fprintf(fd, "  fill-opacity: 0;\n");
+      fprintf(fd, "  stroke-opacity: 0;\n");
+    }
     fprintf(fd, "}\n");
   }
  
@@ -722,7 +724,7 @@ void svg_draw(void)
      }
      for(i=0;i<xctx->instances;i++) {
        color = c;
-       if(xctx->inst[i].color) color = xctx->inst[i].color;
+       if(xctx->inst[i].color != -10000) color = get_color(xctx->inst[i].color);
        svg_draw_symbol(color,i,c,0,0,0.0,0.0);
      }
     }
@@ -767,8 +769,6 @@ void svg_draw(void)
   draw_grid=old_grid;
   my_free(964, &svg_colors);
   my_free(1217, &unused_layer);
-  pop_undo(0);
-  xctx->modified=modified_save;
   Tcl_SetResult(interp,"",TCL_STATIC);
 }
 

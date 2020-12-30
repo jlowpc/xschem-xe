@@ -50,14 +50,25 @@ proc execute_fileevent {id} {
         # occur before process ends and following close blocks until process terminates.
         fconfigure $execute_pipe($id) -blocking 1
         set status 0
-        if {[catch {close $execute_pipe($id)} err options]} {
-          set details [dict get $options -errorcode]
-          if {[lindex $details 0] eq "CHILDSTATUS"} {
-              set status [lindex $details 2]
-              viewdata "Failed: $execute_cmd($id)\nstderr:\n$err\ndata:\n$execute_data($id)" ro
+
+        if  { [ info tclversion]  > 8.4} {
+           set catch_return [eval catch [ list {close $execute_pipe($id)} err options] ]
+        } else {
+           set catch_return [eval catch [ list {close $execute_pipe($id)} err] ]
+        }
+        if {$catch_return} {
+          if  { [ info tclversion] > 8.4} {
+            set details [dict get $options -errorcode]
+            if {[lindex $details 0] eq "CHILDSTATUS"} {
+                set status [lindex $details 2]
+                viewdata "Failed: $execute_cmd($id)\nstderr:\n$err\ndata:\n$execute_data($id)" ro
+            } else {
+              set status 1
+              viewdata "Completed: $execute_cmd($id)\nstderr:\n$err\ndata:\n$execute_data($id)" ro
+            }
           } else {
-            set status 1
-            viewdata "Completed: $execute_cmd($id)\nstderr:\n$err\ndata:\n$execute_data($id)" ro
+              set status 1
+              viewdata "Completed: $execute_cmd($id)\nstderr:\n$err\ndata:\n$execute_data($id)" ro
           }
         }
         if { $status == 0 } {
@@ -790,7 +801,7 @@ proc simulate {{callback {}}} {
   ## $d : netlist directory
 
   global netlist_dir netlist_type computerfarm terminal sim
-  global execute_callback XSCHEM_SHAREDIR
+  global execute_callback XSCHEM_SHAREDIR has_x
   set_sim_defaults
   
   if { [select_netlist_dir 0] ne {}} {
@@ -803,6 +814,11 @@ proc simulate {{callback {}}} {
       set N ${n}.v
     } else {
       set N ${n}.${tool}
+    }
+    if { ![info exists  sim($tool,default)] } {
+      if { $has_x} {alert_ "Warning: simulator for $tool is not configured"}
+      puts "Warning: simulator for $tool is not configured"
+      return
     }
     set def $sim($tool,default)
     set fg  $sim($tool,$def,fg)
@@ -903,7 +919,7 @@ proc waves {} {
   ## $S : schematic name full path (/home/schippes/.xschem/xschem_library/opamp.sch)
   ## $d : netlist directory
 
-  global netlist_dir netlist_type computerfarm terminal sim XSCHEM_SHAREDIR
+  global netlist_dir netlist_type computerfarm terminal sim XSCHEM_SHAREDIR has_x
   set_sim_defaults
   
   if { [select_netlist_dir 0] ne {}} {
@@ -918,6 +934,11 @@ proc waves {} {
       set N ${n}.${tool}
     }
     set tool ${tool}wave
+    if { ![info exists  sim($tool,default)] } {
+      if { $has_x} {alert_ "Warning: viewer for $tool is not configured"}
+      puts "Warning: viewer for $tool is not configured"
+      return
+    }
     set def $sim($tool,default)
     set fg  $sim($tool,$def,fg)
     set st  $sim($tool,$def,st)
@@ -3143,6 +3164,20 @@ proc raise_dialog {window_path } {
   }
 }
 
+proc set_old_tk_fonts {} {
+  if {[info tclversion] <= 8.4} {
+     set myfont {-*-helvetica-*-r-*-*-12-*-*-*-*-*-*-*}
+     set mymonofont fixed
+     option add *Button*font $myfont startupFile
+     option add *Menubutton*font $myfont startupFile
+     option add *Menu*font $myfont startupFile
+     option add *Listbox*font $myfont startupFile
+     option add *Entry*font $mymonofont startupFile
+     option add *Text*font $mymonofont startupFile
+     option add *Label*font $myfont startupFile
+  }
+}
+
 #### TEST MODE #####
 proc new_window {what {path {}} {filename {}}} {
   if { $what eq {create}} {
@@ -3425,6 +3460,7 @@ set_ne flat_netlist 0
 set_ne netlist_type vhdl
 set_ne netlist_show 0
 set_ne color_ps 0
+set_ne transparent_svg 0
 set_ne only_probes 0  ; # 20110112
 set_ne fullscreen 0
 set_ne unzoom_nodrift 1
@@ -3454,6 +3490,7 @@ set_ne launcher_default_program {xdg-open}
 set_ne launcher_program {}
 #20160413
 set_ne auto_hilight 0
+set_ne en_hilight_conn_inst 0
 ## 20161121 xpm to png conversion
 set_ne to_png {gm convert} 
 
@@ -3511,7 +3548,7 @@ if {!$rainbow_colors} {
   set_ne dark_colors {
    "#000000" "#00ccee" "#3f3f3f" "#cccccc" "#88dd00" 
    "#bb2200" "#00ccee" "#ff0000" "#ffff00" "#ffffff"
-   "#ff00ff" "#00ff00" "#0000cc" "#aaaa00" "#aaccaa"
+   "#ff00ff" "#00ff00" "#0044dd" "#aaaa00" "#aaccaa"
    "#ff7777" "#bfff81" "#00ffcc" "#ce0097" "#d2d46b" 
    "#ef6158" "#fdb200"}
 } else {
@@ -3618,13 +3655,8 @@ if { ( $::OS== "Windows" || [string length [lindex [array get env DISPLAY] 1] ] 
   font configure Underline-Font -underline true -size 24
 
   . configure -cursor left_ptr
-  #   option add *Button*font "-*-helvetica-medium-r-normal-*-12-*-*-*-p-*-iso8859-1" startupFile
-  #   option add *Menubutton*font "-*-helvetica-medium-r-normal-*-12-*-*-*-p-*-iso8859-1" startupFile
-  #   option add *Menu*font "-*-helvetica-medium-r-normal-*-12-*-*-*-p-*-iso8859-1" startupFile
-  #   option add *Listbox*font "-*-helvetica-medium-r-normal-*-12-*-*-*-p-*-iso8859-1" startupFile
-  #   option add *Entry*font "-*-helvetica-medium-r-normal-*-12-*-*-*-p-*-iso8859-1" startupFile
-  #   #option add *Text*font "-*-courier-medium-r-normal-*-12-*-*-*-p-*-iso8859-1" startupFile
-  #   option add *Label*font "-*-helvetica-medium-r-normal-*-12-*-*-*-p-*-iso8859-1" startupFile
+
+  set_old_tk_fonts
 
   if { [info exists tk_scaling] } {tk scaling $tk_scaling}
   set infowindow_text {}
@@ -3679,6 +3711,8 @@ if { ( $::OS== "Windows" || [string length [lindex [array get env DISPLAY] 1] ] 
   setup_recent_menu
   .menubar.file.menu add cascade -label "Open Recent" -menu .menubar.file.menu.recent
 
+  .menubar.file.menu add command -label "Open Most Recent" \
+    -command "eval {xschem load [lindex "$recentfile" 0]}" -accelerator {Ctrl+Shift+O}
   .menubar.file.menu add command -label "Save" -command "xschem save" -accelerator {Ctrl+S}
   toolbar_create FileSave "xschem save" "Save File"
   .menubar.file.menu add command -label "Merge" -command "xschem merge" -accelerator {Shift+B}
@@ -3707,6 +3741,10 @@ if { ( $::OS== "Windows" || [string length [lindex [array get env DISPLAY] 1] ] 
   .menubar.option.menu add checkbutton -label "Color Postscript/SVG" -variable color_ps \
      -command {
         if { $color_ps==1 } {xschem set color_ps 1} else { xschem set color_ps 0}
+     }
+  .menubar.option.menu add checkbutton -label "Transparent SVG background" -variable transparent_svg \
+     -command {
+        if { $transparent_svg==1 } {xschem set transparent_svg 1} else { xschem set transparent_svg 0}
      }
   .menubar.option.menu add checkbutton -label "Debug mode" -variable menu_tcl_debug \
      -command {
@@ -4022,7 +4060,7 @@ if { ( $::OS== "Windows" || [string length [lindex [array get env DISPLAY] 1] ] 
   .menubar.hilight.menu add command -label {Select hilight nets / pins} -command "xschem select_hilight_net" \
      -accelerator Alt+K
   .menubar.hilight.menu add command -label {Un-highlight all net/pins} \
-     -command "xschem unhilight" -accelerator Shift+K
+     -command "xschem unhilight_all" -accelerator Shift+K
   .menubar.hilight.menu add command -label {Un-highlight selected net/pins} \
      -command "xschem unhilight" -accelerator Ctrl+K
   # 20160413
@@ -4034,6 +4072,8 @@ if { ( $::OS== "Windows" || [string length [lindex [array get env DISPLAY] 1] ] 
          xschem set auto_hilight 0
        }
      }
+  .menubar.hilight.menu add checkbutton -label {Enable highlight connected instances} \
+    -variable en_hilight_conn_inst  -command {xschem set en_hilight_conn_inst $en_hilight_conn_inst}
 
   .menubar.simulation.menu add command -label "Set netlist Dir" \
     -command {
@@ -4065,6 +4105,7 @@ if { ( $::OS== "Windows" || [string length [lindex [array get env DISPLAY] 1] ] 
   .menubar.simulation.menu add checkbutton -label "LVS netlist: Top level is a .subckt" -variable top_subckt 
   .menubar.simulation.menu add checkbutton -label "Use 'spiceprefix' attribute" -variable spiceprefix \
          -command {xschem set spiceprefix $spiceprefix; xschem save; xschem reload}
+  .menubar.simulation.menu add checkbutton -label "Forced stop tcl scripts" -variable tclstop
 
   pack .menubar.file -side left
   pack .menubar.edit -side left
