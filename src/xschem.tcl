@@ -183,10 +183,11 @@ proc netlist {source_file show netlist_file} {
 
 # 20161121
 proc convert_to_pdf {filename dest} {
+  global to_pdf
   # puts "convert_to_pdf: $filename --> $dest"
   if { [regexp -nocase {\.pdf$} $dest] } {
     set pdffile [file rootname $filename].pdf]
-    if { ![catch "exec ps2pdf $filename $pdffile" msg] } {
+    if { ![catch "exec $to_pdf $filename $pdffile" msg] } {
       file rename -force $pdffile $dest
       # ps2pdf succeeded, so remove original .ps file
       if { ![xschem get debug_var] } {
@@ -1510,9 +1511,9 @@ proc delete_files { dir } {
 
 proc create_pins {} {
   global env retval USER_CONF_DIR
-  global filetmp1 filetmp2
+  global filetmp
 
-  set retval [ read_data_nonewline $filetmp2 ]
+  set retval [ read_data_nonewline $filetmp ]
   regsub -all {<} $retval {[} retval 
   regsub -all {>} $retval {]} retval 
   set lines [split $retval \n]
@@ -1625,14 +1626,14 @@ proc schpins_to_sympins {} {
 
 proc add_lab_no_prefix {} { 
   global env retval USER_CONF_DIR
-  global filetmp1 filetmp2
+  global filetmp
 
   if { [file exists [abs_sym_path devices/ipin.sym]] } {
     set indirect 1
   } else {
     set indirect 0
   }
-  set retval [ read_data_nonewline $filetmp2 ]
+  set retval [ read_data_nonewline $filetmp ]
   regsub -all {<} $retval {[} retval
   regsub -all {>} $retval {]} retval
   set lines [split $retval \n]
@@ -1655,14 +1656,14 @@ proc add_lab_no_prefix {} {
 
 proc add_lab_prefix {} {
   global env retval USER_CONF_DIR
-  global filetmp1 filetmp2
+  global filetmp
 
   if { [file exists [abs_sym_path devices/ipin.sym]] } {
     set indirect 1
   } else {
     set indirect 0
   }
-  set retval [ read_data_nonewline $filetmp2 ]
+  set retval [ read_data_nonewline $filetmp ]
   regsub -all {<} $retval {[} retval
   regsub -all {>} $retval {]} retval
   set lines [split $retval \n]
@@ -3451,19 +3452,19 @@ set_ne globfilter {*}
 set_ne tcl_files {}
 set_ne netlist_dir "$USER_CONF_DIR/simulations"
 set_ne bus_replacement_char {} ;# use {<>} to replace [] with <> in bussed signals
-set_ne hspice_netlist 0
+set_ne hspice_netlist 1
 set_ne top_subckt 0
 set_ne spiceprefix 1
 set_ne verilog_2001 1
 set_ne split_files 0
 set_ne flat_netlist 0
-set_ne netlist_type vhdl
+set_ne netlist_type spice
 set_ne netlist_show 0
-set_ne color_ps 0
+set_ne color_ps 1
 set_ne transparent_svg 0
 set_ne only_probes 0  ; # 20110112
 set_ne fullscreen 0
-set_ne unzoom_nodrift 1
+set_ne unzoom_nodrift 0
 set_ne change_lw 1
 set_ne line_width 0
 set_ne draw_window 0
@@ -3476,13 +3477,14 @@ set_ne big_grid_points 0
 set_ne snap 10
 set_ne grid 20
 set_ne persistent_command 0
-set_ne disable_unique_names 1
+set_ne autotrim_wires 0
+set_ne disable_unique_names 0
 set_ne sym_txt 1
 set_ne show_infowindow 0 
 set_ne symbol_width 150
 set_ne editor {gvim -f}
 set_ne rainbow_colors 0
-set_ne initial_geometry {700x448+10+10}
+set_ne initial_geometry {900x600}
 set_ne edit_symbol_prop_new_sel {}
 #20161102
 set_ne launcher_var {}
@@ -3491,8 +3493,10 @@ set_ne launcher_program {}
 #20160413
 set_ne auto_hilight 0
 set_ne en_hilight_conn_inst 0
-## 20161121 xpm to png conversion
+## xpm to png conversion
 set_ne to_png {gm convert} 
+## ps to pdf conversion
+set_ne to_pdf {ps2pdf}
 
 ## 20160325 remember edit_prop widget size
 set_ne edit_prop_size 80x12
@@ -3595,11 +3599,9 @@ set search_select 0
 
 # 20111106 these vars are overwritten by caller with mktemp file names
 if {$::OS == "Windows"} {
-  set filetmp1 $env(windir)/.tmp1
-  set filetmp2 $env(windir)/.tmp2
+  set filetmp $env(windir)/.tmp2
 } else {
-  set filetmp1 [pwd]/.tmp1
-  set filetmp2 [pwd]/.tmp2
+  set filetmp [pwd]/.tmp2
 }
 # /20111106
 
@@ -3641,6 +3643,7 @@ xschem set cairo_font_line_spacing $cairo_font_line_spacing
 xschem set cairo_vert_correct $cairo_vert_correct
 xschem set nocairo_vert_correct $nocairo_vert_correct
 xschem set persistent_command $persistent_command
+xschem set autotrim_wires $autotrim_wires
 xschem set disable_unique_names $disable_unique_names
 # font name can not be set here as we need to wait for X-initialization 
 # to complete. Done in xinit.c
@@ -4011,10 +4014,7 @@ if { ( $::OS== "Windows" || [string length [lindex [array get env DISPLAY] 1] ] 
          xschem set disable_unique_names $disable_unique_names
       }
   .menubar.tools.menu add checkbutton -label "Remember last command" -variable persistent_command \
-     -accelerator {} \
-     -command {
-       if { $persistent_command == 1} { xschem set persistent_command 1} else { xschem set persistent_command 0}
-     }
+     -command {xschem set persistent_command $persistent_command}
   .menubar.tools.menu add command -label "Insert symbol" -command "xschem place_symbol" -accelerator {Ins, Shift-I}
   toolbar_create ToolInsertSymbol "xschem place_symbol" "Insert Symbol"
   .menubar.tools.menu add command -label "Insert wire label" -command "xschem net_label 1" -accelerator {Alt-L}
@@ -4042,9 +4042,21 @@ if { ( $::OS== "Windows" || [string length [lindex [array get env DISPLAY] 1] ] 
   .menubar.tools.menu add command -label "Join/Trim wires" \
      -command "xschem trim_wires" -accelerator {&}
    toolbar_create ToolJoinTrim "xschem trim_wires" "Join/Trim Wires"
-  .menubar.tools.menu add command -label "Break wires" \
+  .menubar.tools.menu add command -label "Break wires at selected instance pins" \
      -command "xschem break_wires" -accelerator {!}
    toolbar_create ToolBreak "xschem break_wires" "Break Wires"
+  .menubar.tools.menu add checkbutton -label "Auto Join/Trim Wires" -variable autotrim_wires \
+     -command {
+         xschem set autotrim_wires $autotrim_wires
+         if {$autotrim_wires == 1} {
+           xschem trim_wires
+           xschem redraw
+         }
+     }
+  .menubar.tools.menu add command -label "Select all connected wires/labels/pins" -accelerator {Shift-Delete} \
+     -command { xschem connected_nets}
+  .menubar.tools.menu add command -label "Select conn. wires, stop at junctions" -accelerator {Ctrl-Delete} \
+     -command { xschem connected_nets 1 }
 
   .menubar.hilight.menu add command -label {Highlight net-pin name mismatches on selected instancs} \
    -command "xschem net_pin_mismatch" \
@@ -4053,6 +4065,8 @@ if { ( $::OS== "Windows" || [string length [lindex [array get env DISPLAY] 1] ] 
      -command "xschem check_unique_names 0"  -accelerator {#} 
   .menubar.hilight.menu add command -label {Rename duplicate instance names} \
      -command "xschem check_unique_names 1" -accelerator {Ctrl+#}
+  .menubar.hilight.menu add command -label {Propagate Highlight selected net/pins} \
+     -command "xschem hilight drill" -accelerator {Ctrl+Shift+K}
   .menubar.hilight.menu add command -label {Highlight selected net/pins} \
      -command "xschem hilight" -accelerator K
   .menubar.hilight.menu add command -label {Send selected net/pins to GAW} \

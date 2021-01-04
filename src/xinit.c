@@ -327,6 +327,7 @@ void free_xschem_data()
 {
   int i;
   delete_undo();
+  free_simdata();
   my_free(1098, &xctx->wire);
   my_free(1100, &xctx->text);
   my_free(1107, &xctx->inst);
@@ -405,6 +406,9 @@ void alloc_xschem_data()
   xctx->maxsel = 0;
   xctx->prep_net_structs = 0;
   xctx->prep_hi_structs = 0;
+  xctx->simdata.inst = NULL;
+  xctx->simdata.ninst = 0;
+  xctx->simdata.valid = 0;
   xctx->prep_hash_inst = 0;
   xctx->prep_hash_wires = 0;
   xctx->modified = 0;
@@ -462,7 +466,10 @@ void alloc_xschem_data()
   xctx->hilight_nets = 0;
   xctx->hilight_color = 0;
   xctx->rectcolor = 0;
-  for(i=0;i<CADMAXHIER;i++) xctx->sch_path[i]=NULL;
+  for(i=0;i<CADMAXHIER;i++) {
+    xctx->sch_path[i]=NULL;
+    xctx->sch_path_hash[i]=0;
+  }
   my_strdup(1187, &xctx->sch_path[0],".");
   xctx->sch_inst_number[0] = 1;
   xctx->maxt=CADMAXTEXT;
@@ -1091,7 +1098,7 @@ int Tcl_AppInit(Tcl_Interp *inter)
  }
  Tcl_CreateExitHandler(tclexit, 0);
 #ifdef __unix__
- my_snprintf(tmp, S(tmp),"regsub -all {~/} {.:%s} {%s/}", XSCHEM_LIBRARY_PATH, home_dir);
+ my_snprintf(tmp, S(tmp),"regsub -all {~/} {%s} {%s/}", XSCHEM_LIBRARY_PATH, home_dir);
  tcleval(tmp);
  tclsetvar("XSCHEM_LIBRARY_PATH", tclresult());
 
@@ -1100,12 +1107,12 @@ int Tcl_AppInit(Tcl_Interp *inter)
  if( !stat("./xschem.tcl", &buf) && !stat("./systemlib", &buf) && !stat("./xschem", &buf)) {
    running_in_src_dir = 1;
    tclsetvar("XSCHEM_SHAREDIR",pwd_dir); /* for testing xschem builds in src dir*/
-/*
+   /*
    my_snprintf(tmp, S(tmp), "subst .:[file normalize \"%s/../xschem_library/devices\"]", pwd_dir);
    tcleval(tmp);
    tclsetvar("XSCHEM_LIBRARY_PATH", tclresult());
-*/
-   my_snprintf(tmp, S(tmp), "subst .:[file dirname \"%s\"]/xschem_library/devices", pwd_dir);
+   */
+   my_snprintf(tmp, S(tmp), "subst [file dirname \"%s\"]/xschem_library/devices", pwd_dir);
    tcleval(tmp);
    tclsetvar("XSCHEM_LIBRARY_PATH", tclresult());
  } else if( !stat(XSCHEM_SHAREDIR, &buf) ) {

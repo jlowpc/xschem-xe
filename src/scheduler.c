@@ -110,6 +110,7 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
        cmd_found = 1;
        push_undo();
        round_schematic_to_grid(cadsnap);
+       if(autotrim_wires) trim_wires();
        set_modify(1);
        xctx->prep_hash_inst=0;
        xctx->prep_hash_wires=0;
@@ -267,6 +268,15 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
       }
     }
    
+    else if(!strcmp(argv[1],"connected_nets")) /* selected nets connected to currently selected ones */
+    {
+      int stop_at_junction = 0;
+      cmd_found = 1;
+      if(argc>=3 && argv[2][0] == '1') stop_at_junction = 1;
+      select_connected_wires(stop_at_junction);
+      Tcl_ResetResult(interp);
+    }
+
     else if(!strcmp(argv[1],"copy"))
     {
       cmd_found = 1;
@@ -1053,6 +1063,7 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
     {
       cmd_found = 1;
       enable_drill = 0;
+      if(argc >=3 && !strcmp(argv[2], "drill")) enable_drill = 1;
       hilight_net(0);
       /* draw_hilight_net(1); */
       redraw_hilights();
@@ -1383,6 +1394,7 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
           load_schematic(1, abs_sym_path(argv[2], ""), 1);
           Tcl_VarEval(interp, "update_recent_file {", abs_sym_path(argv[2], ""), "}", NULL);
           my_strdup(375, &xctx->sch_path[xctx->currsch],".");
+          xctx->sch_path_hash[xctx->currsch] = 0;
           xctx->sch_inst_number[xctx->currsch] = 1;
           zoom_full(1, 0, 1, 0.97);
         }
@@ -1419,6 +1431,7 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
         /* load_symbol(argv[2]); */
         load_schematic(0, abs_sym_path(argv[2], ""), 1);
         my_strdup(374, &xctx->sch_path[xctx->currsch],".");
+        xctx->sch_path_hash[xctx->currsch] = 0;
         xctx->sch_inst_number[xctx->currsch] = 1;
         zoom_full(1, 0, 1, 0.97);
       }
@@ -2009,7 +2022,8 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
         if( !strcmp(argv[2],"regex") )  r = search(argv[4],argv[5],0,select);
         else  r = search(argv[4],argv[5],1,select);
         if(r == 0) {
-          if(has_x && !strcmp(argv[1],"searchmenu")) tcleval("tk_messageBox -type ok -message {Not found.}");
+          if(has_x && !strcmp(argv[1],"searchmenu")) 
+            tcleval("tk_messageBox -type ok -message {Not found.}");
           Tcl_SetResult(interp,"0", TCL_STATIC);
         } else {
           Tcl_SetResult(interp,"1", TCL_STATIC);
@@ -2190,6 +2204,13 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
           persistent_command=1;
         } else {
           persistent_command=0;
+        }
+      }
+      else if(!strcmp(argv[2],"autotrim_wires")) {
+        if(!strcmp(argv[3],"1")) {
+          autotrim_wires=1;
+        } else {
+          autotrim_wires=0;
         }
       }
       else if(!strcmp(argv[2],"disable_unique_names")) {
@@ -2555,6 +2576,7 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
         save = draw_window; draw_window = 1;
         drawline(WIRELAYER,NOW, x1,y1,x2,y2, 0);
         draw_window = save;
+        if(autotrim_wires) trim_wires();
       }
       else xctx->ui_state |= MENUSTARTWIRE;
     }

@@ -749,7 +749,7 @@ void drawline(int c, int what, double linex1, double liney1, double linex2, doub
   y1=Y_TO_SCREEN(liney1);
   x2=X_TO_SCREEN(linex2);
   y2=Y_TO_SCREEN(liney2);
-  /* if(!only_probes && (x2-x1)< 2.0 && fabs(y2-y1) < 2.0) return; */
+  /* if(!only_probes && (x2-x1)< 3.0 && fabs(y2-y1) < 3.0) return; */
   if( clip(&x1,&y1,&x2,&y2) )
   {
    rr[i].x1=(short)x1;
@@ -765,7 +765,7 @@ void drawline(int c, int what, double linex1, double liney1, double linex2, doub
   y1=Y_TO_SCREEN(liney1);
   x2=X_TO_SCREEN(linex2);
   y2=Y_TO_SCREEN(liney2);
-  /* if(!only_probes && (x2-x1)< 2.0 && fabs(y2-y1)< 2.0) return; */
+  /* if(!only_probes && (x2-x1)< 3.0 && fabs(y2-y1)< 3.0) return; */
   if( clip(&x1,&y1,&x2,&y2) )
   {
    if(dash) {
@@ -788,7 +788,7 @@ void drawline(int c, int what, double linex1, double liney1, double linex2, doub
   y1=Y_TO_SCREEN(liney1);
   x2=X_TO_SCREEN(linex2);
   y2=Y_TO_SCREEN(liney2);
-  /* if(!only_probes && (x2-x1)< 2.0 && fabs(y2-y1)< 2.0) return; */
+  /* if(!only_probes && (x2-x1)< 3.0 && fabs(y2-y1)< 3.0) return; */
   if( clip(&x1,&y1,&x2,&y2) )
   {
    if(dash) {
@@ -1159,7 +1159,7 @@ void filledrect(int c, int what, double rectx1,double recty1,double rectx2,doubl
   y1=Y_TO_SCREEN(recty1);
   x2=X_TO_SCREEN(rectx2);
   y2=Y_TO_SCREEN(recty2);
-  if(!only_probes && (x2-x1)< 2.0 && (y2-y1)< 2.0) return;
+  if(!only_probes && (x2-x1)< 3.0 && (y2-y1)< 3.0) return;
   if( rectclip(xctx->areax1,xctx->areay1,xctx->areax2,xctx->areay2,&x1,&y1,&x2,&y2) )
   {
    if(draw_window) XFillRectangle(display, xctx->window, gcstipple[c], (int)x1, (int)y1,
@@ -1185,7 +1185,7 @@ void filledrect(int c, int what, double rectx1,double recty1,double rectx2,doubl
   y1=Y_TO_SCREEN(recty1);
   x2=X_TO_SCREEN(rectx2);
   y2=Y_TO_SCREEN(recty2);
-  if(!only_probes && (x2-x1)< 2.0 && (y2-y1)< 2.0) return;
+  if(!only_probes && (x2-x1)< 3.0 && (y2-y1)< 3.0) return;
   if( rectclip(xctx->areax1,xctx->areay1,xctx->areax2,xctx->areay2,&x1,&y1,&x2,&y2) )
   {
    r[i].x=(short)x1;
@@ -1289,7 +1289,7 @@ void drawpolygon(int c, int what, double *x, double *y, int points, int poly_fil
   if( !rectclip(xctx->areax1,xctx->areay1,xctx->areax2,xctx->areay2,&x1,&y1,&x2,&y2) ) {
     return;
   }
-  if( !only_probes && (x2-x1)<2.0 && (y2-y1)<2.0) return;
+  if( !only_probes && (x2-x1)<3.0 && (y2-y1)<3.0) return;
 
   p = my_malloc(38, sizeof(XPoint) * points);
   for(i=0;i<points; i++) {
@@ -1359,7 +1359,7 @@ void drawrect(int c, int what, double rectx1,double recty1,double rectx2,double 
   y1=Y_TO_SCREEN(recty1);
   x2=X_TO_SCREEN(rectx2);
   y2=Y_TO_SCREEN(recty2);
-  /* if(!only_probes && (x2-x1)< 2.0 && (y2-y1)< 2.0) return; */
+  /* if(!only_probes && (x2-x1)< 3.0 && (y2-y1)< 3.0) return; */
   if( rectclip(xctx->areax1,xctx->areay1,xctx->areax2,xctx->areay2,&x1,&y1,&x2,&y2) )
   {
    if(dash) {
@@ -1395,7 +1395,7 @@ void drawrect(int c, int what, double rectx1,double recty1,double rectx2,double 
   y1=Y_TO_SCREEN(recty1);
   x2=X_TO_SCREEN(rectx2);
   y2=Y_TO_SCREEN(recty2);
-  /* if(!only_probes && (x2-x1)< 2.0 && (y2-y1)< 2.0) return; */
+  /* if(!only_probes && (x2-x1)< 3.0 && (y2-y1)< 3.0) return; */
   if( rectclip(xctx->areax1,xctx->areay1,xctx->areax2,xctx->areay2,&x1,&y1,&x2,&y2) )
   {
    r[i].x=(short)x1;
@@ -1426,7 +1426,7 @@ void drawtemprect(GC gc, int what, double rectx1,double recty1,double rectx2,dou
   y1=Y_TO_SCREEN(recty1);
   x2=X_TO_SCREEN(rectx2);
   y2=Y_TO_SCREEN(recty2);
-  /* if( (x2-x1)< 2.0 && (y2-y1)< 2.0) return; */
+  /* if( (x2-x1)< 3.0 && (y2-y1)< 3.0) return; */
   if( rectclip(xctx->areax1,xctx->areay1,xctx->areax2,xctx->areay2,&x1,&y1,&x2,&y2) )
   {
    XDrawRectangle(display, xctx->window, gc, (int)x1, (int)y1,
@@ -1446,7 +1446,7 @@ void drawtemprect(GC gc, int what, double rectx1,double recty1,double rectx2,dou
   y1=Y_TO_SCREEN(recty1);
   x2=X_TO_SCREEN(rectx2);
   y2=Y_TO_SCREEN(recty2);
-  /* if( (x2-x1)< 2.0 && (y2-y1)< 2.0) return; */
+  /* if( (x2-x1)< 3.0 && (y2-y1)< 3.0) return; */
   if( rectclip(xctx->areax1,xctx->areay1,xctx->areax2,xctx->areay2,&x1,&y1,&x2,&y2) )
   {
    r[i].x=(short)x1;
@@ -1470,8 +1470,8 @@ void draw(void)
  struct instentry *instanceptr;
  struct wireentry *wireptr;
  int use_hash;
- register int c,i;
- register xSymbol *symptr;
+ int c, i = 0;
+ xSymbol *symptr;
  int textlayer;
 
  #if HAS_CAIRO==1
@@ -1498,6 +1498,7 @@ void draw(void)
       hash_wires();
     }
     if(!only_probes) {
+        struct iterator_ctx ctx;
         dbg(3, "draw(): check4\n");
         for(c=0;c<cadlayers;c++) {
           if(draw_single_layer!=-1 && c != draw_single_layer) continue;
@@ -1520,11 +1521,11 @@ void draw(void)
             xPoly *p = &xctx->poly[c][i];
             drawpolygon(c, NOW, p->x, p->y, p->points, p->fill, p->dash);
           }
-          if(use_hash) init_inst_iterator(x1, y1, x2, y2);
+          if(use_hash) init_inst_iterator(&ctx, x1, y1, x2, y2);
           else i = -1;
           while(1) {
             if(use_hash) {
-              if( !(instanceptr = inst_iterator_next())) break;
+              if( !(instanceptr = inst_iterator_next(&ctx))) break;
               i = instanceptr->n;
             }
             else {
@@ -1551,11 +1552,11 @@ void draw(void)
           drawline(c, END, 0.0, 0.0, 0.0, 0.0, 0);
         }
         if(draw_single_layer==-1 || draw_single_layer==WIRELAYER) {
-          if(use_hash) init_wire_iterator(x1, y1, x2, y2);
+          if(use_hash) init_wire_iterator(&ctx, x1, y1, x2, y2);
           else i = -1;
           while(1) {
             if(use_hash) {
-              if( !(wireptr = wire_iterator_next())) break;
+              if( !(wireptr = wire_iterator_next(&ctx))) break;
               i = wireptr->n;
             }
             else {

@@ -413,6 +413,7 @@ void ask_new_file(void)
      load_schematic(1, fullname,1); /* 20180925.1 */
      Tcl_VarEval(interp, "update_recent_file {", fullname, "}", NULL);
      my_strdup(1, &xctx->sch_path[xctx->currsch],".");
+     xctx->sch_path_hash[xctx->currsch] = 0;
      xctx->sch_inst_number[xctx->currsch] = 1;
      zoom_full(1, 0, 1, 0.97);
     }
@@ -877,8 +878,6 @@ int place_symbol(int pos, const char *symbol_name, double x, double y, short rot
   xctx->instances++; /* must be updated before calling symbol_bbox() */
 
 
-  if(xctx->prep_hash_inst) hash_inst(XINSERT, n); /* no need to rehash, add item */
-  /* xctx->prep_hash_inst=0; */
 
 
   /* force these vars to 0 to trigger a prepare_netlist_structs(0) needed by symbol_bbox->translate
@@ -887,6 +886,9 @@ int place_symbol(int pos, const char *symbol_name, double x, double y, short rot
   xctx->prep_hi_structs=0;
   symbol_bbox(n, &xctx->inst[n].x1, &xctx->inst[n].y1,
                     &xctx->inst[n].x2, &xctx->inst[n].y2);
+  if(xctx->prep_hash_inst) hash_inst(XINSERT, n); /* no need to rehash, add item */
+  /* xctx->prep_hash_inst=0; */
+
   if(draw_sym & 3) bbox(ADD, xctx->inst[n].x1, xctx->inst[n].y1, xctx->inst[n].x2, xctx->inst[n].y2);
   set_modify(1);
   if(draw_sym&1) {
@@ -1050,6 +1052,7 @@ void descend_schematic(int instnumber)
     inst_mult = 1;
   }
   my_strdup(14, &xctx->sch_path[xctx->currsch+1], xctx->sch_path[xctx->currsch]);
+  xctx->sch_path_hash[xctx->currsch+1] =0;
 
   inst_number = 1;
   if(inst_mult > 1) { /* on multiple instances ask where to descend, to correctly evaluate
@@ -1064,6 +1067,7 @@ void descend_schematic(int instnumber)
       dbg(1, "descend_schematic(): inum=%s\n", inum);
       if(!inum[0]) {
         my_free(710, &xctx->sch_path[xctx->currsch+1]);
+        xctx->sch_path_hash[xctx->currsch+1] =0;
         return;
       }
       inst_number=atoi(inum);
@@ -1652,9 +1656,8 @@ void new_wire(int what, double mx_snap, double my_snap)
         hash_wire(XINSERT, xctx->wires-1, 1);
         drawline(WIRELAYER,NOW, xctx->nl_xx1,xctx->nl_yy1,xctx->nl_xx2,xctx->nl_yy2, 0);
       }
-      /* xctx->prep_hash_wires = 0; */
       xctx->prep_hi_structs = 0;
-
+      if(autotrim_wires) trim_wires();
       update_conn_cues(1,1);
       if(show_pin_net_names) {
         prepare_netlist_structs(0);

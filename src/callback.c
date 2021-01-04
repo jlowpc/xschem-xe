@@ -638,7 +638,7 @@ int callback(int event, int mx, int my, KeySym key,
     dbg(1, "callback(): new color: %d\n",color_index[xctx->rectcolor]);
     break;
    }
-   if(key==XK_Delete && (xctx->ui_state & SELECTION) )        /* delete objects */
+   if(key==XK_Delete && (xctx->ui_state & SELECTION)  && state == 0)        /* delete objects */
    {
      if(xctx->semaphore >= 2) break;
      delete();break;
@@ -943,7 +943,7 @@ int callback(int event, int mx, int my, KeySym key,
     break;
    }
    if(key=='K' && state==(ControlMask|ShiftMask))       /* hilight net drilling thru elements  */
-                                                        /* with 'propagate_to' prop set on pins */
+                                                        /* with 'propag=' prop set on pins */
    {
     if(xctx->semaphore >= 2) break;
     enable_drill=1;
@@ -1028,6 +1028,7 @@ int callback(int event, int mx, int my, KeySym key,
     push_undo();
     round_schematic_to_grid(cadsnap);
     set_modify(1);
+    if(autotrim_wires) trim_wires();
     xctx->prep_hash_inst=0;
     xctx->prep_hash_wires=0;
     xctx->prep_net_structs=0;
@@ -1395,7 +1396,21 @@ int callback(int event, int mx, int my, KeySym key,
      break;
    }
    if(button==Button5 && state == 0 ) view_unzoom(CADZOOMSTEP);
-   else if(button == Button3 && xctx->semaphore <2) {
+   else if(button == Button3 &&  state == ControlMask && xctx->semaphore <2)
+   {
+     if(xctx->semaphore >= 2) break;
+     sel = select_object(xctx->mousex, xctx->mousey, SELECTED, 0);
+     if(sel) select_connected_wires(1);
+     break;
+   }
+   else if(button == Button3 &&  state == ShiftMask && xctx->semaphore <2)
+   {
+     if(xctx->semaphore >= 2) break;
+     sel = select_object(xctx->mousex, xctx->mousey, SELECTED, 0);
+     if(sel) select_connected_wires(0);
+     break;
+   }
+   else if(button == Button3 &&  state == 0 && xctx->semaphore <2) {
      if(!(xctx->ui_state & STARTPOLYGON) && !(state & Mod1Mask) ) {
        xctx->last_command = 0;
        unselect_all();

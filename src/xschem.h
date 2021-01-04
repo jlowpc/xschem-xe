@@ -324,7 +324,7 @@ do { \
     *size = __str_alloc_tmp__ + CADCHUNKALLOC; \
     my_realloc(1212, dest_string, *size); \
   } \
-} while(0) \
+} while(0)
 
 #define INT_WIDTH(x) ( (int)(x) == 0 ? 1 : (int)(x) ) 
 #define INT_BUS_WIDTH(x) ( (int)( (BUS_WIDTH) * (x) ) == 0 ? 1 : (int)( (BUS_WIDTH) * (x) ) ) 
@@ -476,6 +476,35 @@ typedef struct
   double zoom;
 } Zoom;
 
+
+struct iterator_ctx {
+                  int x1a, x2a;
+                  int y1a, y2a;
+                  int i, j, counti, countj;
+                  int tmpi, tmpj;
+                  struct instentry *instanceptr;
+                  struct wireentry *wireptr;
+                  unsigned short *instflag;
+                  unsigned short *wireflag;
+                 };
+
+struct simdata_pin {
+                  char *function;
+                  char *go_to;
+                  short clock;
+                 };
+ 
+struct simdata_inst {
+                  struct simdata_pin *pin;
+                  int npin;
+                 };
+
+struct simdata {
+                 struct simdata_inst *inst;
+                 int ninst;
+                 int valid;
+               };
+
 typedef struct {
   xWire *wire;
   xText *text;
@@ -512,6 +541,7 @@ typedef struct {
   char current_name[PATH_MAX];
   char file_version[100];
   char *sch_path[CADMAXHIER];
+  int sch_path_hash[CADMAXHIER];
   int sch_inst_number[CADMAXHIER];
   int previous_instance[CADMAXHIER]; /* to remember the instance we came from when going up the hier. */
   Zoom zoom_array[CADMAXHIER];
@@ -534,6 +564,7 @@ typedef struct {
   int prep_hi_structs;
   int prep_hash_inst;
   int prep_hash_wires;
+  struct simdata simdata;
   int modified;
   int semaphore;
   int get_tok_size;
@@ -693,6 +724,7 @@ extern char *tcl_command;
 extern char tcl_script[PATH_MAX];
 extern char plotfile[PATH_MAX];
 extern int persistent_command;
+extern int autotrim_wires;
 extern int dis_uniq_names;
 
 extern int tcp_port;
@@ -822,6 +854,7 @@ extern void saveas(const char *f, int type);
 extern const char *get_file_path(char *f);
 extern int save(int confirm);
 extern struct hilight_hashentry *bus_hilight_lookup(const char *token, int value, int what) ;
+extern struct hilight_hashentry *hilight_lookup(const char *token, int value, int what);
 extern int  name_strcmp(char *s, char *d) ;
 extern int search(const char *tok, const char *val, int sub, int sel);
 extern int process_options(int argc, char **argv);
@@ -1021,10 +1054,10 @@ extern void tclsetvar(const char *s, const char *value);
 extern void tcl_hook(char **res);
 extern void statusmsg(char str[],int n);
 extern void place_text(int draw_text, double mx, double my);
-extern void init_inst_iterator(double x1, double y1, double x2, double y2);
-extern struct instentry *inst_iterator_next();
-extern void init_wire_iterator(double x1, double y1, double x2, double y2);
-extern struct wireentry *wire_iterator_next();
+extern void init_inst_iterator(struct iterator_ctx *ctx, double x1, double y1, double x2, double y2);
+extern struct instentry *inst_iterator_next(struct iterator_ctx *ctx);
+extern void init_wire_iterator(struct iterator_ctx *ctx, double x1, double y1, double x2, double y2);
+extern struct wireentry *wire_iterator_next(struct iterator_ctx *ctx);
 extern void check_unique_names(int rename);
 
 extern void clear_instance_hash();
@@ -1116,11 +1149,14 @@ extern void logic_set(int v, int num);
 extern int hilight_netname(const char *name);
 extern void unhilight_net();
 extern void propagate_hilights(int set, int clear, int mode);
+extern void  select_connected_wires(int stop_at_junction);
 extern void draw_hilight_net(int on_window);
 extern void display_hilights(char **str);
 extern void redraw_hilights(void);
 extern void override_netlist_type(int type);
 extern void prepare_netlist_structs(int for_netlist);
+extern void create_simdata(void);
+extern void free_simdata(void);
 extern void delete_netlist_structs(void);
 extern void delete_inst_node(int i);
 extern void clear_all_hilights(void);

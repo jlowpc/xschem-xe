@@ -132,6 +132,7 @@ int big_grid_points=0;
 int rainbow_colors=0;
 int dis_uniq_names=0; /* if set allow instances with duplicate names */
 int persistent_command=0; /* remember last command 20181022 */
+int autotrim_wires=0;
 int color_ps=-1;
 int transparent_svg=-1;
 int only_probes=0;
@@ -215,7 +216,7 @@ int vertical_move=0;
 int pending_fullzoom=0;
 double color_dim=0.0;
 int no_undo=0;
-int enable_drill=0; /* pass net hilights through components with 'propagate_to' property set on pins */
+int enable_drill=0; /* pass net hilights through components with 'propag=' property set on pins */
 int batch_mode = 0; /* no tcl console if set; batch mode */
 int show_erc=1;
 

@@ -1055,6 +1055,7 @@ void load_schematic(int load_symbols, const char *filename, int reset_undo) /* 2
       tcleval( "wm iconname . \"xschem - [file tail [xschem get schname]]\"");
     }
   }
+  if(autotrim_wires) trim_wires();
   update_conn_cues(0, 0);
 }
 
@@ -2228,6 +2229,7 @@ void descend_symbol(void)
   my_strdup(364, &xctx->sch_path[xctx->currsch+1], xctx->sch_path[xctx->currsch]);
   my_strcat(365, &xctx->sch_path[xctx->currsch+1], str);
   my_strcat(366, &xctx->sch_path[xctx->currsch+1], ".");
+  xctx->sch_path_hash[xctx->currsch+1] = 0;
   xctx->sch_inst_number[xctx->currsch+1] = 1;
   my_free(921, &str);
   xctx->previous_instance[xctx->currsch]=xctx->sel_array[0].n;

@@ -346,7 +346,6 @@ void hash_wire(int what, int n, int incremental)
 void hash_wires(void)
 {
  int n;
-
  if(xctx->prep_hash_wires) return;
  del_wire_table();
 
@@ -646,6 +645,7 @@ void prepare_netlist_structs(int for_netlist)
   else if (!for_netlist && xctx->prep_hi_structs) return;
   /* delete instance pins spatial hash, wires spatial hash, node_hash, wires and inst nodes.*/
   else delete_netlist_structs();
+  xctx->simdata.valid = 0;
   dbg(1, "prepare_netlist_structs(): extraction\n");
   if(netlist_count == 0 ) startlevel = xctx->currsch;
   print_erc =  netlist_count == 0 || startlevel < xctx->currsch;
