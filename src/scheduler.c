@@ -1066,7 +1066,7 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
       if(argc >=3 && !strcmp(argv[2], "drill")) enable_drill = 1;
       hilight_net(0);
       /* draw_hilight_net(1); */
-      redraw_hilights();
+      redraw_hilights(0);
       Tcl_ResetResult(interp);
     }
    
@@ -1451,7 +1451,7 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
       if(argc > 3 ) num = atoi(argv[3]);
       if(argc > 2) {
         int n = atoi(argv[2]);
-        if(n == 3) n = -1;
+        if(n == 4) n = -1;
         logic_set(n, num);
       }
       Tcl_ResetResult(interp);
@@ -1916,7 +1916,7 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
         delete_inst_node(inst); /* 20180208 fix crashing bug: delete node info if changing symbol */
                              /* if number of pins is different we must delete these data *before* */
                              /* changing ysmbol, otherwise i might end up deleting non allocated data. */
-        my_strdup(369, &xctx->inst[inst].name,symbol);
+        my_strdup(369, &xctx->inst[inst].name, rel_sym_path(symbol));
         xctx->inst[inst].ptr=sym_number;
         bbox(ADD, xctx->inst[inst].x1, xctx->inst[inst].y1, xctx->inst[inst].x2, xctx->inst[inst].y2);
    
@@ -2121,7 +2121,7 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
       enable_drill = 0;
       hilight_net(GAW);
       /* draw_hilight_net(1); */
-      redraw_hilights();
+      redraw_hilights(0);
       Tcl_ResetResult(interp);
     }
    
@@ -2156,8 +2156,11 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
         hide_symbols=s;
       }
       else if(!strcmp(argv[2],"show_pin_net_names")) {
-        int s = atoi(argv[3]);
+        int i, s = atoi(argv[3]);
         show_pin_net_names=s;
+         for(i = 0; i < xctx->instances; i++) {
+           symbol_bbox(i, &xctx->inst[i].x1, &xctx->inst[i].y1, &xctx->inst[i].x2, &xctx->inst[i].y2);
+         }
       }
       else if(!strcmp(argv[2],"netlist_name")) {
         my_strncpy(xctx->netlist_name, argv[3], S(xctx->netlist_name));
@@ -2277,6 +2280,9 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
            change_layer();
          }
       }
+      else if(!strcmp(argv[2],"constrained_move")) {
+        constrained_move = atoi(argv[3]);
+      }
       else if(!strcmp(argv[2],"change_lw")) {
          change_lw=atoi(argv[3]);
       }
@@ -2289,28 +2295,6 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
       else {
         Tcl_AppendResult(interp, "xschem set ", argv[1], argv[3], ": invalid command.", NULL);
         return TCL_ERROR;
-      }
-    }
-   
-    else if(!strcmp(argv[1],"set") && argc==3)
-    {
-      cmd_found = 1;
-      if(!strcmp(argv[2],"horizontal_move")) {
-        horizontal_move = atoi(tclgetvar("horizontal_move"));
-        if(horizontal_move) {
-          vertical_move=0;
-          tcleval("set vertical_move 0" );
-        }
-      }
-      else if(!strcmp(argv[2],"vertical_move")) {
-        vertical_move = atoi(tclgetvar("vertical_move"));
-        if(vertical_move) {
-          horizontal_move=0;
-          tcleval("set horizontal_move 0" );
-        }
-      }
-      else {
-        fprintf(errfp, "xschem set %s : invalid command.\n", argv[2]);
       }
     }
    

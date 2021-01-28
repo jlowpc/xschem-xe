@@ -210,7 +210,7 @@ void check_unique_names(int rename)
         if(comma_pos) *comma_pos = '\0';
         dbg(1, "check_unique_names(): checking %s\n", start);
         if( (entry = inst_hash_lookup(table, start, i, XINSERT_NOREPLACE, strlen(start)) ) && entry->value != i) {
-          xctx->inst[i].color = PINLAYER;
+          xctx->inst[i].color = -PINLAYER;
           xctx->hilight_nets=1;
           if(rename == 1) {
             if(first) {
@@ -247,7 +247,7 @@ void check_unique_names(int rename)
     bbox(END,0.0,0.0,0.0,0.0);
   }
   /* draw_hilight_net(1); */
-  redraw_hilights();
+  redraw_hilights(0);
   /* draw_window = save_draw; */
 }
 
@@ -461,7 +461,7 @@ const char *get_tok_value(const char *s,const char *tok, int with_quotes)
     return "";
   }
   xctx->get_tok_value_size = xctx->get_tok_size = 0;
-  dbg(2, "get_tok_value(): looking for <%s> in <%s>\n",tok,s);
+  /* dbg(2, "get_tok_value(): looking for <%s> in <%s>\n",tok,s); */
   if( size == 0 ) {
     sizetok = size = CADCHUNKALLOC;
     my_realloc(454, &result, size);
@@ -503,7 +503,7 @@ const char *get_tok_value(const char *s,const char *tok, int with_quotes)
             /* report back also token size, useful to check if requested token exists */
             xctx->get_tok_size = token_pos;
           }
-          dbg(2, "get_tok_value(): token=%s\n", token);
+          /* dbg(2, "get_tok_value(): token=%s\n", token);*/
           token_pos=0;
         }
     } else if(state==TOK_END) {
@@ -2285,7 +2285,7 @@ const char *net_name(int i, int j, int *multip, int hash_prefix_unnamed_net, int
 {
  int tmp;
  char errstr[2048];
- static const char unconn[]="__UNCONNECTED_PIN__";
+ static char unconn[50];
  char str_node[40]; /* 20161122 overflow safe */
  if(xctx->inst[i].node && xctx->inst[i].node[j]!=NULL)
  {
@@ -2326,10 +2326,11 @@ const char *net_name(int i, int j, int *multip, int hash_prefix_unnamed_net, int
                  i, j, xctx->inst[i].instname ) ;
      statusmsg(errstr,2);
      if(!netlist_count) {
-       xctx->inst[i].color = PINLAYER;
+       xctx->inst[i].color = -PINLAYER;
        xctx->hilight_nets=1;
      }
    }
+   my_snprintf(unconn, S(unconn), "__UNCONNECTED_PIN__%d", xctx->netlist_unconn_cnt++);
    return unconn;
  }
 }
@@ -2784,7 +2785,7 @@ const char *translate(int inst, const char* s)
   else if(state==TOK_SEP)
   {
    token[token_pos]='\0';
-   dbg(2, "translate(): token=%s\n", token);
+   /* dbg(2, "translate(): token=%s\n", token);*/
 
    /* if spiceprefix==0 and token == @spiceprefix then set empty value */
    if(!spiceprefix && !strcmp(token, "@spiceprefix")) {
@@ -2804,7 +2805,7 @@ const char *translate(int inst, const char* s)
     } else { /* no definition found -> subst with token without leading $ */
       tmp=token_pos -1 ; /* we need token_pos -1 chars, ( strlen(token+1) ) , excluding leading '$' */
       STR_ALLOC(&result, tmp + result_pos, &size);
-      dbg(2, "translate(): token=%s, token_pos = %d\n", token, token_pos);
+      /* dbg(2, "translate(): token=%s, token_pos = %d\n", token, token_pos); */
       memcpy(result+result_pos, token + 1, tmp+1);
     }
     result_pos+=tmp;
@@ -2878,7 +2879,7 @@ const char *translate(int inst, const char* s)
        if(  !pin_attr_value && !strcmp(pin_attr, "net_name")) {
          char *instprop = xctx->inst[inst].prop_ptr;
          char *symprop = (xctx->inst[inst].ptr + xctx->sym)->prop_ptr;
-         if( show_pin_net_names && (!strcmp(get_tok_value(instprop, "net_name", 0), "true") ||
+         if(show_pin_net_names && (!strcmp(get_tok_value(instprop, "net_name", 0), "true") ||
             !strcmp(get_tok_value(symprop, "net_name", 0), "true"))) {
             prepare_netlist_structs(0);
             my_strdup2(1175, &pin_attr_value,

@@ -276,7 +276,7 @@ void hash_inst_pin(int what, int i, int j)
         xctx->inst[i].name, j, prop_ptr);
     statusmsg(str,2);
     if(!netlist_count) {
-      xctx->inst[i].color = PINLAYER;
+      xctx->inst[i].color = -PINLAYER;
       xctx->hilight_nets=1;
     }
   }
@@ -442,9 +442,9 @@ static void signal_short( char *n1, char *n2)
    statusmsg(str,2);
    if(!netlist_count) {
       bus_hilight_lookup(n1, xctx->hilight_color, XINSERT);
-      if(incr_hilight) xctx->hilight_color++;
+      if(incr_hilight) incr_hilight_color();
       bus_hilight_lookup(n2, xctx->hilight_color, XINSERT);
-      if(incr_hilight) xctx->hilight_color++;
+      if(incr_hilight) incr_hilight_color();
    }
  }
 }
@@ -457,7 +457,7 @@ void wirecheck(int k)    /* recursive routine */
  int x1a, x2a, y1a, y2a;
  struct wireentry *ptr2;
  xWire * const wire = xctx->wire;
-
+ 
   x1=wire[k].x1;
   x2=wire[k].x2;
   y1=wire[k].y1;
@@ -695,7 +695,7 @@ void prepare_netlist_structs(int for_netlist)
            strcmp(type, "use")) {
         my_snprintf(str, S(str), "instance: %d (%s): no name attribute set", i, inst[i].name);
         statusmsg(str,2);
-        inst[i].color = PINLAYER;
+        inst[i].color = -PINLAYER;
         xctx->hilight_nets=1;
       }
     }
@@ -703,7 +703,7 @@ void prepare_netlist_structs(int for_netlist)
       char str[2048];
       my_snprintf(str, S(str), "Symbol: %s: no type attribute set", inst[i].name);
       statusmsg(str,2);
-      inst[i].color = PINLAYER;
+      inst[i].color = -PINLAYER;
       xctx->hilight_nets=1;
     }
     if(type && inst[i].node && IS_LABEL_OR_PIN(type) ) { /* instance must have a pin! */
@@ -1091,10 +1091,14 @@ int sym_vs_sch_pins()
               break;
             case 'L':
             case 'B':
-              fscanf(fd, "%d",&tmpi);
+              if(fscanf(fd, "%d",&tmpi)< 1) {
+                 fprintf(errfp,"sym_vs_sch_pins(): WARNING:  missing fields for LINE/BOX object, ignoring\n");
+                 read_line(fd, 0);
+                 break;
+              }
             case 'N':
               if(fscanf(fd, "%lf %lf %lf %lf ",&tmpd, &tmpd, &tmpd, &tmpd) < 4) {
-                 fprintf(errfp,"WARNING:  missing fields for LINE/BOX object, ignoring\n");
+                 fprintf(errfp,"sym_vs_sch_pins(): WARNING:  missing fields for LINE/BOX object, ignoring\n");
                  read_line(fd, 0);
                  break;
                }
@@ -1102,13 +1106,13 @@ int sym_vs_sch_pins()
               break;
             case 'P':
               if(fscanf(fd, "%d %d",&tmpi, &tmpi)<2) {
-                fprintf(errfp,"WARNING: missing fields for POLYGON object, ignoring.\n");
+                fprintf(errfp,"sym_vs_sch_pins(): WARNING: missing fields for POLYGON object, ignoring.\n");
                 read_line(fd, 0);
                 break;
               }
               for(j=0;j<tmpi;j++) {
                 if(fscanf(fd, "%lf %lf ",&tmpd, &tmpd)<2) {
-                  fprintf(errfp,"WARNING: missing fields for POLYGON points, ignoring.\n");
+                  fprintf(errfp,"sym_vs_sch_pins(): WARNING: missing fields for POLYGON points, ignoring.\n");
                   read_line(fd, 0);
                 }
               }
@@ -1117,7 +1121,7 @@ int sym_vs_sch_pins()
             case 'A':
               fscanf(fd, "%d",&tmpi);
               if(fscanf(fd, "%lf %lf %lf %lf %lf ",&tmpd, &tmpd, &tmpd, &tmpd, &tmpd) < 5) {
-                fprintf(errfp,"WARNING:  missing fields for ARC object, ignoring\n");
+                fprintf(errfp,"sym_vs_sch_pins(): WARNING:  missing fields for ARC object, ignoring\n");
                 read_line(fd, 0);
                 break;
               }
@@ -1126,7 +1130,7 @@ int sym_vs_sch_pins()
             case 'T':
               load_ascii_string(&tmp,fd);
               if(fscanf(fd, "%lf %lf %hd %hd %lf %lf ", &tmpd, &tmpd, &tmps, &tmps, &tmpd, &tmpd) < 6 ) {
-                fprintf(errfp,"WARNING:  missing fields for TEXT object, ignoring\n");
+                fprintf(errfp,"sym_vs_sch_pins(): WARNING:  missing fields for TEXT object, ignoring\n");
                 read_line(fd, 0);
                 break;
               }
@@ -1179,7 +1183,7 @@ int sym_vs_sch_pins()
                       statusmsg(str,2);
                       for(j = 0; j < xctx->instances; j++) {
                         if(!strcmp(xctx->inst[j].name, xctx->sym[i].name)) {
-                          xctx->inst[i].color = PINLAYER;
+                          xctx->inst[i].color = -PINLAYER;
                           xctx->hilight_nets=1;
                         }
                       }
@@ -1195,7 +1199,7 @@ int sym_vs_sch_pins()
                   statusmsg(str,2);
                   for(j = 0; j < xctx->instances; j++) {
                     if(!strcmp(xctx->inst[j].name, xctx->sym[i].name)) {
-                      xctx->inst[i].color = PINLAYER;
+                      xctx->inst[i].color = -PINLAYER;
                       xctx->hilight_nets=1;
                     }
                   }
@@ -1228,7 +1232,7 @@ int sym_vs_sch_pins()
           statusmsg(str,2);
           for(j = 0; j < xctx->instances; j++) {
             if(!strcmp(xctx->inst[j].name, xctx->sym[i].name)) {
-              xctx->inst[i].color = PINLAYER;
+              xctx->inst[i].color = -PINLAYER;
               xctx->hilight_nets=1;
             }
           }
@@ -1251,7 +1255,7 @@ int sym_vs_sch_pins()
             statusmsg(str,2);
             for(k = 0; k < xctx->instances; k++) {
               if(!strcmp(xctx->inst[k].name, xctx->sym[i].name)) {
-                xctx->inst[i].color = PINLAYER;
+                xctx->inst[i].color = -PINLAYER;
                 xctx->hilight_nets=1;
               }
             }
@@ -1266,12 +1270,7 @@ int sym_vs_sch_pins()
         lab_array_size = 0;
         pin_cnt=0;
       }
-
-
-
     } /* if( ... "subcircuit"... ) */
-
-
     my_free(844, &type);
     my_free(845, &tmp);
     my_free(846, &lab);

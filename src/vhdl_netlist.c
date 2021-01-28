@@ -39,6 +39,7 @@ void global_vhdl_netlist(int global)  /* netlister driver */
  struct stat buf;
  char *subckt_name;
 
+ xctx->netlist_unconn_cnt=0; /* unique count of unconnected pins while netlisting */
  statusmsg("",2);  /* clear infowindow */
  /* top sch properties used for library use declarations and type definitions */
  /* to be printed before any entity declarations */
@@ -693,5 +694,5 @@ void vhdl_netlist(FILE *fd , int vhdl_stop)
    my_free(1097, &type);
  }
  dbg(1, "vhdl_netlist():       end\n");
- if(!vhdl_stop && !netlist_count) redraw_hilights(); /* draw_hilight_net(1); */
+ if(!vhdl_stop && !netlist_count) redraw_hilights(0); /* draw_hilight_net(1); */
 }

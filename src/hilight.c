@@ -102,19 +102,26 @@ void free_hilight_hash(void) /* remove the whole hash table  */
  * active_layer[2] = 10  if 9 is disabled it is skipped
  * ...
  * if a layer is disabled (not viewable) it is skipped
- * active layers is the total number of layers for hilights.
+ * n_active_layers is the total number of layers for hilights.
+ * standard xschem conf: cadlayers=22, n_active_layers=15 if no disabled layers.
  */
 int get_color(int value)
 {
   int x;
 
-  if(value < 0) return -value;
+  if(value < 0) return (-value) % cadlayers ;
   if(n_active_layers) {
     x = value%(n_active_layers);
     return active_layer[x];
   } else {
     return cadlayers > 5 ? 5 : cadlayers -1; /* desperate attempt to return a decent color */
   }
+}
+
+
+void incr_hilight_color(void)
+{
+  xctx->hilight_color = (xctx->hilight_color + 1) % (n_active_layers * cadlayers);
 }
 
 /* print all highlight signals which are not ports (in/out/inout). */
@@ -342,7 +349,7 @@ void hilight_net_pin_mismatches(void)
       if(netname && strcmp(lab, netname)) {
         dbg(1, "hilight_net_pin_mismatches(): hilight: %s\n", netname);
         bus_hilight_lookup(netname, xctx->hilight_color, XINSERT_NOREPLACE);
-        if(incr_hilight) xctx->hilight_color++;
+        if(incr_hilight) incr_hilight_color();
       }
     }
 
@@ -352,7 +359,7 @@ void hilight_net_pin_mismatches(void)
   my_free(715, &lab);
   my_free(716, &netname);
   propagate_hilights(1, 0, XINSERT_NOREPLACE);
-  redraw_hilights();
+  redraw_hilights(0);
 }
 
 void hilight_parent_pins(void)
@@ -462,6 +469,10 @@ int bus_search(const char*s)
  return bus;
 }
 
+/* sel: -1 --> unselect
+ *       1 --> select
+ *       0 --> highlight
+ */
 int search(const char *tok, const char *val, int sub, int sel)
 {
  int save_draw;
@@ -478,6 +489,7 @@ int search(const char *tok, const char *val, int sub, int sel)
  regex_t re;
 #endif
 
+ /* when unselecting selected area should be redrawn */
  if(sel == -1 && !big) {
    calc_drawing_bbox(&boundbox, 1);
  }
@@ -493,7 +505,7 @@ int search(const char *tok, const char *val, int sub, int sel)
  dbg(1, "search():val=%s\n", val);
  if(!sel) {
    col=xctx->hilight_color;
-   if(incr_hilight) xctx->hilight_color++;
+   if(incr_hilight) incr_hilight_color();
  }
  has_token = 0;
  prepare_netlist_structs(0);
@@ -535,7 +547,7 @@ int search(const char *tok, const char *val, int sub, int sel)
      {
        if(!sel) {
          type = (xctx->inst[i].ptr+ xctx->sym)->type;
-         if( type && IS_LABEL_SH_OR_PIN(type) ) {
+         if( type && xctx->inst[i].node && IS_LABEL_SH_OR_PIN(type) ) {
            bus_hilight_lookup(xctx->inst[i].node[0], col, XINSERT_NOREPLACE); /* sets xctx->hilight_nets=1; */
          } else {
            dbg(1, "search(): setting hilight flag on inst %d\n",i);
@@ -650,7 +662,7 @@ int search(const char *tok, const char *val, int sub, int sel)
      rebuild_selected_array(); /* sets or clears xctx->ui_state SELECTION flag */
      draw_selection(gc[SELLAYER], 0);
    }
-   else redraw_hilights();
+   else redraw_hilights(0);
  }
  #ifdef __unix__
  regfree(&re);
@@ -731,9 +743,9 @@ int hilight_netname(const char *name)
   node_entry = bus_hash_lookup(name, "", XLOOKUP, 0, "", "", "", "");
                     /* sets xctx->hilight_nets=1 */
   if(node_entry && !bus_hilight_lookup(name, xctx->hilight_color, XINSERT_NOREPLACE)) {
-    if(incr_hilight) xctx->hilight_color++;
+    if(incr_hilight) incr_hilight_color();
     propagate_hilights(1, 0, XINSERT_NOREPLACE);
-    redraw_hilights();
+    redraw_hilights(0);
   }
   return node_entry ? 1 : 0;
 }
@@ -852,8 +864,8 @@ void propagate_hilights(int set, int clear, int mode)
           xctx->inst[i].color=-10000;
         }
       }
-    } else if( type && IS_LABEL_SH_OR_PIN(type) ) {
-      entry=bus_hilight_lookup( xctx->inst[i].lab, 0, XLOOKUP);
+    } else if(type && xctx->inst[i].node && IS_LABEL_SH_OR_PIN(type) ) {
+      entry=bus_hilight_lookup( xctx->inst[i].node[0], 0, XLOOKUP);
       if(entry && set)        xctx->inst[i].color = entry->value;
       else if(!entry && clear) xctx->inst[i].color = -10000;
     }
@@ -863,9 +875,10 @@ void propagate_hilights(int set, int clear, int mode)
 }
 
 /* use negative values to bypass the normal hilight color enumeration */
-#define LOGIC_X -1
-#define LOGIC_0 -12
-#define LOGIC_1 -5
+#define LOGIC_0 -12  /* 0 */
+#define LOGIC_1 -5   /* 1 */
+#define LOGIC_X -1   /* 2 */
+#define LOGIC_Z -13  /* 3 */
 #define STACKMAX 200
 
 int get_logic_value(int inst, int n)
@@ -882,7 +895,7 @@ int get_logic_value(int inst, int n)
     val = 2; /* LOGIC_X */
   } else {
     val = entry->value;
-    val = (val == LOGIC_0) ? 0 : (val == LOGIC_1) ? 1 : 2;
+    val = (val == LOGIC_0) ? 0 : (val == LOGIC_1) ? 1 : (val == LOGIC_Z) ? 3 : 2;
     /* dbg(1, "get_logic_value(): inst=%d pin=%d net=%s val=%d\n", inst, n, netname, val); */
   }
   /* my_free(xxxx, &netname); */
@@ -902,7 +915,7 @@ void print_stack(int  *stack, int sp)
 int eval_logic_expr(int inst, int output)
 {
   int stack[STACKMAX];
-  int pos = 0, i, sp = 0;
+  int pos = 0, i, s, sp = 0;
   char *str;
   int res = 0;
 
@@ -910,82 +923,132 @@ int eval_logic_expr(int inst, int output)
   dbg(1, "eval_logic_expr(): inst=%d pin=%d function=%s\n", inst, output, str ? str : "NULL");
   if(!str) return 2; /* no logic function defined, return LOGIC_X */
   while(str[pos]) {
-    if(str[pos] == 'd') { /* duplicate top element*/
-      if(sp > 0 && sp < STACKMAX) {
-        stack[sp] = stack[sp - 1];
-        sp++;
-      }
-    /* rotate down: bottom element goes to top */
-    } else if(str[pos] == 'r') {
-      if(sp > 1) {
-        int tmp = stack[0];
-        for(i = 0 ; i < sp - 1; i++) stack[i] = stack[i + 1];
-        stack[sp - 1] = tmp;
-      }
-    } else if(str[pos] == 'x') { /* exchange top 2 operands */
-      if(sp > 1) {
-         int tmp = stack[sp - 2];
-         stack[sp - 2] =  stack[sp - 1];
-         stack[sp - 1] = tmp;
-      }
-    } else if(str[pos] == '~') { /* negation operator */
-      if(sp > 0) {
-        sp--;
-        if(stack[sp] != 2) stack[sp] = !stack[sp];
-        ++sp;
-      }
-    } else if(str[pos] == '|') { /* or operator */
-      if(sp > 1) {
-        res = 0;
-        for(i = sp - 2; i < sp; i++) {
-          if(stack[i] == 1) {
-            res = 1;
-            break;
-          } else if(stack[i] == 2) {
-            res = 2;
-          }
+    switch(str[pos]) {
+      case 'd': /* duplicate top element*/
+        if(sp > 0 && sp < STACKMAX) {
+          stack[sp] = stack[sp - 1];
+          sp++;
         }
-        stack[sp - 2] = res;
-        sp--;
-      }
-    } else if(str[pos] == '&') { /* and operator */
-      if(sp > 1) {
-        res = 1;
-        for(i = sp - 2; i < sp; i++) {
-          if(stack[i] == 0) {
-            res = 0;
-            break;
-          } else if(stack[i] == 2) {
-            res = 2;
-          }
+        break;
+      case 'r': /* rotate down: bottom element goes to top */
+        if(sp > 1) {
+          s = stack[0];
+          for(i = 0 ; i < sp - 1; i++) stack[i] = stack[i + 1];
+          stack[sp - 1] = s;
         }
-        stack[sp - 2] = res;
-        sp--;
-      }
-    } else if(str[pos] == '^') { /* xor operator */
-      if(sp > 1) {
-        res = 0;
-        for(i = sp - 2; i < sp; i++) {
-          if(stack[i] != 2) {
-            res = res ^ stack[i];
-          }
-          else {
-            res = 2;
-            break;
-          }
+        break;
+      case 'x': /* exchange top 2 operands */
+        if(sp > 1) {
+           s = stack[sp - 2];
+           stack[sp - 2] =  stack[sp - 1];
+           stack[sp - 1] = s;
         }
-        stack[sp - 2] = res;
-        sp--;
-      }
-    } else if(str[pos] == 'L') { /* logic low (0) */
-      if(sp < STACKMAX) {
-        stack[sp++] = 0;
-      }
-    } else if(str[pos] == 'H') { /* logic high (1) */
-      if(sp < STACKMAX) {
-        stack[sp++] = 1;
-      }
-    } else if(isdigit(str[pos])) {
+        break;
+      case '~': /* negation operator */
+        if(sp > 0) {
+          sp--;
+          if(!(stack[sp] & 2)) stack[sp] = !stack[sp];
+          else stack[sp] = 2;
+          ++sp;
+        }
+        break;
+      case  'z': /* Tristate driver [signal,enable,'z']-> signal if z==1, Z (3) otherwise */
+        if(sp > 1) {
+          s = stack[sp - 1];
+          stack[sp - 2] = (s & 2) ? 2 : (s == 1 ) ? stack[sp - 2] : 3;
+          sp--;
+        }
+        break;
+      case 'M': /* mux operator */
+        s = stack[sp - 1];
+        if(sp > 2) {
+          if(!(s & 2) ) {
+            stack[sp - 3] = (s == 0) ? stack[sp - 3]  : stack[sp - 2];
+          }
+          else stack[sp - 3] = 3;
+          sp -=2;
+        }
+        break;
+      case 'm': /* mux operator , lower priority*/
+        s = stack[sp - 1];
+        if(sp > 2) {
+          if(!(s & 2) ) { /* reduce pessimism, avoid infinite loops */
+            stack[sp - 3] = (s == 0) ? stack[sp - 3]  : stack[sp - 2];
+          }
+          else stack[sp - 3] = 4;
+          sp -=2;
+        }
+        break;
+      case '|': /* or operator */
+        if(sp > 1) {
+          res = 0;
+          for(i = sp - 2; i < sp; i++) {
+            if(stack[i] == 1) {
+              res = 1;
+              break;
+            } else if(stack[i] & 2) {
+              res = 2;
+            }
+          }
+          stack[sp - 2] = res;
+          sp--;
+        }
+        break;
+      case '&': /* and operator */
+        if(sp > 1) {
+          res = 1;
+          for(i = sp - 2; i < sp; i++) {
+            if(stack[i] == 0) {
+              res = 0;
+              break;
+            } else if(stack[i] & 2) {
+              res = 2;
+            }
+          }
+          stack[sp - 2] = res;
+          sp--;
+        }
+        break;
+      case '^': /* xor operator */
+        if(sp > 1) {
+          res = 0;
+          for(i = sp - 2; i < sp; i++) {
+            if(!(stack[i] & 2)) {
+              res = res ^ stack[i];
+            }
+            else {
+              res = 2;
+              break;
+            }
+          }
+          stack[sp - 2] = res;
+          sp--;
+        }
+        break;
+      case 'L': /* logic low (0) */
+        if(sp < STACKMAX) {
+          stack[sp++] = 0;
+        }
+        break;
+      case 'H': /* logic high (1) */
+        if(sp < STACKMAX) {
+          stack[sp++] = 1;
+        }
+        break;
+      case 'Z': /* logic Z (3) */
+        if(sp < STACKMAX) {
+          stack[sp++] = 3;
+        }
+        break;
+      case 'U': /* Do not assign to node */
+        if(sp < STACKMAX) {
+          stack[sp++] = 4;
+        }
+        break;
+      default:
+        break;
+    } /* switch */
+    if(isdigit(str[pos])) {
       if(sp < STACKMAX) {
         char *num = str + pos;
         while(isdigit(str[++pos])) ;
@@ -995,7 +1058,7 @@ int eval_logic_expr(int inst, int output)
       else dbg(0, "eval_logic_expr(): stack overflow!\n");
     }
     pos++;
-  }
+  } /* while */
   dbg(1, "eval_logic_expr(): inst %d output %d, returning %d\n", inst, output, stack[0]);
   return stack[0];
 }
@@ -1020,7 +1083,8 @@ void create_simdata(void)
       xctx->simdata.inst[i].pin[j].go_to=NULL;
       my_snprintf(function, S(function), "function%d", j);
       my_strdup(717, &xctx->simdata.inst[i].pin[j].function, get_tok_value(symbol->prop_ptr, function, 0));
-      my_strdup(963, &xctx->simdata.inst[i].pin[j].go_to, get_tok_value(symbol->rect[PINLAYER][j].prop_ptr, "goto", 0));
+      my_strdup(963, &xctx->simdata.inst[i].pin[j].go_to, 
+                get_tok_value(symbol->rect[PINLAYER][j].prop_ptr, "goto", 0));
       str = get_tok_value(symbol->rect[PINLAYER][j].prop_ptr, "clock", 0);
       xctx->simdata.inst[i].pin[j].clock = str[0] ? str[0] - '0' : -1;
     }
@@ -1046,25 +1110,32 @@ void free_simdata(void)
   xctx->simdata.valid = 0;
 }
 
+#define DELAYED_ASSIGN
 void propagate_logic()
 {
   /* char *propagated_net=NULL; */
-  int found /* , mult */;
+  int found, iter = 0 /* , mult */;
   int i, j, npin;
   int propagate;
+  int min_iter = 3; /* set to 3 to simulate up to 3 series bidirectional pass-devices */
   struct hilight_hashentry  *entry;
-  int val, oldval;
-  static int map[] = {LOGIC_0, LOGIC_1, LOGIC_X};
+  int val, oldval, newval;
+  static int map[] = {LOGIC_0, LOGIC_1, LOGIC_X, LOGIC_Z};
+  #ifdef DELAYED_ASSIGN
+  int *newval_arr = NULL;
+  #endif
 
-  tclsetvar("tclstop", "0");
   prepare_netlist_structs(0);
   while(1) {
     found=0;
     for(i=0; i<xctx->simdata.ninst; i++) {
       npin = xctx->simdata.inst[i].npin;
+      #ifdef DELAYED_ASSIGN
+      my_realloc(778, &newval_arr, npin * sizeof(int));
+      for(j=0; j<npin;j++) newval_arr[j] = -10000;
+      #endif
       for(j=0; j<npin;j++) {
         if(xctx->simdata.inst && xctx->simdata.inst[i].pin && xctx->simdata.inst[i].pin[j].go_to) {
-        /* if(xctx->simdata.inst[i].pin[j].go_to) { */
           int n = 1;
           const char *propag;
           int clock_pin, clock_val, clock_oldval;
@@ -1116,21 +1187,38 @@ void propagate_logic()
             /* no bus_hilight_lookup --> no bus expansion */
             entry = hilight_lookup(xctx->inst[i].node[propagate], 0, XLOOKUP); /* destination pin */
             oldval = (!entry) ? LOGIC_X : entry->value;
-            val =  map[eval_logic_expr(i, propagate)];
-            if(oldval != val) {
-               hilight_lookup(xctx->inst[i].node[propagate], val, XINSERT);
-               found=1; /* keep looping until no more nets are found. */
+            newval = eval_logic_expr(i, propagate);
+            val =  map[newval];
+            if( newval !=4 && (iter < min_iter || (newval !=3 && oldval != val) )) {
+              dbg(1, "propagate_logic(): inst %d pin %d oldval %d newval %d to pin %s\n",
+                   i, j, oldval, val, xctx->inst[i].node[propagate]);
+
+              #ifdef DELAYED_ASSIGN
+              newval_arr[propagate] = val;
+              #else 
+              hilight_lookup(xctx->inst[i].node[propagate], val, XINSERT);
+              #endif
+              found=1; /* keep looping until no more nets are found. */
             }
           }
         }
       } /* for(j...) */
+      #ifdef DELAYED_ASSIGN
+      for(j=0;j<npin;j++) {
+        if(newval_arr[j] != -10000) hilight_lookup(xctx->inst[i].node[j], newval_arr[j], XINSERT);
+      }
+      #endif
     } /* for(i...) */
     xctx->hilight_time++;
     if(!found) break;
     /* get out from infinite loops (circuit is oscillating) */
     Tcl_VarEval(interp, "update; if {$::tclstop == 1} {return 1} else {return 0}", NULL);
     if( tclresult()[0] == '1') break;
+    iter++;
   } /* while(1) */
+  #ifdef DELAYED_ASSIGN
+  my_free(779, &newval_arr);
+  #endif
   /* my_free(1222, &propagated_net); */
 }
 
@@ -1140,7 +1228,7 @@ void logic_set(int value, int num)
   char *type;
   xRect boundbox;
   int big =  xctx->wires> 2000 || xctx->instances > 2000 ;
-  static int map[] = {LOGIC_0, LOGIC_1, LOGIC_X};
+  static int map[] = {LOGIC_0, LOGIC_1, LOGIC_X, LOGIC_Z};
   struct hilight_hashentry  *entry;
  
   prepare_netlist_structs(0);
@@ -1212,7 +1300,7 @@ void hilight_net(int to_waveform)
          /* sets xctx->hilight_nets=1 */
      if(!bus_hilight_lookup(xctx->wire[n].node, xctx->hilight_color, XINSERT_NOREPLACE)) {
        if(to_waveform == GAW) send_net_to_gaw(sim_is_xyce, xctx->wire[n].node);
-       if(incr_hilight) xctx->hilight_color++;
+       if(incr_hilight) incr_hilight_color();
      }
      break;
     case ELEMENT:
@@ -1221,13 +1309,13 @@ void hilight_net(int to_waveform)
            /* sets xctx->hilight_nets=1 */
        if(!bus_hilight_lookup(xctx->inst[n].node[0], xctx->hilight_color, XINSERT_NOREPLACE)) {
          if(to_waveform == GAW) send_net_to_gaw(sim_is_xyce, xctx->inst[n].node[0]);
-         if(incr_hilight) xctx->hilight_color++;
+         if(incr_hilight) incr_hilight_color();
        }
      } else {
        dbg(1, "hilight_net(): setting hilight flag on inst %d\n",n);
        xctx->hilight_nets=1;
        xctx->inst[n].color = xctx->hilight_color;
-       if(incr_hilight) xctx->hilight_color++;
+       if(incr_hilight) incr_hilight_color();
      }
      if(type &&  (!strcmp(type, "current_probe") || !strcmp(type, "vsource")) ) {
        if(to_waveform == GAW) send_current_to_gaw(sim_is_xyce, xctx->inst[n].instname);
@@ -1237,7 +1325,7 @@ void hilight_net(int to_waveform)
      break;
    }
   }
-  if(!incr_hilight) xctx->hilight_color++;
+  if(!incr_hilight) incr_hilight_color();
   propagate_hilights(1, 0, XINSERT_NOREPLACE);
   tcleval("if { [info exists gaw_fd] } {close $gaw_fd; unset gaw_fd}\n");
 }
@@ -1283,13 +1371,14 @@ void unhilight_net(void)
 }
 
 /* redraws the whole affected rectangle, this avoids artifacts due to antialiased text */
-void redraw_hilights(void)
+void redraw_hilights(int clear)
 {
   xRect boundbox;
   int big =  xctx->wires> 2000 || xctx->instances > 2000 ;
   if(!has_x) return;
+  if(!big) calc_drawing_bbox(&boundbox, 2);
+  if(clear) clear_all_hilights();
   if(!big) {
-    calc_drawing_bbox(&boundbox, 2);
     bbox(START, 0.0 , 0.0 , 0.0 , 0.0);
     bbox(ADD, boundbox.x1, boundbox.y1, boundbox.x2, boundbox.y2);
     bbox(SET , 0.0 , 0.0 , 0.0 , 0.0);
@@ -1335,14 +1424,14 @@ void select_hilight_net(void)
         }
       }
     }
-  } else if( type && IS_LABEL_SH_OR_PIN(type) ) {
-    entry=bus_hilight_lookup(xctx->inst[i].lab , 0, XLOOKUP);
+  } else if( type && xctx->inst[i].node && IS_LABEL_SH_OR_PIN(type) ) {
+    entry=bus_hilight_lookup(xctx->inst[i].node[0], 0, XLOOKUP);
     if(entry) xctx->inst[i].sel = SELECTED;
   }
  }
  xctx->need_reb_sel_arr = 1;
  rebuild_selected_array(); /* sets or clears xctx->ui_state SELECTION flag */
- redraw_hilights();
+ redraw_hilights(0);
  
 }
 
@@ -1418,10 +1507,7 @@ void draw_hilight_net(int on_window)
       int col = get_color(xctx->inst[i].color);
       symptr = (xctx->inst[i].ptr+ xctx->sym);
       if( c==0 || /*draw_symbol call is needed on layer 0 to avoid redundant work (outside check) */
-          symptr->lines[c] ||
-          symptr->rects[c] ||
-          symptr->arcs[c] ||
-          symptr->polygons[c] ||
+          symptr->lines[c] || symptr->rects[c] || symptr->arcs[c] || symptr->polygons[c] ||
           ((c==TEXTWIRELAYER || c==TEXTLAYER) && symptr->texts)) {
         draw_symbol(ADD, col, i,c,0,0,0.0,0.0);
       }

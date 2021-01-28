@@ -39,12 +39,13 @@ void global_verilog_netlist(int global)  /* netlister driver */
  struct stat buf;
  char *subckt_name;
 
+ xctx->netlist_unconn_cnt=0; /* unique count of unconnected pins while netlisting */
+ statusmsg("",2);  /* clear infowindow */
  if(xctx->modified) {
    save_ok = save_schematic(xctx->sch[xctx->currsch]);
    if(save_ok == -1) return;
  }
  free_hash(subckt_table);
- statusmsg("",2);  /* clear infowindow */
  netlist_count=0;
  /* top sch properties used for library use declarations and type definitions */
  /* to be printed before any entity declarations */
@@ -550,5 +551,5 @@ void verilog_netlist(FILE *fd , int verilog_stop)
    my_free(1084, &type);
  }
  dbg(1, "verilog_netlist():       end\n");
- if(!verilog_stop && !netlist_count) redraw_hilights(); /*draw_hilight_net(1); */
+ if(!verilog_stop && !netlist_count) redraw_hilights(0); /*draw_hilight_net(1); */
 }

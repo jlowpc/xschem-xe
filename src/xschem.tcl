@@ -259,8 +259,10 @@ proc key_binding {  s  d } {
     bind .drw "<${s}>" "xschem callback %T %x %y 0 $key 0 $state"
   } else {
     if {![string compare $d {} ] } {
+      # puts  "bind .drw  <${s}> {}"
       bind .drw "<${s}>" {}
     } else {
+      # puts  "bind .drw  <${s}> xschem callback %T %x %y $keysym 0 0 $state"
       bind .drw  "<${s}>" "xschem callback %T %x %y $keysym 0 0 $state"
     }
   }
@@ -3218,9 +3220,11 @@ global env has_x
   ###
   ### Tk event handling
   ###
-  bind . <Expose> [list raise_dialog $window_path]
-  bind . <Visibility> [list raise_dialog $window_path]
-  bind . <FocusIn> [list raise_dialog $window_path]
+  if { $window_path eq {.drw} } {
+    bind . <Expose> [list raise_dialog $window_path]
+    bind . <Visibility> [list raise_dialog $window_path]
+    bind . <FocusIn> [list raise_dialog $window_path]
+  }
   bind $window_path <Double-Button-1> {xschem callback -3 %x %y 0 %b 0 %s}
   bind $window_path <Double-Button-2> {xschem callback -3 %x %y 0 %b 0 %s}
   bind $window_path <Double-Button-3> {xschem callback -3 %x %y 0 %b 0 %s}
@@ -3391,6 +3395,7 @@ proc create_layers_menu {} {
 }   
 
 proc set_replace_key_binding {} {
+  global replace_key
   if {[array exists replace_key]} {
     foreach i [array names replace_key] {
       key_binding "$i" "$replace_key($i)"
@@ -3470,8 +3475,7 @@ set_ne line_width 0
 set_ne draw_window 0
 set_ne incr_hilight 1
 set_ne enable_stretch 0
-set_ne horizontal_move 0 ; # 20171023
-set_ne vertical_move 0 ; # 20171023
+set_ne constrained_move 0
 set_ne draw_grid 1
 set_ne big_grid_points 0
 set_ne snap 10
@@ -3864,10 +3868,12 @@ if { ( $::OS== "Windows" || [string length [lindex [array get env DISPLAY] 1] ] 
   toolbar_create EditMove "xschem move_objects" "Move objects"
   .menubar.edit.menu add command -label "Flip selected objects" -command "xschem flip" -accelerator {Alt-F}
   .menubar.edit.menu add command -label "Rotate selected objects" -command "xschem rotate" -accelerator {Alt-R}
-  .menubar.edit.menu add checkbutton -label "Constrained Horizontal move" -variable horizontal_move \
-     -command "xschem set horizontal_move" -accelerator H
-  .menubar.edit.menu add checkbutton -label "Constrained Vertical move" -variable vertical_move \
-     -command "xschem set vertical_move" -accelerator V
+  .menubar.edit.menu add radiobutton -label "Unconstrained move" -variable constrained_move \
+     -value 0 -command {xschem set constrained_move 0} 
+  .menubar.edit.menu add radiobutton -label "Constrained Horizontal move" -variable constrained_move \
+     -value 1 -accelerator H -command {xschem set constrained_move 1} 
+  .menubar.edit.menu add radiobutton -label "Constrained Vertical move" -variable constrained_move \
+     -value 2 -accelerator V -command {xschem set constrained_move 2} 
   .menubar.edit.menu add command -label "Push schematic" -command "xschem descend" -accelerator E
   toolbar_create EditPushSch "xschem move_objects" "Push schematic"
   .menubar.edit.menu add command -label "Push symbol" -command "xschem descend_symbol" -accelerator I
@@ -4053,9 +4059,9 @@ if { ( $::OS== "Windows" || [string length [lindex [array get env DISPLAY] 1] ] 
            xschem redraw
          }
      }
-  .menubar.tools.menu add command -label "Select all connected wires/labels/pins" -accelerator {Shift-Delete} \
+  .menubar.tools.menu add command -label "Select all connected wires/labels/pins" -accelerator {Shift-Right Butt.} \
      -command { xschem connected_nets}
-  .menubar.tools.menu add command -label "Select conn. wires, stop at junctions" -accelerator {Ctrl-Delete} \
+  .menubar.tools.menu add command -label "Select conn. wires, stop at junctions" -accelerator {Ctrl-Righ Butt.} \
      -command { xschem connected_nets 1 }
 
   .menubar.hilight.menu add command -label {Highlight net-pin name mismatches on selected instancs} \

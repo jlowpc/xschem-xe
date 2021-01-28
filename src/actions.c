@@ -1204,12 +1204,11 @@ void calc_drawing_bbox(xRect *boundbox, int selected)
  boundbox->x2=100;
  boundbox->y1=-100;
  boundbox->y2=100;
- for(c=0;c<cadlayers;c++)
+ if(selected != 2) for(c=0;c<cadlayers;c++)
  {
   for(i=0;i<xctx->lines[c];i++)
   {
    if(selected == 1 && !xctx->line[c][i].sel) continue;
-   if(selected == 2) continue;
    tmp.x1=xctx->line[c][i].x1;
    tmp.x2=xctx->line[c][i].x2;
    tmp.y1=xctx->line[c][i].y1;
@@ -1223,7 +1222,6 @@ void calc_drawing_bbox(xRect *boundbox, int selected)
     double x1=0., y1=0., x2=0., y2=0.;
     int k;
     if(selected == 1 && !xctx->poly[c][i].sel) continue;
-    if(selected == 2) continue;
     count++;
     for(k=0; k<xctx->poly[c][i].points; k++) {
       /* fprintf(errfp, "  poly: point %d: %.16g %.16g\n", k, pp[c][i].x[k], pp[c][i].y[k]); */
@@ -1239,7 +1237,6 @@ void calc_drawing_bbox(xRect *boundbox, int selected)
   for(i=0;i<xctx->arcs[c];i++)
   {
     if(selected == 1 && !xctx->arc[c][i].sel) continue;
-    if(selected == 2) continue;
     arc_bbox(xctx->arc[c][i].x, xctx->arc[c][i].y, xctx->arc[c][i].r, xctx->arc[c][i].a, xctx->arc[c][i].b,
              &tmp.x1, &tmp.y1, &tmp.x2, &tmp.y2);
     count++;
@@ -1249,7 +1246,6 @@ void calc_drawing_bbox(xRect *boundbox, int selected)
   for(i=0;i<xctx->rects[c];i++)
   {
    if(selected == 1 && !xctx->rect[c][i].sel) continue;
-   if(selected == 2) continue;
    tmp.x1=xctx->rect[c][i].x1;
    tmp.x2=xctx->rect[c][i].x2;
    tmp.y1=xctx->rect[c][i].y1;
@@ -1283,11 +1279,10 @@ void calc_drawing_bbox(xRect *boundbox, int selected)
    count++;
    updatebbox(count,boundbox,&tmp);
  }
- if(has_x) for(i=0;i<xctx->texts;i++)
+ if(has_x && selected != 2) for(i=0;i<xctx->texts;i++)
  { 
    int no_of_lines, longest_line;
    if(selected == 1 && !xctx->text[i].sel) continue;
-   if(selected == 2) continue;
    #if HAS_CAIRO==1
    customfont = set_text_custom_font(&xctx->text[i]);
    #endif
@@ -1611,6 +1606,7 @@ void restore_selection(double x1, double y1, double x2, double y2)
 
 void new_wire(int what, double mx_snap, double my_snap)
 {
+  int big =  xctx->wires> 2000 || xctx->instances > 2000 ;
   if( (what & PLACE) ) {
     if( (xctx->ui_state & STARTWIRE) && (xctx->nl_x1!=xctx->nl_x2 || xctx->nl_y1!=xctx->nl_y2) ) {
       push_undo();
@@ -1658,17 +1654,20 @@ void new_wire(int what, double mx_snap, double my_snap)
       }
       xctx->prep_hi_structs = 0;
       if(autotrim_wires) trim_wires();
-      update_conn_cues(1,1);
-      if(show_pin_net_names) {
+      if(show_pin_net_names || xctx->hilight_nets) {
         prepare_netlist_structs(0);
-        bbox(START , 0.0 , 0.0 , 0.0 , 0.0);
-        find_inst_to_be_redrawn(xctx->wire[xctx->wires-1].node);
-        find_inst_hash_clear();
-        bbox(SET , 0.0 , 0.0 , 0.0 , 0.0);
+        if(!big) {
+          bbox(START , 0.0 , 0.0 , 0.0 , 0.0);
+          if(show_pin_net_names || xctx->hilight_nets) {
+            int_hash_lookup(xctx->node_redraw_table,  xctx->wire[xctx->wires-1].node, 0, XINSERT_NOREPLACE);
+            find_inst_to_be_redrawn();
+          }
+          bbox(SET , 0.0 , 0.0 , 0.0 , 0.0);
+        }
         draw();
-        bbox(END , 0.0 , 0.0 , 0.0 , 0.0);
-      }
-      draw_hilight_net(1);/* for updating connection bubbles on hilight nets */
+        if(!big) bbox(END , 0.0 , 0.0 , 0.0 , 0.0);
+      } else update_conn_cues(1,1);
+      /* draw_hilight_net(1);*/  /* for updating connection bubbles on hilight nets */
     }
     if(! (what &END)) {
       xctx->nl_x1=mx_snap;
@@ -2172,11 +2171,11 @@ int text_bbox(const char *str, double xscale, double yscale,
   RECTORDER((*rx1),(*ry1),(*rx2),(*ry2));
   return 1;
 }
-int text_bbox_nocairo(const char * str,double xscale, double yscale,
+int text_bbox_nocairo(const char *str,double xscale, double yscale,
     short rot, short flip, int hcenter, int vcenter, double x1,double y1, double *rx1, double *ry1,
     double *rx2, double *ry2, int *cairo_lines, int *cairo_longest_line)
 #else
-int text_bbox(const char * str,double xscale, double yscale,
+int text_bbox(const char *str,double xscale, double yscale,
     short rot, short flip, int hcenter, int vcenter, double x1,double y1, double *rx1, double *ry1,
     double *rx2, double *ry2, int *cairo_lines, int *cairo_longest_line)
 #endif

@@ -184,9 +184,9 @@ void symbol_bbox(int i, double *x1,double *y1, double *x2, double *y2)
      sym_flip = flip;
      sym_rot = rot;
      text = (xctx->inst[i].ptr+ xctx->sym)->text[j];
-     dbg(2, "symbol_bbox(): instance %d text n: %d text str=%s\n", i,j, text.txt_ptr? text.txt_ptr:"NULL");
+     /* dbg(2, "symbol_bbox(): instance %d text n: %d text str=%s\n", i,j, text.txt_ptr? text.txt_ptr:"NULL"); */
      tmp_txt = translate(i, text.txt_ptr);
-     dbg(2, "symbol_bbox(): translated text: %s\n", tmp_txt);
+     /* dbg(2, "symbol_bbox(): translated text: %s\n", tmp_txt); */
      ROTATION(rot, flip, 0.0,0.0,text.x0, text.y0,text_x0,text_y0);
      #if HAS_CAIRO==1
      customfont=set_text_custom_font(&text);
@@ -202,7 +202,7 @@ void symbol_bbox(int i, double *x1,double *y1, double *x2, double *y2)
      if(yy1<*y1) *y1=yy1;
      if(xx2>*x2) *x2=xx2;
      if(yy2>*y2) *y2=yy2;
-      dbg(2, "symbol_bbox(): instance=%d text=%d %.16g %.16g %.16g %.16g\n",i,j, *x1, *y1, *x2, *y2);
+     /* dbg(2, "symbol_bbox(): instance=%d text=%d %.16g %.16g %.16g %.16g\n",i,j, *x1, *y1, *x2, *y2); */
    }
 }
 
@@ -339,9 +339,7 @@ void delete(void)
     * xctx->prep_net_structs=0;
     * xctx->prep_hi_structs=0;
     */
-   if(show_pin_net_names) {
-     prepare_netlist_structs(0);
-   }
+   if((show_pin_net_names || xctx->hilight_nets)) prepare_netlist_structs(0);
    for(i = 0; i < xctx->lastsel; i++) {
      n = xctx->sel_array[i].n;
      if(xctx->sel_array[i].type == ELEMENT) {
@@ -349,22 +347,19 @@ void delete(void)
        char *type = (xctx->inst[n].ptr + xctx->sym)->type;
        symbol_bbox(n, &xctx->inst[n].x1, &xctx->inst[n].y1, &xctx->inst[n].x2, &xctx->inst[n].y2 );
        bbox(ADD, xctx->inst[n].x1, xctx->inst[n].y1, xctx->inst[n].x2, xctx->inst[n].y2 );
-       if(show_pin_net_names && type && IS_LABEL_OR_PIN(type) ) {
-         for(p = 0;  p < (xctx->inst[n].ptr + xctx->sym)->rects[PINLAYER]; p++) {
+       if((show_pin_net_names || xctx->hilight_nets) && type && IS_LABEL_OR_PIN(type) ) {
+         for(p = 0;  p < (xctx->inst[n].ptr + xctx->sym)->rects[PINLAYER]; p++) { /* only .node[0] ? */
            if( xctx->inst[n].node && xctx->inst[n].node[p]) {
-              find_inst_to_be_redrawn(xctx->inst[n].node[p]);
+              int_hash_lookup(xctx->node_redraw_table,  xctx->inst[n].node[p], 0, XINSERT_NOREPLACE);
            }
          }
        }
      }
-     if(show_pin_net_names && xctx->sel_array[i].type == WIRE && xctx->wire[n].node) {
-       find_inst_to_be_redrawn(xctx->wire[n].node);
+     if((show_pin_net_names || xctx->hilight_nets) && xctx->sel_array[i].type == WIRE && xctx->wire[n].node) {
+       int_hash_lookup(xctx->node_redraw_table,  xctx->wire[n].node, 0, XINSERT_NOREPLACE);
      }
    }
-   if(show_pin_net_names) {
-     find_inst_hash_clear();
-   }
-
+   if(show_pin_net_names || xctx->hilight_nets) find_inst_to_be_redrawn();
 
 
   /* already done above
@@ -478,6 +473,10 @@ void delete(void)
   if(autotrim_wires) trim_wires();
   del_rect_line_arc_poly();
   update_conn_cues(0, 0);
+  if(xctx->hilight_nets) {
+    propagate_hilights(1, 1, XINSERT_NOREPLACE);
+  }
+
   xctx->lastsel = 0;
   bbox(SET , 0.0 , 0.0 , 0.0 , 0.0);
   draw();
@@ -627,9 +626,11 @@ void unselect_all(void)
        xctx->wire[i].sel = 0;
        {
          if(xctx->wire[i].bus)
-           drawtempline(xctx->gctiled, THICK, xctx->wire[i].x1, xctx->wire[i].y1, xctx->wire[i].x2, xctx->wire[i].y2);
+           drawtempline(xctx->gctiled, THICK, xctx->wire[i].x1, xctx->wire[i].y1,
+                                              xctx->wire[i].x2, xctx->wire[i].y2);
          else
-           drawtempline(xctx->gctiled, ADD, xctx->wire[i].x1, xctx->wire[i].y1, xctx->wire[i].x2, xctx->wire[i].y2);
+           drawtempline(xctx->gctiled, ADD, xctx->wire[i].x1, xctx->wire[i].y1,
+                                            xctx->wire[i].x2, xctx->wire[i].y2);
        }
       }
      }

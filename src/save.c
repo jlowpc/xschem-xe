@@ -175,17 +175,36 @@ void updatebbox(int count, xRect *boundbox, xRect *tmp)
  }
 }
 
-void save_ascii_string(const char *ptr, FILE *fd)
+void save_ascii_string(const char *ptr, FILE *fd, int newline)
 {
- int i=0;
- int c;
- fputc('{',fd);
- while( ptr && (c=ptr[i++]) )
- {
-  if( c=='\\' || c=='{' || c=='}') fputc('\\',fd);
-  fputc(c,fd);
- }
- fputc('}',fd);
+  int c, len, strbuf_pos = 0;
+  static char *strbuf = NULL;
+  static int strbuf_size=0;
+
+
+  if(ptr == NULL) {
+    if( fd == NULL) { /* used to clear static data */
+       my_free(139, &strbuf);
+       strbuf_size = 0;
+       return;
+    }
+    if(newline) fputs("{}\n", fd);
+    else fputs("{}", fd);
+    return;
+  }
+  len = strlen(ptr) + CADCHUNKALLOC;
+  if(strbuf_size < len ) my_realloc(140, &strbuf, (strbuf_size = len));
+
+  strbuf[strbuf_pos++] = '{';
+  while( (c = *ptr++) ) {
+    if(strbuf_pos > strbuf_size - 6) my_realloc(525, &strbuf, (strbuf_size += CADCHUNKALLOC));
+    if( c=='\\' || c=='{' || c=='}') strbuf[strbuf_pos++] = '\\';
+    strbuf[strbuf_pos++] = c;
+  }
+  strbuf[strbuf_pos++] = '}';
+  if(newline) strbuf[strbuf_pos++] = '\n';
+  strbuf[strbuf_pos] = '\0';
+  fwrite(strbuf, 1, strbuf_pos, fd);
 }
 
 void save_embedded_symbol(xSymbol *s, FILE *fd)
@@ -194,8 +213,7 @@ void save_embedded_symbol(xSymbol *s, FILE *fd)
 
   fprintf(fd, "v {xschem version=%s file_version=%s}\n", XSCHEM_VERSION, XSCHEM_FILE_VERSION);
   fprintf(fd, "G ");
-  save_ascii_string(s->prop_ptr,fd);
-  fputc('\n' ,fd);
+  save_ascii_string(s->prop_ptr,fd, 1);
   fprintf(fd, "V {}\n");
   fprintf(fd, "S {}\n");
   fprintf(fd, "E {}\n");
@@ -207,8 +225,7 @@ void save_embedded_symbol(xSymbol *s, FILE *fd)
    {
     fprintf(fd, "L %d %.16g %.16g %.16g %.16g ", c,ptr[i].x1, ptr[i].y1,ptr[i].x2,
      ptr[i].y2 );
-    save_ascii_string(ptr[i].prop_ptr,fd);
-    fputc('\n' ,fd);
+    save_ascii_string(ptr[i].prop_ptr,fd, 1);
    }
   }
   for(c=0;c<cadlayers;c++)
@@ -219,8 +236,7 @@ void save_embedded_symbol(xSymbol *s, FILE *fd)
    {
     fprintf(fd, "B %d %.16g %.16g %.16g %.16g ", c,ptr[i].x1, ptr[i].y1,ptr[i].x2,
      ptr[i].y2);
-    save_ascii_string(ptr[i].prop_ptr,fd);
-    fputc('\n' ,fd);
+    save_ascii_string(ptr[i].prop_ptr,fd, 1);
    }
   }
   for(c=0;c<cadlayers;c++)
@@ -231,8 +247,7 @@ void save_embedded_symbol(xSymbol *s, FILE *fd)
    {
     fprintf(fd, "A %d %.16g %.16g %.16g %.16g %.16g ", c,ptr[i].x, ptr[i].y,ptr[i].r,
      ptr[i].a, ptr[i].b);
-    save_ascii_string(ptr[i].prop_ptr,fd);
-    fputc('\n' ,fd);
+    save_ascii_string(ptr[i].prop_ptr,fd, 1);
    }
   }
   for(i=0;i<s->texts;i++)
@@ -240,12 +255,11 @@ void save_embedded_symbol(xSymbol *s, FILE *fd)
    xText *ptr;
    ptr = s->text;
    fprintf(fd, "T ");
-   save_ascii_string(ptr[i].txt_ptr,fd);
+   save_ascii_string(ptr[i].txt_ptr,fd, 0);
    fprintf(fd, " %.16g %.16g %hd %hd %.16g %.16g ",
     ptr[i].x0, ptr[i].y0, ptr[i].rot, ptr[i].flip, ptr[i].xscale,
      ptr[i].yscale);
-   save_ascii_string(ptr[i].prop_ptr,fd);
-   fputc('\n' ,fd);
+   save_ascii_string(ptr[i].prop_ptr,fd, 1);
   }
   for(c=0;c<cadlayers;c++)
   {
@@ -257,34 +271,32 @@ void save_embedded_symbol(xSymbol *s, FILE *fd)
     for(j=0;j<ptr[i].points;j++) {
       fprintf(fd, "%.16g %.16g ", ptr[i].x[j], ptr[i].y[j]);
     }
-    save_ascii_string(ptr[i].prop_ptr,fd);
-    fputc('\n' ,fd);
+    save_ascii_string(ptr[i].prop_ptr,fd, 1);
    }
   }
 }
 
 void save_inst(FILE *fd)
 {
- int i;
+ int i, oldversion;
  xInstance *ptr;
  char *tmp = NULL;
 
  ptr=xctx->inst;
+ oldversion = !strcmp(xctx->file_version, "1.0");
  for(i=0;i<xctx->symbols;i++) xctx->sym[i].flags &=~EMBEDDED;
  for(i=0;i<xctx->instances;i++)
  {
-  fprintf(fd, "C ");
-
-  if(!strcmp(xctx->file_version, "1.0")) {
+  fputs("C ", fd);
+  if(oldversion) {
     my_strdup(57, &tmp, add_ext(ptr[i].name, ".sym"));
-    save_ascii_string(rel_sym_path(tmp), fd);
+    save_ascii_string(tmp, fd, 0);
+    my_free(882, &tmp);
   } else {
-    save_ascii_string(rel_sym_path(ptr[i].name), fd);
+    save_ascii_string(ptr[i].name, fd, 0);
   }
-  my_free(882, &tmp);
   fprintf(fd, " %.16g %.16g %hd %hd ",ptr[i].x0, ptr[i].y0, ptr[i].rot, ptr[i].flip );
-  save_ascii_string(ptr[i].prop_ptr,fd);
-  fputc('\n' ,fd);
+  save_ascii_string(ptr[i].prop_ptr,fd, 1);
   if( !strcmp(get_tok_value(ptr[i].prop_ptr, "embed", 0), "true") ) {
       /* && !(xctx->sym[ptr[i].ptr].flags & EMBEDDED)) {  */
     fprintf(fd, "[\n");
@@ -305,8 +317,7 @@ void save_wire(FILE *fd)
  {
   fprintf(fd, "N %.16g %.16g %.16g %.16g ",ptr[i].x1, ptr[i].y1, ptr[i].x2,
      ptr[i].y2);
-  save_ascii_string(ptr[i].prop_ptr,fd);
-  fputc('\n' ,fd);
+  save_ascii_string(ptr[i].prop_ptr,fd, 1);
  }
 }
 
@@ -318,12 +329,11 @@ void save_text(FILE *fd)
  for(i=0;i<xctx->texts;i++)
  {
   fprintf(fd, "T ");
-  save_ascii_string(ptr[i].txt_ptr,fd);
+  save_ascii_string(ptr[i].txt_ptr,fd, 0);
   fprintf(fd, " %.16g %.16g %hd %hd %.16g %.16g ",
    ptr[i].x0, ptr[i].y0, ptr[i].rot, ptr[i].flip, ptr[i].xscale,
     ptr[i].yscale);
-  save_ascii_string(ptr[i].prop_ptr,fd);
-  fputc('\n' ,fd);
+  save_ascii_string(ptr[i].prop_ptr,fd, 1);
  }
 }
 
@@ -340,8 +350,7 @@ void save_polygon(FILE *fd)
       for(j=0;j<ptr[i].points;j++) {
         fprintf(fd, "%.16g %.16g ", ptr[i].x[j], ptr[i].y[j]);
       }
-      save_ascii_string(ptr[i].prop_ptr,fd);
-      fputc('\n' ,fd);
+      save_ascii_string(ptr[i].prop_ptr,fd, 1);
      }
     }
 }
@@ -357,8 +366,7 @@ void save_arc(FILE *fd)
      {
       fprintf(fd, "A %d %.16g %.16g %.16g %.16g %.16g ", c,ptr[i].x, ptr[i].y,ptr[i].r,
        ptr[i].a, ptr[i].b);
-      save_ascii_string(ptr[i].prop_ptr,fd);
-      fputc('\n' ,fd);
+      save_ascii_string(ptr[i].prop_ptr,fd, 1);
      }
     }
 }
@@ -374,8 +382,7 @@ void save_box(FILE *fd)
      {
       fprintf(fd, "B %d %.16g %.16g %.16g %.16g ", c,ptr[i].x1, ptr[i].y1,ptr[i].x2,
        ptr[i].y2);
-      save_ascii_string(ptr[i].prop_ptr,fd);
-      fputc('\n' ,fd);
+      save_ascii_string(ptr[i].prop_ptr,fd, 1);
      }
     }
 }
@@ -391,8 +398,7 @@ void save_line(FILE *fd)
      {
       fprintf(fd, "L %d %.16g %.16g %.16g %.16g ", c,ptr[i].x1, ptr[i].y1,ptr[i].x2,
        ptr[i].y2 );
-      save_ascii_string(ptr[i].prop_ptr,fd);
-      fputc('\n' ,fd);
+      save_ascii_string(ptr[i].prop_ptr,fd, 1);
      }
     }
 }
@@ -418,36 +424,28 @@ void write_xschem_file(FILE *fd)
     ty = xctx->get_tok_size;
     if(ty && !strcmp(xctx->sch[xctx->currsch] + strlen(xctx->sch[xctx->currsch]) - 4,".sym") ) {
       fprintf(fd, "G {}\nK ");
-      save_ascii_string(xctx->schvhdlprop,fd);
-      fputc('\n', fd);
+      save_ascii_string(xctx->schvhdlprop,fd, 1);
     } else {
       fprintf(fd, "G ");
-      save_ascii_string(xctx->schvhdlprop,fd);
-      fputc('\n', fd);
+      save_ascii_string(xctx->schvhdlprop,fd, 1);
       fprintf(fd, "K ");
-      save_ascii_string(xctx->schsymbolprop,fd);
-      fputc('\n', fd);
+      save_ascii_string(xctx->schsymbolprop,fd, 1);
     }
   } else {
     fprintf(fd, "G ");
-    save_ascii_string(xctx->schvhdlprop,fd);
-    fputc('\n', fd);
+    save_ascii_string(xctx->schvhdlprop,fd, 1);
     fprintf(fd, "K ");
-    save_ascii_string(xctx->schsymbolprop,fd);
-    fputc('\n', fd);
+    save_ascii_string(xctx->schsymbolprop,fd, 1);
   }
 
   fprintf(fd, "V ");
-  save_ascii_string(xctx->schverilogprop,fd);
-  fputc('\n', fd);
+  save_ascii_string(xctx->schverilogprop,fd, 1);
 
   fprintf(fd, "S ");
-  save_ascii_string(xctx->schprop,fd);
-  fputc('\n', fd);
+  save_ascii_string(xctx->schprop,fd, 1);
 
   fprintf(fd, "E ");
-  save_ascii_string(xctx->schtedaxprop,fd);
-  fputc('\n', fd);
+  save_ascii_string(xctx->schtedaxprop,fd, 1);
 
   save_line(fd);
   save_box(fd);
@@ -530,22 +528,23 @@ static void load_inst(int k, FILE *fd)
     char name[PATH_MAX];
     char *tmp = NULL;
 
-    dbg(3, "load_inst(): start\n");
     i=xctx->instances;
     check_inst_storage();
     load_ascii_string(&tmp, fd);
     if(!tmp) return;
-    dbg(1, "load_inst(): tmp=%s\n", tmp);
     my_strncpy(name, tmp, S(name));
     dbg(1, "load_inst(): 1: name=%s\n", name);
     if(!strcmp(xctx->file_version,"1.0") ) {
-      dbg(1, "load_inst(): add_ext(name,\".sym\") = %s\n", add_ext(name, ".sym") );
       my_strncpy(name, add_ext(name, ".sym"), S(name));
     }
     xctx->inst[i].name=NULL;
-    my_strdup2(56, &xctx->inst[i].name, name);
-    dbg(1, "load_inst(): 2: name=%s\n", name);
-
+    /* avoid as much as possible calls to rel_sym_path (slow) */
+    #ifdef __unix__
+    if(name[0] == '/') my_strdup2(56, &xctx->inst[i].name, rel_sym_path(name));
+    else my_strdup2(762, &xctx->inst[i].name, name);
+    #else 
+    my_strdup2(777, &xctx->inst[i].name, rel_sym_path(name));
+    #endif
     if(fscanf(fd, "%lf %lf %hd %hd", &xctx->inst[i].x0, &xctx->inst[i].y0,
        &xctx->inst[i].rot, &xctx->inst[i].flip) < 4) {
       fprintf(errfp,"WARNING: missing fields for INSTANCE object, ignoring.\n");
@@ -629,14 +628,14 @@ static void load_polygon(FILE *fd)
 
 static void load_arc(FILE *fd)
 {
-    int i,c;
+    int n,i,c;
     xArc *ptr;
     const char *dash;
 
     dbg(3, "load_arc(): start\n");
-    fscanf(fd, "%d",&c);
-    if(c<0 || c>=cadlayers) {
-      fprintf(errfp,"WARNING: wrong layer number for ARC object, ignoring.\n");
+    n = fscanf(fd, "%d",&c);
+    if(n != 1 || c < 0 || c >= cadlayers) {
+      fprintf(errfp,"WARNING: wrong or missing layer number for ARC object, ignoring.\n");
       read_line(fd, 0);
       return;
     }
@@ -668,14 +667,14 @@ static void load_arc(FILE *fd)
 
 static void load_box(FILE *fd)
 {
-    int i,c;
+    int i,n,c;
     xRect *ptr;
     const char *dash;
 
     dbg(3, "load_box(): start\n");
-    fscanf(fd, "%d",&c);
-    if(c<0 || c>=cadlayers) {
-      fprintf(errfp,"WARNING: wrong layer number for xRECT object, ignoring.\n");
+    n = fscanf(fd, "%d",&c);
+    if(n != 1 || c < 0 || c >= cadlayers) {
+      fprintf(errfp,"WARNING: wrong or missing layer number for xRECT object, ignoring.\n");
       read_line(fd, 0);
       return;
     }
@@ -704,14 +703,14 @@ static void load_box(FILE *fd)
 
 static void load_line(FILE *fd)
 {
-    int i,c;
+    int i,n, c;
     xLine *ptr;
     const char *dash;
 
     dbg(3, "load_line(): start\n");
-    fscanf(fd, "%d",&c);
-    if(c<0 || c>=cadlayers) {
-      fprintf(errfp,"WARNING: Wrong layer number for LINE object, ignoring\n");
+    n = fscanf(fd, "%d",&c);
+    if(n != 1 || c < 0 || c >= cadlayers) {
+      fprintf(errfp,"WARNING: Wrong or missing layer number for LINE object, ignoring\n");
       read_line(fd, 0);
       return;
     }
@@ -831,9 +830,12 @@ void read_xschem_file(FILE *fd)
         if(!found) load_sym_def(xctx->inst[xctx->instances-1].name, fd);
         else {
           while(1) { /* skip embedded [ ... ] */
+            int n;
             str = read_line(fd, 1);
             if(!str || !strncmp(str, "]", 1)) break;
-            fscanf(fd, " ");
+            n = fscanf(fd, " ");
+            (void)n; /* avoid compiler warnings if n unused. can not remove n since ignoring 
+                      * fscanf return value yields another warning */
           }
         }
       }
@@ -952,12 +954,16 @@ int save_schematic(const char *schname) /* 20171020 added return value */
   return 0;
 }
 
-void link_symbols_to_instances(int from) /* from > 0 : linking symbols from pasted schematic / clipboard */
+/* from == -1 --> link symbols to all instances, from 0 to instances-1 */
+void link_symbols_to_instances(int from) /* from >= 0 : linking symbols from pasted schematic / clipboard */
 {
-  int i;
+  int cond, i, merge = 1;
   char *type=NULL;
-  int cond;
 
+  if(from < 0 ) {
+    from = 0;
+    merge = 0;
+  }
   for(i = from; i < xctx->instances; i++) {
     dbg(2, "link_symbols_to_instances(): inst=%d\n", i);
     dbg(2, "link_symbols_to_instances(): matching inst %d name=%s \n",i, xctx->inst[i].name);
@@ -965,7 +971,7 @@ void link_symbols_to_instances(int from) /* from > 0 : linking symbols from past
     xctx->inst[i].ptr = match_symbol(xctx->inst[i].name);
   }
   for(i = from; i < xctx->instances; i++) {
-    if(from) select_element(i,SELECTED,1, 0); /* leave elements selected if a paste/copy from windows is done */
+    if(merge) select_element(i,SELECTED,1, 0); /* leave elements selected if a paste/copy from windows is done */
     type=xctx->sym[xctx->inst[i].ptr].type;
     cond= !type || !IS_LABEL_SH_OR_PIN(type);
     if(cond) xctx->inst[i].flags|=2; /* ordinary symbol */
@@ -1020,7 +1026,7 @@ void load_schematic(int load_symbols, const char *filename, int reset_undo) /* 2
       fclose(fd); /* 20150326 moved before load symbols */
       set_modify(0);
       dbg(2, "load_schematic(): loaded file:wire=%d inst=%d\n",xctx->wires , xctx->instances);
-      if(load_symbols) link_symbols_to_instances(0);
+      if(load_symbols) link_symbols_to_instances(-1);
       if(reset_undo) {
         Tcl_VarEval(interp, "is_xschem_file ", xctx->sch[xctx->currsch], NULL);
         if(!strcmp(tclresult(), "SYMBOL")) {
@@ -1236,7 +1242,7 @@ void pop_undo(int redo)
   fclose(fd);
   #endif
   dbg(2, "pop_undo(): loaded file:wire=%d inst=%d\n",xctx->wires , xctx->instances);
-  link_symbols_to_instances(0);
+  link_symbols_to_instances(-1);
   set_modify(1);
   xctx->prep_hash_inst=0;
   xctx->prep_hash_wires=0;
@@ -1293,6 +1299,7 @@ void get_sym_type(const char *symname, char **type, struct int_hashentry **pinta
       my_strdup2(1162, type, "");
     } else {
       char *globalprop=NULL;
+      int fscan_ret;
       xRect box;
 
       box.prop_ptr = NULL;
@@ -1312,12 +1319,13 @@ void get_sym_type(const char *symname, char **type, struct int_hashentry **pinta
             if(type[0]) found = 1;
             break;
           case 'B':
-           fscanf(fd, "%d",&c);
-           if(c>=cadlayers) {
-             fprintf(errfp,"FATAL: box layer > defined cadlayers, increase cadlayers\n");
+           fscan_ret = fscanf(fd, "%d",&c);
+           if(fscan_ret != 1 || c <0 || c>=cadlayers) {
+             fprintf(errfp,"FATAL: box layer wrong or missing or > defined cadlayers, increase cadlayers\n");
              tcleval( "exit");
            }
-           fscanf(fd, "%lf %lf %lf %lf ",&box.x1, &box.y1, &box.x2, &box.y2);
+           fscan_ret = fscanf(fd, "%lf %lf %lf %lf ",&box.x1, &box.y1, &box.x2, &box.y2);
+           if(fscan_ret < 4) dbg(0, "Warning: missing fields in 'B' line\n");
            load_ascii_string( &box.prop_ptr, fd);
            dbg(1, "get_sym_type(): %s box.prop_ptr=%s\n", symname, box.prop_ptr);
            if (pintable && c == PINLAYER) {
@@ -1531,7 +1539,7 @@ int load_sym_def(const char *name, FILE *embed_fd)
   double rx1,ry1,rx2,ry2;
   int incremented_level=0;
   int level = 0;
-  int max_level;
+  int max_level, fscan_ret;
   long filepos;
   char sympath[PATH_MAX];
   int i,c, k, poly_points;
@@ -1665,9 +1673,9 @@ int load_sym_def(const char *name, FILE *embed_fd)
      }
      break;
     case 'L':
-     fscanf(lcc[level].fd, "%d",&c);
-     if(c < 0 || c>=cadlayers) {
-       fprintf(errfp,"WARNING: wrong line layer\n");
+     fscan_ret = fscanf(lcc[level].fd, "%d",&c);
+     if(fscan_ret != 1 || c < 0 || c>=cadlayers) {
+       fprintf(errfp,"l_s_d(): WARNING: wrong or missing line layer\n");
        read_line(lcc[level].fd, 0);
        continue;
      }
@@ -1675,7 +1683,7 @@ int load_sym_def(const char *name, FILE *embed_fd)
      my_realloc(343, &ll[c],(i+1)*sizeof(xLine));
      if(fscanf(lcc[level].fd, "%lf %lf %lf %lf ",&ll[c][i].x1, &ll[c][i].y1,
         &ll[c][i].x2, &ll[c][i].y2) < 4 ) {
-       fprintf(errfp,"WARNING:  missing fields for LINE object, ignoring\n");
+       fprintf(errfp,"l_s_d(): WARNING:  missing fields for LINE object, ignoring\n");
        read_line(lcc[level].fd, 0);
        continue;
      }
@@ -1705,12 +1713,12 @@ int load_sym_def(const char *name, FILE *embed_fd)
      break;
     case 'P':
      if(fscanf(lcc[level].fd, "%d %d",&c, &poly_points) < 2 ) {
-       fprintf(errfp,"WARNING: missing fields for POLYGON object, ignoring\n");
+       fprintf(errfp,"l_s_d(): WARNING: missing fields for POLYGON object, ignoring\n");
        read_line(lcc[level].fd, 0);
        continue;
      }
      if(c < 0 || c>=cadlayers) {
-       fprintf(errfp,"WARNING: wrong polygon layer\n");
+       fprintf(errfp,"l_s_d(): WARNING: wrong polygon layer\n");
        read_line(lcc[level].fd, 0);
        continue;
      }
@@ -1722,7 +1730,7 @@ int load_sym_def(const char *name, FILE *embed_fd)
      pp[c][i].points = poly_points;
      for(k=0;k<poly_points;k++) {
        if(fscanf(lcc[level].fd, "%lf %lf ",&(pp[c][i].x[k]), &(pp[c][i].y[k]) ) < 2 ) {
-         fprintf(errfp,"WARNING: missing fields for POLYGON object\n");
+         fprintf(errfp,"l_s_d(): WARNING: missing fields for POLYGON object\n");
        }
        if (level>0) {
          rot = lcc[level].rot; flip = lcc[level].flip;
@@ -1749,9 +1757,9 @@ int load_sym_def(const char *name, FILE *embed_fd)
      lastp[c]++;
      break;
     case 'A':
-     fscanf(lcc[level].fd, "%d",&c);
-     if(c < 0 || c>=cadlayers) {
-       fprintf(errfp,"Wrong arc layer\n");
+     fscan_ret = fscanf(lcc[level].fd, "%d",&c);
+     if(fscan_ret != 1 || c < 0 || c>=cadlayers) {
+       fprintf(errfp,"l_s_d(): Wrong or missing arc layer\n");
        read_line(lcc[level].fd, 0);
        continue;
      }
@@ -1759,7 +1767,7 @@ int load_sym_def(const char *name, FILE *embed_fd)
      my_realloc(348, &aa[c],(i+1)*sizeof(xArc));
      if( fscanf(lcc[level].fd, "%lf %lf %lf %lf %lf ",&aa[c][i].x, &aa[c][i].y,
         &aa[c][i].r, &aa[c][i].a, &aa[c][i].b) < 5 ) {
-       fprintf(errfp,"WARNING: missing fields for ARC object, ignoring\n");
+       fprintf(errfp,"l_s_d(): WARNING: missing fields for ARC object, ignoring\n");
        read_line(lcc[level].fd, 0);
        continue;
      }
@@ -1794,17 +1802,22 @@ int load_sym_def(const char *name, FILE *embed_fd)
      lasta[c]++;
      break;
     case 'B':
-     fscanf(lcc[level].fd, "%d",&c);
-     if(c>=cadlayers) {
-       fprintf(errfp,"FATAL: box layer > defined cadlayers, increase cadlayers\n");
-       tcleval( "exit");
+     fscan_ret = fscanf(lcc[level].fd, "%d",&c);
+     if(fscan_ret != 1 || c < 0 || c>=cadlayers) {
+       fprintf(errfp,"l_s_d(): WARNING: wrong or missing box layer\n");
+       read_line(lcc[level].fd, 0);
+       continue;
      }
      if (level>0 && c == PINLAYER)  /* Don't care about pins inside SYM */
        c = 7;
      i=lastr[c];
      my_realloc(349, &bb[c],(i+1)*sizeof(xRect));
-     fscanf(lcc[level].fd, "%lf %lf %lf %lf ",&bb[c][i].x1, &bb[c][i].y1,
-        &bb[c][i].x2, &bb[c][i].y2);
+     if(fscanf(lcc[level].fd, "%lf %lf %lf %lf ",&bb[c][i].x1, &bb[c][i].y1,
+        &bb[c][i].x2, &bb[c][i].y2) < 4 ) {
+       fprintf(errfp,"l_s_d(): WARNING:  missing fields for Box object, ignoring\n");
+       read_line(lcc[level].fd, 0);
+       continue;
+     }
      if (level>0) {
        rot = lcc[level].rot; flip = lcc[level].flip;
        ROTATION(rot, flip, 0.0, 0.0, bb[c][i].x1, bb[c][i].y1, rx1, ry1);
@@ -1831,8 +1844,12 @@ int load_sym_def(const char *name, FILE *embed_fd)
      tt[i].txt_ptr=NULL;
      tt[i].font=NULL;
      load_ascii_string(&tt[i].txt_ptr, lcc[level].fd);
-     fscanf(lcc[level].fd, "%lf %lf %hd %hd %lf %lf ",&tt[i].x0, &tt[i].y0, &tt[i].rot,
-        &tt[i].flip, &tt[i].xscale, &tt[i].yscale);
+     if(fscanf(lcc[level].fd, "%lf %lf %hd %hd %lf %lf ",&tt[i].x0, &tt[i].y0, &tt[i].rot,
+        &tt[i].flip, &tt[i].xscale, &tt[i].yscale) < 6 ) {
+       fprintf(errfp,"l_s_d(): WARNING:  missing fields for Text object, ignoring\n");
+       read_line(lcc[level].fd, 0);
+       continue;
+     }
      if (level>0) {
        const char* tmp = translate2(lcc, level, tt[i].txt_ptr);
        rot = lcc[level].rot; flip = lcc[level].flip;
@@ -1872,7 +1889,7 @@ int load_sym_def(const char *name, FILE *embed_fd)
      my_realloc(314, &ll[WIRELAYER],(i+1)*sizeof(xLine));
      if(fscanf(lcc[level].fd, "%lf %lf %lf %lf ",&ll[WIRELAYER][i].x1, &ll[WIRELAYER][i].y1,
         &ll[WIRELAYER][i].x2, &ll[WIRELAYER][i].y2) < 4 ) {
-       fprintf(errfp,"WARNING:  missing fields for LINE object, ignoring\n");
+       fprintf(errfp,"l_s_d(): WARNING:  missing fields for LINE object, ignoring\n");
        read_line(lcc[level].fd, 0);
        continue;
      }
@@ -1899,13 +1916,13 @@ int load_sym_def(const char *name, FILE *embed_fd)
       load_ascii_string(&symname, lcc[level].fd);
       dbg(1, "l_s_d(): C line: symname=%s\n", symname);
       if (fscanf(lcc[level].fd, "%lf %lf %hd %hd", &inst_x0, &inst_y0, &inst_rot, &inst_flip) < 4) {
-        fprintf(errfp, "WARNING: missing fields for COMPONENT object, ignoring\n");
+        fprintf(errfp, "l_s_d(): WARNING: missing fields for COMPONENT object, ignoring\n");
         read_line(lcc[level].fd, 0);
         continue;
       }
       load_ascii_string(&prop_ptr, lcc[level].fd);
       if(level + 1 >=CADMAXHIER) {
-        fprintf(errfp, "xSymbol recursively instantiating symbol: max depth reached, skipping\n");
+        fprintf(errfp, "l_s_d(): xSymbol recursively instantiating symbol: max depth reached, skipping\n");
         if(has_x) tcleval("alert_ {xSymbol recursively instantiating symbol: max depth reached, skipping} {} 1");
         endfile = 1;
         continue;
@@ -1916,7 +1933,7 @@ int load_sym_def(const char *name, FILE *embed_fd)
         filepos = xftell(lcc[level].fd); /* store file pointer position to inspect next line */
         fd_tmp = NULL;
         read_line(lcc[level].fd, 1);
-        fscanf(lcc[level].fd, " ");
+        fscan_ret = fscanf(lcc[level].fd, " ");
         if(fscanf(lcc[level].fd," %c",&c)!=EOF) {
           if( c == '[') {
             fd_tmp = lcc[level].fd;
@@ -1963,7 +1980,7 @@ int load_sym_def(const char *name, FILE *embed_fd)
         fprintf(errfp, "l_s_d(): unable to open file to read schematic: %s\n", sympath);
         filepos = xftell(lcc[level].fd); /* store file pointer position to inspect next char */
         read_line(lcc[level].fd, 1);
-        fscanf(lcc[level].fd, " ");
+        fscan_ret = fscanf(lcc[level].fd, " ");
         if(fscanf(lcc[level].fd," %c",&c)!=EOF) {
           if( c == '[') {
             fd_tmp = lcc[level].fd;
@@ -2010,7 +2027,7 @@ int load_sym_def(const char *name, FILE *embed_fd)
      while(1) { /* skip embedded [ ... ] */
        skip_line = read_line(lcc[level].fd, 1);
        if(!skip_line || !strncmp(skip_line, "]", 1)) break;
-       fscanf(lcc[level].fd, " ");
+       fscan_ret = fscanf(lcc[level].fd, " ");
      }
      break;
     case ']':
@@ -2164,8 +2181,7 @@ void create_sch_from_sym(void)
         fprintf(fd, "C {%s} %.16g %.16g %.16g %.16g ", generic_pin, x, 20.0*(ypos++), 0.0, 0.0 );
       else
         fprintf(fd, "C {%s} %.16g %.16g %.16g %.16g ", generic_pin2, x, 20.0*(ypos++), 0.0, 0.0 );
-      save_ascii_string(str, fd);
-      fputc('\n' ,fd);
+      save_ascii_string(str, fd, 1);
     } /* for(i) */
     npin = ptr->rects[PINLAYER];
     rct = ptr->rect[PINLAYER];
@@ -2191,8 +2207,7 @@ void create_sch_from_sym(void)
             fprintf(fd, "C {%s} %.16g %.16g %.16g %.16g ", pinname[j], x, 20.0*(ypos++), 0.0, 0.0);
           else
             fprintf(fd, "C {%s} %.16g %.16g %.16g %.16g ", pinname2[j], x, 20.0*(ypos++), 0.0, 0.0);
-          save_ascii_string(str, fd);
-          fputc('\n' ,fd);
+          save_ascii_string(str, fd, 1);
         } /* if() */
       } /* for(i) */
     }  /* for(j) */
@@ -2367,27 +2382,24 @@ void save_selection(int what)
    {
      case xTEXT:
       fprintf(fd, "T ");
-      save_ascii_string(xctx->text[n].txt_ptr,fd);
+      save_ascii_string(xctx->text[n].txt_ptr,fd, 0);
       fprintf(fd, " %.16g %.16g %hd %hd %.16g %.16g ",
        xctx->text[n].x0, xctx->text[n].y0, xctx->text[n].rot, xctx->text[n].flip,
        xctx->text[n].xscale, xctx->text[n].yscale);
-      save_ascii_string(xctx->text[n].prop_ptr,fd);
-      fputc('\n' ,fd);
+      save_ascii_string(xctx->text[n].prop_ptr,fd, 1);
      break;
 
      case ARC:
       fprintf(fd, "A %d %.16g %.16g %.16g %.16g %.16g ",
         c, xctx->arc[c][n].x, xctx->arc[c][n].y, xctx->arc[c][n].r,
        xctx->arc[c][n].a, xctx->arc[c][n].b);
-      save_ascii_string(xctx->arc[c][n].prop_ptr,fd);
-      fputc('\n' ,fd);
+      save_ascii_string(xctx->arc[c][n].prop_ptr,fd, 1);
      break;
 
      case xRECT:
       fprintf(fd, "B %d %.16g %.16g %.16g %.16g ", c,xctx->rect[c][n].x1, xctx->rect[c][n].y1,xctx->rect[c][n].x2,
        xctx->rect[c][n].y2);
-      save_ascii_string(xctx->rect[c][n].prop_ptr,fd);
-      fputc('\n' ,fd);
+      save_ascii_string(xctx->rect[c][n].prop_ptr,fd, 1);
      break;
 
      case POLYGON:
@@ -2395,31 +2407,27 @@ void save_selection(int what)
       for(k=0; k<xctx->poly[c][n].points; k++) {
         fprintf(fd, "%.16g %.16g ", xctx->poly[c][n].x[k], xctx->poly[c][n].y[k]);
       }
-      save_ascii_string(xctx->poly[c][n].prop_ptr,fd);
-      fputc('\n' ,fd);
+      save_ascii_string(xctx->poly[c][n].prop_ptr,fd, 1);
      break;
 
      case WIRE:
       fprintf(fd, "N %.16g %.16g %.16g %.16g ",xctx->wire[n].x1, xctx->wire[n].y1,
         xctx->wire[n].x2, xctx->wire[n].y2);
-      save_ascii_string(xctx->wire[n].prop_ptr,fd);
-      fputc('\n' ,fd);
+      save_ascii_string(xctx->wire[n].prop_ptr,fd, 1);
      break;
 
      case LINE:
       fprintf(fd, "L %d %.16g %.16g %.16g %.16g ", c,xctx->line[c][n].x1, xctx->line[c][n].y1,
        xctx->line[c][n].x2, xctx->line[c][n].y2 );
-      save_ascii_string(xctx->line[c][n].prop_ptr,fd);
-      fputc('\n' ,fd);
+      save_ascii_string(xctx->line[c][n].prop_ptr,fd, 1);
      break;
 
      case ELEMENT:
       fprintf(fd, "C ");
-      save_ascii_string(xctx->inst[n].name,fd);
+      save_ascii_string(xctx->inst[n].name,fd, 0);
       fprintf(fd, " %.16g %.16g %hd %hd ",xctx->inst[n].x0, xctx->inst[n].y0,
         xctx->inst[n].rot, xctx->inst[n].flip );
-      save_ascii_string(xctx->inst[n].prop_ptr,fd);
-      fputc('\n' ,fd);
+      save_ascii_string(xctx->inst[n].prop_ptr,fd, 1);
      break;
 
      default:

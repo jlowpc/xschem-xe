@@ -299,7 +299,7 @@ extern char win_temp_dir[PATH_MAX];
 #define LINE_OUTSIDE(xa,ya,xb,yb,x1,y1,x2,y2) \
  (xa>=x2 || xb<=x1 ||  ( (ya<yb)? (ya>=y2 || yb<=y1) : (yb>=y2 || ya<=y1) ) )
 
-#define CLIP(x,a,b) (x<a?a:x>b?b:x)
+#define CLIP(x,a,b) ((x) < a ? (a) : (x) > b ? (b) : (x))
 
 #define MINOR(a,b) ( (a) <= (b) ? (a) : (b) )
 #define ROUND(a) ((a) > 0.0 ? ceil((a) - 0.5) : floor((a) + 0.5))
@@ -333,7 +333,7 @@ typedef struct
 {
    unsigned short type;
    int n;
-   unsigned short col;
+   unsigned int col;
 } Selected;
 
 typedef struct
@@ -410,10 +410,10 @@ typedef struct
   double xscale;
   double yscale;
   char *prop_ptr;
-  short layer; /*  20171201 for cairo  */
+  int layer; /*  20171201 for cairo  */
   short hcenter, vcenter;
   char *font; /*  20171201 for cairo */
-  short flags;
+  int flags;
 } xText;
 
 typedef struct
@@ -436,7 +436,7 @@ typedef struct
    char *prop_ptr;
    char *type;
    char *templ;
-   short flags; /* bit 0: embedded flag 
+   int flags; /* bit 0: embedded flag 
                  * bit 1: **free**
                  * bit 2: highight if connected wire highlighted */
 } xSymbol;
@@ -458,7 +458,7 @@ typedef struct
    short rot;
    short flip;
    short sel;
-   short color; /* hilight color */
+   int color; /* hilight color */
    short flags; /* bit 0: skip field, 
                  * bit 1: flag for different textlayer for pin/labels , 1: ordinary symbol, 0: label/pin/show 
                  * bit 2: highlight if connected net/label is highlighted */
@@ -571,6 +571,7 @@ typedef struct {
   int get_tok_value_size;
   char netlist_name[PATH_MAX];
   char current_dirname[PATH_MAX];
+  int netlist_unconn_cnt; /* unique count of unconnected pins while netlisting */
   struct instpinentry *instpintable[NBOXES][NBOXES];
   struct wireentry *wiretable[NBOXES][NBOXES];
   struct instentry *insttable[NBOXES][NBOXES];
@@ -763,9 +764,8 @@ extern int depth;
 extern int *fill_type; /* 20171117 for every layer: 0: no fill, 1, solid fill, 2: stipple fill */
 extern Tcl_Interp *interp;
 extern double cadsnap;
-extern int horizontal_move;
-extern int vertical_move;
 extern double *character[256];
+extern int constrained_move;
 extern int netlist_show;
 extern int flat_netlist;
 extern int netlist_type;
@@ -853,6 +853,7 @@ extern int samefile(const char *fa, const char *fb);
 extern void saveas(const char *f, int type);
 extern const char *get_file_path(char *f);
 extern int save(int confirm);
+extern void save_ascii_string(const char *ptr, FILE *fd, int newline);
 extern struct hilight_hashentry *bus_hilight_lookup(const char *token, int value, int what) ;
 extern struct hilight_hashentry *hilight_lookup(const char *token, int value, int what);
 extern int  name_strcmp(char *s, char *d) ;
@@ -887,8 +888,8 @@ extern int text_bbox(const char * str,double xscale, double yscale,
             double x1,double y1, double *rx1, double *ry1,
             double *rx2, double *ry2, int *cairo_lines, int *longest_line);
 
-
 extern int get_color(int value);
+extern void incr_hilight_color(void);
 extern void hash_inst(int what, int n);
 extern void hash_inst_pin(int what, int i, int j);
 extern void del_inst_table(void);
@@ -1031,8 +1032,7 @@ extern void arc_3_points(double x1, double y1, double x2, double y2, double x3, 
 extern void move_objects(int what,int merge, double dx, double dy);
 extern void redraw_w_a_l_r_p_rubbers(void); /* redraw wire, arcs, line, polygon rubbers */
 extern void copy_objects(int what);
-extern void find_inst_to_be_redrawn(const char *node);
-extern void find_inst_hash_clear(void);
+extern void find_inst_to_be_redrawn();
 extern void pan(int what);
 extern void pan2(int what, int mx, int my);
 extern void zoom_rectangle(int what);
@@ -1152,7 +1152,7 @@ extern void propagate_hilights(int set, int clear, int mode);
 extern void  select_connected_wires(int stop_at_junction);
 extern void draw_hilight_net(int on_window);
 extern void display_hilights(char **str);
-extern void redraw_hilights(void);
+extern void redraw_hilights(int clear);
 extern void override_netlist_type(int type);
 extern void prepare_netlist_structs(int for_netlist);
 extern void create_simdata(void);
