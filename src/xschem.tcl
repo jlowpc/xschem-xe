@@ -44,39 +44,40 @@ proc execute_fileevent {id} {
   append execute_data($id) [read $execute_pipe($id) 1024]
   if {[eof $execute_pipe($id)]} {
       fileevent $execute_pipe($id) readable ""
-      if { $execute_status($id) } {
-        # setting pipe to blocking before closing allows to see if pipeline failed
-        # do not ask status for processes that close stdout/stderr, as eof might
-        # occur before process ends and following close blocks until process terminates.
-        fconfigure $execute_pipe($id) -blocking 1
-        set status 0
+      # setting pipe to blocking before closing allows to see if pipeline failed
+      # do not ask status for processes that close stdout/stderr, as eof might
+      # occur before process ends and following close blocks until process terminates.
+      fconfigure $execute_pipe($id) -blocking 1
+      set status 0
 
-        if  { [ info tclversion]  > 8.4} {
-           set catch_return [eval catch [ list {close $execute_pipe($id)} err options] ]
-        } else {
-           set catch_return [eval catch [ list {close $execute_pipe($id)} err] ]
-        }
-        if {$catch_return} {
-          if  { [ info tclversion] > 8.4} {
-            set details [dict get $options -errorcode]
-            if {[lindex $details 0] eq "CHILDSTATUS"} {
-                set status [lindex $details 2]
-                viewdata "Failed: $execute_cmd($id)\nstderr:\n$err\ndata:\n$execute_data($id)" ro
-            } else {
-              set status 1
+      if  { [ info tclversion]  > 8.4} {
+         set catch_return [eval catch [ list {close $execute_pipe($id)} err options] ]
+      } else {
+         set catch_return [eval catch [ list {close $execute_pipe($id)} err] ]
+      }
+      if {$catch_return} {
+        if  { [ info tclversion] > 8.4} {
+          set details [dict get $options -errorcode]
+          if {[lindex $details 0] eq "CHILDSTATUS"} {
+              set status [lindex $details 2]
+              viewdata "Failed: $execute_cmd($id)\nstderr:\n$err\ndata:\n$execute_data($id)" ro
+          } else {
+            set status 1
+            if {$execute_status($id) } {
               viewdata "Completed: $execute_cmd($id)\nstderr:\n$err\ndata:\n$execute_data($id)" ro
             }
-          } else {
-              set status 1
-              viewdata "Completed: $execute_cmd($id)\nstderr:\n$err\ndata:\n$execute_data($id)" ro
           }
+        } else {
+            set status 1
+            if {$execute_status($id) } {
+              viewdata "Completed: $execute_cmd($id)\nstderr:\n$err\ndata:\n$execute_data($id)" ro
+            }
         }
-        if { $status == 0 } {
+      }
+      if { $status == 0 } {
+        if {$execute_status($id) } {
           viewdata "Completed: $execute_cmd($id)\ndata:\n$execute_data($id)" ro
         }
-      } else {
-        # nonblocking close always succeed 
-        close $execute_pipe($id)
       }
       if { [info exists execute_callback($id)] } { eval $execute_callback($id); unset execute_callback($id) } 
       unset execute_pipe($id)
@@ -89,8 +90,11 @@ proc execute_fileevent {id} {
 
 proc execute_wait {status args} {
   global execute_pipe 
-  xschem set semaphore [expr {[xschem get semaphore] +1}]
   set id [eval execute $status $args]
+  if {$id == -1} {
+    return -1
+  }
+  xschem set semaphore [expr {[xschem get semaphore] +1}]
   vwait execute_pipe($id)
   xschem set semaphore [expr {[xschem get semaphore] -1}]
   return $id
@@ -110,7 +114,12 @@ proc execute {status args} {
       incr execute_id
   }
   set id $execute_id
-  set pipe [open "|$args" r]
+  if { [catch {open "|$args" r} err] } {
+    puts stderr "Proc execute error: $err"
+    return -1
+  } else {
+    set pipe $err
+  }
   set execute_status($id) $status
   set execute_pipe($id) $pipe
   set execute_cmd($id) $args
@@ -123,7 +132,8 @@ proc execute {status args} {
 proc netlist {source_file show netlist_file} {
  global XSCHEM_SHAREDIR flat_netlist hspice_netlist netlist_dir
  global verilog_2001 netlist_type tcl_debug
-
+ 
+ simuldir
  if {$tcl_debug <= -1} { puts "netlist: source_file=$source_file, netlist_type=$netlist_type" }
  if {$netlist_type eq {spice}} {
    if { $hspice_netlist == 1 } {
@@ -186,8 +196,12 @@ proc convert_to_pdf {filename dest} {
   global to_pdf
   # puts "convert_to_pdf: $filename --> $dest"
   if { [regexp -nocase {\.pdf$} $dest] } {
-    set pdffile [file rootname $filename].pdf]
-    if { ![catch "exec $to_pdf $filename $pdffile" msg] } {
+    set pdffile [file rootname $filename].pdf
+    set cmd "exec $to_pdf $filename $pdffile"
+    if {$::OS == "Windows"} {
+      set cmd "exec $to_pdf $pdffile $filename"
+    } 
+    if { ![catch $cmd msg] } {
       file rename -force $pdffile $dest
       # ps2pdf succeeded, so remove original .ps file
       if { ![xschem get debug_var] } {
@@ -205,7 +219,11 @@ proc convert_to_pdf {filename dest} {
 proc convert_to_png {filename dest} {
   global to_png tcl_debug
   # puts "---> $to_png $filename $destfile"
-  if { ![catch "exec $to_png $filename png:$dest" msg] } {
+  set cmd "exec $to_png $filename png:$dest"
+    if {$::OS == "Windows"} {
+      set cmd "exec $to_png $dest $filename"
+    } 
+  if { ![catch $cmd msg] } {
     # conversion succeeded, so remove original .xpm file
     if { ![xschem get debug_var] } {
       file delete $filename
@@ -272,6 +290,7 @@ proc key_binding {  s  d } {
 proc edit_file {filename} {
  
  global editor
+ # since $editor can be an executable with options (gvim -f) I *need* to use eval
  eval execute 0  $editor  $filename
  return {}
 }
@@ -805,8 +824,9 @@ proc simulate {{callback {}}} {
 
   global netlist_dir netlist_type computerfarm terminal sim
   global execute_callback XSCHEM_SHAREDIR has_x
+
+  simuldir 
   set_sim_defaults
-  
   if { [select_netlist_dir 0] ne {}} {
     set d ${netlist_dir}
     set tool $netlist_type
@@ -861,6 +881,8 @@ proc gaw_echoline {} {
 
 proc gaw_setup_tcp {} {
   global gaw_fd gaw_tcp_address netlist_dir has_x
+ 
+  simuldir
   set s [file tail [file rootname [xschem get schname 0]]]
 
   if { ![info exists gaw_fd] && [catch {eval socket $gaw_tcp_address} gaw_fd] } {
@@ -882,6 +904,8 @@ proc gaw_setup_tcp {} {
 
 proc gaw_cmd {cmd} {
   global gaw_fd gaw_tcp_address netlist_dir has_x
+
+  simuldir
   if { ![info exists gaw_fd] && [catch {eval socket $gaw_tcp_address} gaw_fd] } {
     puts "Problems opening socket to gaw on address $gaw_tcp_address"
     unset gaw_fd
@@ -923,8 +947,9 @@ proc waves {} {
   ## $d : netlist directory
 
   global netlist_dir netlist_type computerfarm terminal sim XSCHEM_SHAREDIR has_x
+
+  simuldir
   set_sim_defaults
-  
   if { [select_netlist_dir 0] ne {}} {
     set d ${netlist_dir}
     set tool ${netlist_type}
@@ -959,6 +984,8 @@ proc waves {} {
 proc utile_translate {schname} { 
   global netlist_dir netlist_type tcl_debug XSCHEM_SHAREDIR
   global utile_gui_path utile_cmd_path
+
+  simuldir 
   set tmpname [file rootname "$schname"]
   eval exec {sh -c "cd \"$netlist_dir\"; \
       XSCHEM_SHAREDIR=\"$XSCHEM_SHAREDIR\" \"$utile_cmd_path\" stimuli.$tmpname"}
@@ -967,6 +994,8 @@ proc utile_translate {schname} {
 proc utile_gui {schname} { 
   global netlist_dir netlist_type tcl_debug XSCHEM_SHAREDIR
   global utile_gui_path utile_cmd_path
+
+  simuldir 
   set tmpname [file rootname "$schname"]
   eval exec {sh -c "cd \"$netlist_dir\"; \
       XSCHEM_SHAREDIR=\"$XSCHEM_SHAREDIR\" \"$utile_gui_path\" stimuli.$tmpname"} &
@@ -974,49 +1003,54 @@ proc utile_gui {schname} {
 
 proc utile_edit {schname} { 
   global netlist_dir netlist_type tcl_debug editor XSCHEM_SHAREDIR
-  global utile_gui_path utile_cmd_path 
+  global utile_gui_path utile_cmd_path
+
+  simuldir
   set tmpname [file rootname "$schname"]
-  eval exec {sh -c "cd \"$netlist_dir\"; $editor stimuli.$tmpname ; \
-      XSCHEM_SHAREDIR=\"$XSCHEM_SHAREDIR\" \"$utile_cmd_path\" stimuli.$tmpname"} &
+  execute 0 sh -c "cd \"$netlist_dir\" && $editor stimuli.$tmpname && \
+      XSCHEM_SHAREDIR=\"$XSCHEM_SHAREDIR\" \"$utile_cmd_path\" stimuli.$tmpname"
 }
 
 proc get_shell { curpath } {
  global netlist_dir netlist_type tcl_debug
  global  terminal
 
- execute 0 sh -c "cd $curpath; $terminal"
+ simuldir
+ execute 0 sh -c "cd $curpath && $terminal"
 }
 
 proc edit_netlist {schname } {
  global netlist_dir netlist_type tcl_debug
  global editor terminal
+
+ simuldir
  set tmpname [file rootname "$schname"]
 
  if { [regexp vim $editor] } { set ftype "-c \":set filetype=$netlist_type\"" } else { set ftype {} }
  if { [select_netlist_dir 0] ne "" } {
    # puts "edit_netlist: \"$editor $ftype  ${schname}.v\" \"$netlist_dir\" bg"
    if { $netlist_type=="verilog" } {
-     execute 0  sh -c "cd $netlist_dir; $editor $ftype  \"${tmpname}.v\""
+     execute 0  sh -c "cd $netlist_dir && $editor $ftype  \"${tmpname}.v\""
    } elseif { $netlist_type=="spice" } {
      if {$::OS == "Windows"} {
        set cmd "$editor \"$netlist_dir/${tmpname}.spice\""
        eval exec $cmd
      } else {
-       execute 0  sh -c "cd $netlist_dir; $editor $ftype \"${tmpname}.spice\""
+       execute 0  sh -c "cd $netlist_dir && $editor $ftype \"${tmpname}.spice\""
      }
    } elseif { $netlist_type=="tedax" } {
      if {$::OS == "Windows"} {
        set cmd "$editor \"$netlist_dir/${tmpname}.tdx\""
        eval exec $cmd
      } else {
-       execute 0 sh -c "cd $netlist_dir; $editor $ftype \"${tmpname}.tdx\""
+       execute 0 sh -c "cd $netlist_dir && $editor $ftype \"${tmpname}.tdx\""
      }
    } elseif { $netlist_type=="vhdl" } { 
      if {$::OS == "Windows"} {
        set cmd "$editor \"$netlist_dir/${tmpname}.vhdl\""
        eval exec $cmd
      } else {
-       execute 0 sh -c "cd $netlist_dir; $editor $ftype \"${tmpname}.vhdl\""
+       execute 0 sh -c "cd $netlist_dir && $editor $ftype \"${tmpname}.vhdl\""
      }
    }
  }
@@ -1694,6 +1728,19 @@ proc make_symbol {name} {
   return {}
 }
 
+# create simulation dir 'simulation/' under current schematic directory
+proc simuldir {} {
+  global netlist_dir local_netlist_dir
+  if { $local_netlist_dir == 1 } {
+    set simdir [xschem get current_dirname]/simulation
+    file mkdir $simdir
+    set netlist_dir $simdir
+    xschem set_netlist_dir $netlist_dir
+    return $netlist_dir
+  }
+  return {}
+}
+
 #
 # force==0: force creation of $netlist_dir (if not empty)
 #           if netlist_dir empty and no dir given prompt user
@@ -2060,9 +2107,14 @@ proc tclpropeval {s instname symname} {
 
 # this hook is called in translate() if whole string is contained in a tcleval(...) construct
 proc tclpropeval2 {s} {
-  global tcl_debug env
+  global tcl_debug env netlist_type
   if {$tcl_debug <=-1} {puts "tclpropeval2: $s"}
   set path [string range [xschem get sch_path] 1 end]
+  if { $netlist_type eq {spice} } {
+    regsub {^([^xX])} $path {x\1} path
+    while { [regsub {\.([^xX])} $path {.x\1} path] } {}
+  }
+  # puts "---> path=$path"
   regsub {^tcleval\(} $s {} s
   regsub {\)([ \n\t]*)$} $s {\1} s
   if { [catch {subst $s} res] } {
@@ -2176,6 +2228,7 @@ proc edit_vi_prop {txtlabel} {
   if ![string compare $netlist_type "vhdl"] { set suffix vhd } else { set suffix v }
   set filename $filename.$suffix
   write_data $retval $XSCHEM_TMP_DIR/$filename
+  # since $editor can be an executable with options (gvim -f) I *need* to use eval
   eval execute_wait 0 $editor $XSCHEM_TMP_DIR/$filename ;# 20161119
   if {$tcl_debug<=-1} {puts "edit_vi_prop{}:\n--------\nretval=$retval\n---------\n"}
   if {$tcl_debug<=-1} {puts "edit_vi_prop{}:\n--------\nsymbol=$symbol\n---------\n"}
@@ -2205,6 +2258,7 @@ proc edit_vi_netlist_prop {txtlabel} {
   regsub -all {\\?\\} $retval {\\} retval
   write_data $retval $XSCHEM_TMP_DIR/$filename
   if { [regexp vim $editor] } { set ftype "\{-c :set filetype=$netlist_type\}" } else { set ftype {} }
+  # since $editor can be an executable with options (gvim -f) I *need* to use eval
   eval execute_wait 0 $editor  $ftype $XSCHEM_TMP_DIR/$filename
   if {$tcl_debug <= -1}  {puts "edit_vi_prop{}:\n--------\n$retval\n---------\n"}
   set tmp [read_data $XSCHEM_TMP_DIR/$filename]
@@ -3456,6 +3510,7 @@ set_ne globfilter {*}
 ## list of tcl procedures to load at end of xschem.tcl
 set_ne tcl_files {}
 set_ne netlist_dir "$USER_CONF_DIR/simulations"
+set_ne local_netlist_dir 0 ;# if set use <sch_dir>/simulation for netlist and sims
 set_ne bus_replacement_char {} ;# use {<>} to replace [] with <> in bussed signals
 set_ne hspice_netlist 1
 set_ne top_subckt 0
@@ -3719,7 +3774,7 @@ if { ( $::OS== "Windows" || [string length [lindex [array get env DISPLAY] 1] ] 
   .menubar.file.menu add cascade -label "Open Recent" -menu .menubar.file.menu.recent
 
   .menubar.file.menu add command -label "Open Most Recent" \
-    -command "eval {xschem load [lindex "$recentfile" 0]}" -accelerator {Ctrl+Shift+O}
+    -command {xschem load [lindex "$recentfile" 0]} -accelerator {Ctrl+Shift+O}
   .menubar.file.menu add command -label "Save" -command "xschem save" -accelerator {Ctrl+S}
   toolbar_create FileSave "xschem save" "Save File"
   .menubar.file.menu add command -label "Merge" -command "xschem merge" -accelerator {Shift+B}
@@ -4103,6 +4158,9 @@ if { ( $::OS== "Windows" || [string length [lindex [array get env DISPLAY] 1] ] 
     -command {
           input_line {Set netlist file name} {xschem set netlist_name} [xschem get netlist_name] 40
     }
+  .menubar.simulation.menu add checkbutton -label "Use 'simulation' dir under current schematic dir" \
+    -variable local_netlist_dir \
+    -command { if {$local_netlist_dir == 0 } { select_netlist_dir 1 } else { simuldir} }
   .menubar.simulation.menu add command -label {Configure simulators and tools} -command {simconf}
   .menubar.simulation.menu add command -label {Utile Stimuli Editor (GUI)} \
    -command {utile_gui [file tail [xschem get schname]]}
@@ -4121,11 +4179,11 @@ if { ( $::OS== "Windows" || [string length [lindex [array get env DISPLAY] 1] ] 
   .menubar.simulation.menu add command -label {Send highlighted nets to GAW} -command {xschem create_plot_cmd gaw}
   .menubar.simulation.menu add command -label {Create Ngspice 'xplot' file} \
   -command {xschem create_plot_cmd ngspice} -accelerator Shift+J
+  .menubar.simulation.menu add checkbutton -label "Forced stop tcl scripts" -variable tclstop
   .menubar.simulation.menu add separator
   .menubar.simulation.menu add checkbutton -label "LVS netlist: Top level is a .subckt" -variable top_subckt 
   .menubar.simulation.menu add checkbutton -label "Use 'spiceprefix' attribute" -variable spiceprefix \
          -command {xschem set spiceprefix $spiceprefix; xschem save; xschem reload}
-  .menubar.simulation.menu add checkbutton -label "Forced stop tcl scripts" -variable tclstop
 
   pack .menubar.file -side left
   pack .menubar.edit -side left
