@@ -58,7 +58,7 @@ function beginfile(f)
  textdist=5
  labsize=0.2
  titlesize=0.3
- text_voffset=20
+ text_voffset=10
  lab_voffset=4
  ip=op=n_pin=n_p=n_l=0
  print "v {xschem version=2.9.8 file_version=1.2}" > sym
@@ -88,7 +88,7 @@ function beginfile(f)
   ip++
 }
 
-/^P /{
+/^[LP]/{
   get_end_line()
   process_box_line()
   box[n_p]=$0
@@ -253,13 +253,12 @@ function endfile(f) {
  y=-m*space
  x=-width
  
-
+ box_minx=box_maxx=box_miny=box_maxy=0
  for(ii=0;ii<n_p;ii++)
  {
   print box[ii] >sym
   awk split(box[ii],a," ");
   box_type=a[1]
-  box_minx=box_maxx=box_miny=box_maxy=0
   if (box_type=="P")
   {
     box_num_vertices = a[3]
@@ -274,17 +273,24 @@ function endfile(f) {
   }
   if (box_type=="L")
   {
+    if (box_minx==0 || box_minx > a[3]) box_minx=a[3]
+    if (box_maxx==0 || box_maxx < a[3]) box_maxx=a[3]
+    if (box_minx==0 || box_minx > a[5]) box_minx=a[5]
+    if (box_maxx==0 || box_maxx < a[5]) box_maxx=a[5]
+    if (box_miny==0 || box_miny > a[4]) box_miny=a[4]
+    if (box_maxy==0 || box_maxy < a[4]) box_maxy=a[4]
+    if (box_miny==0 || box_miny > a[6]) box_miny=a[6]
+    if (box_maxy==0 || box_maxy < a[6]) box_maxy=a[6]
+    #print "(" box_minx "," box_miny ") and (" box_maxx "," box_maxy ")"
   }
  }
 
- print "T {@symname}" ,(box_minx+box_maxx)/2, (box_miny+box_maxy)/2,0,0,
-       titlesize, titlesize, "{}" >sym
- print "T {@name}",box_maxx-lwidth+5, box_miny-space,0,0,labsize, labsize,"{}" >sym
+ #print "Final: (" box_minx "," box_miny ") and (" box_maxx "," box_maxy ")"
 
-
- #hsort_key(index_pin, y_pin, n_pin)   # 20140519
-
- num_i = num_o = 0 #20140519
+ #print "T {@symname}" ,(box_maxx+box_minx)/2, (box_maxy+box_miny)/2,0,0,
+ #      titlesize, titlesize, "{}" >sym
+ print "T {@symname}",box_minx-lwidth+5, box_miny-text_voffset,0,0,labsize, labsize,"{}" >sym
+ print "T {@name}",box_maxx-lwidth+5, box_miny-text_voffset,0,0,labsize, labsize,"{}" >sym
 
  for(ii=0;ii<n_pin;ii++)
  {
@@ -305,9 +311,9 @@ function endfile(f) {
    if(value !="") printf "value=" value " " >sym
    printf props_pin[i] > sym
    printf "}\n" >sym
-   #print "L 4 " x,y+num_i*space,x+lwidth, y+num_i*space,"{}" >sym
-   print "T {" label_pin[i] "}",x_pin[i]+lwidth+textdist,y_pin[i]+num_i*space-lab_voffset,0,0,labsize, labsize, "{}" >sym
-   num_i++ # 20140519
+   x = get_text_x(label_pin[i], x_pin[i], y_pin[i], box_minx, box_maxx, box_miny, box_maxy)
+   y = get_text_y(label_pin[i], x_pin[i], y_pin[i], box_minx, box_maxx, box_miny, box_maxy)
+   print "T {" label_pin[i] "}",x,y,0,0,labsize, labsize, "{}" >sym
   }
   if(dir=="ipin")
   {
@@ -316,9 +322,9 @@ function endfile(f) {
    if(value !="") printf "value=" value " " >sym
    printf props_pin[i] > sym
    printf "}\n" >sym
-   #print "L 4 " x,y+num_i*space,x+lwidth, y+num_i*space,"{}" >sym
-   print "T {" label_pin[i] "}",x_pin[i]+lwidth+textdist,y_pin[i]+num_i*space-lab_voffset,0,0,labsize, labsize, "{}" >sym
-   num_i++ # 20140519
+   x = get_text_x(label_pin[i], x_pin[i], y_pin[i], box_minx, box_maxx, box_miny, box_maxy)
+   y = get_text_y(label_pin[i], x_pin[i], y_pin[i], box_minx, box_maxx, box_miny, box_maxy)
+   print "T {" label_pin[i] "}",x,y,0,0,labsize, labsize, "{}" >sym
   }
   if(dir=="opin")
   {
@@ -327,9 +333,9 @@ function endfile(f) {
    if(value !="") printf "value=" value " " >sym
    printf props_pin[i] > sym
    printf "}\n" >sym
-   #print "L 4 " (-x-lwidth),(y+num_o*space),-x, (y+num_o*space),"{}" >sym
-   print "T {" label_pin[i] "}"x_pin[i]+lwidth+textdist,y_pin[i]+num_i*space-lab_voffset,0,1,labsize, labsize, "{}" >sym
-   num_o++ # 20140519
+   x = get_text_x(label_pin[i], x_pin[i], y_pin[i], box_minx, box_maxx, box_miny, box_maxy)
+   y = get_text_y(label_pin[i], x_pin[i], y_pin[i], box_minx, box_maxx, box_miny, box_maxy)
+   print "T {" label_pin[i] "}",x,y,0,0,labsize, labsize, "{}" >sym
   }
   if(dir=="iopin")
   {
@@ -338,11 +344,30 @@ function endfile(f) {
    if(value !="") printf "value=" value " " >sym
    printf props_pin[i] > sym
    printf "}\n" >sym
-   #print "L 7 " (-x_pin[i]-lwidth),(y_pin[i]+num_o*space),-x_pin[i], (y_pin[i]+num_o*space),"{}" >sym
-   print "T {" label_pin[i] "}",x_pin[i]+lwidth+textdist,y_pin[i]+num_i*space-lab_voffset,0,1,labsize, labsize, "{}" >sym
-   num_o++ # 20140519
+   x = get_text_x(label_pin[i], x_pin[i], y_pin[i], box_minx, box_maxx, box_miny, box_maxy)
+   y = get_text_y(label_pin[i], x_pin[i], y_pin[i], box_minx, box_maxx, box_miny, box_maxy)
+   print "T {" label_pin[i] "}",x,y,0,0,labsize, labsize, "{}" >sym
   }
  }
  close(sym)
 }
  
+function get_text_x(str, x, y, box_minx, box_maxx, box_miny, box_maxy)
+{
+  len = length(str)
+  if (x == box_minx) # On the left hand side
+  {
+    return(x+lwidth+textdist)
+  }
+  if (x == box_maxx) # On the right hand side
+  {
+    return(x-len-lwidth-textdist)
+  }
+  # In between left and right
+  return(x)
+}
+
+function get_text_y(str, x, y, box_minx, box_maxx, box_miny, box_maxy)
+{
+  return(y-lab_voffset)
+}
