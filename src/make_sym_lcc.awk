@@ -88,7 +88,7 @@ function beginfile(f)
   ip++
 }
 
-/^[LP]/{
+/^[LP] /{
   get_end_line()
   process_box_line()
   box[n_p]=$0
@@ -220,13 +220,22 @@ function process_line()
  # print "process_line: pin_label=" pin_label " verilog_type=" verilog_type
 }
 
-function process_box_line()
+function process_box_line(    value) # value is also a global. Avoid clashes by declaring it local
 {
  print "process_box_line"
- 
- if($0 ~ /^.*dash=/)
- {
-  sub(/dash=[0-9]/,"dash=0")
+ # If sch has dash, sym will not have dash
+ if($0 ~ /^.*dash=/) {
+  sub(/dash=[1-9]/,"dash=0")
+ }
+ else {
+   value = $0
+   if (value ~ /\{.*\}/)
+   {
+     sub(/^.*\{/,"",value)
+     sub(/\}/, "", value) # Get rid of }
+     if (length(value)) sub(/\{.*\}/, "{" value " dash=5}") # Put dash=5 within {} along with its original content
+     else sub(/\{.*\}/, "{dash=5}")
+   }
  }
  print "process_box_line: returning:" $0
  # print "process_line: pin_label=" pin_label " verilog_type=" verilog_type
@@ -245,7 +254,7 @@ function get_end_line()
   }
 }
 
-function endfile(f) {
+function endfile(f,     a) {
 
  n=ip;if(op>n) n=op
  if(n==0) n=1
@@ -369,5 +378,13 @@ function get_text_x(str, x, y, box_minx, box_maxx, box_miny, box_maxy)
 
 function get_text_y(str, x, y, box_minx, box_maxx, box_miny, box_maxy)
 {
+  if (y == box_miny) # On the top line
+  {
+    return(y+lwidth+textdist)
+  }
+  if (y == box_maxy) # On the bottom line
+  {
+    return(y-lwidth-textdist)
+  }
   return(y-lab_voffset)
 }
