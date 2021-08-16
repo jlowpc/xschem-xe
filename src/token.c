@@ -3,7 +3,7 @@
  * This file is part of XSCHEM,
  * a schematic capture and Spice/Vhdl/Verilog netlisting tool for circuit
  * simulation.
- * Copyright (C) 1998-2020 Stefan Frederik Schippers
+ * Copyright (C) 1998-2021 Stefan Frederik Schippers
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -2326,6 +2326,7 @@ const char *net_name(int i, int j, int *multip, int hash_prefix_unnamed_net, int
      my_snprintf(errstr, S(errstr), "Warning: unconnected pin,  Inst idx: %d, Pin idx: %d  Inst:%s\n",
                  i, j, xctx->inst[i].instname ) ;
      statusmsg(errstr,2);
+     tcleval("wm deiconify .infotext"); /* critical error: force ERC window showing */
      if(!netlist_count) {
        xctx->inst[i].color = -PINLAYER;
        xctx->hilight_nets=1;
@@ -2752,6 +2753,7 @@ const char *translate(int inst, const char* s)
  const char *value;
  int escape=0;
  char date[200];
+ char *sch = NULL;
 
  if(!s) {
    my_free(1063, &result);
@@ -2920,9 +2922,10 @@ const char *translate(int inst, const char* s)
      my_free(1066, &pin_num_or_name);
    } else if(strcmp(token,"@sch_last_modified")==0) {
 
-    my_strncpy(file_name, abs_sym_path(get_tok_value(
-      (xctx->inst[inst].ptr+ xctx->sym)->prop_ptr, "schematic",0 ), "")
-      , S(file_name));
+    my_strdup2(1258, &sch, get_tok_value((xctx->inst[inst].ptr+ xctx->sym)->prop_ptr, "schematic",0 ));
+    tcl_hook(&sch);
+    my_strncpy(file_name, abs_sym_path(sch, ""), S(file_name));
+    my_free(1259, &sch);
     if(!file_name[0]) {
       my_strncpy(file_name, add_ext(abs_sym_path(xctx->inst[inst].name, ""), ".sch"), S(file_name));
     }

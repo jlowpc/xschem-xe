@@ -3,7 +3,7 @@
  * This file is part of XSCHEM,
  * a schematic capture and Spice/Vhdl/Verilog netlisting tool for circuit
  * simulation.
- * Copyright (C) 1998-2020 Stefan Frederik Schippers
+ * Copyright (C) 1998-2021 Stefan Frederik Schippers
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -365,13 +365,17 @@ void verilog_block_netlist(FILE *fd, int i)
   char tcl_cmd_netlist[PATH_MAX + 100];
   char cellname[PATH_MAX];
   const char *str_tmp;
+  char *sch = NULL;
 
   if(!strcmp( get_tok_value(xctx->sym[i].prop_ptr,"verilog_stop",0),"true") )
      verilog_stop=1;
   else
      verilog_stop=0;
   if((str_tmp = get_tok_value(xctx->sym[i].prop_ptr, "schematic",0 ))[0]) {
-    my_strncpy(filename, abs_sym_path(str_tmp, ""), S(filename));
+    my_strdup2(1260, &sch, str_tmp);
+    tcl_hook(&sch);
+    my_strncpy(filename, abs_sym_path(sch, ""), S(filename));
+    my_free(1261, &sch);
   } else {
     my_strncpy(filename, add_ext(abs_sym_path(xctx->sym[i].name, ""), ".sch"), S(filename));
   }
