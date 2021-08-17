@@ -13,6 +13,17 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
+    - name: Install Packages
+      run: |
+      sudo apt-get update -qq
+      sudo apt-get install flex
+      sudo apt-get install bison
+      sudo apt-get install xorg
+      sudo apt-get install openbox
+      sudo apt-get install libx11-dev
+      sudo apt-get install tcl-dev
+      sudo apt-get install tk-dev
+      sudo apt-get install libxpm-dev
     - name: configure
       run: ./configure
     - name: make
