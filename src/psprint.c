@@ -25,24 +25,24 @@
 #define Y_TO_PS(y) ( (y+xctx->yorigin)* xctx->mooz )
 
 #if 0
-/* FIXME: overflow check. Not used, BTW */
-static char *strreplace(char s[], char token[], char replace[])
-{
-  static char res[200];
-  char *p1, *p2;
-  int l;
-
-  res[0] = '\0';
-  l = strlen(token);
-  p1 = p2 = s;
-  while( (p2 = strstr(p1, token)) ) {
-     strncat(res, p1, p2 - p1);
-     strcat(res, replace);
-     p1 = p2 = p2 + l;
-  }
-  strcat(res, p1);
-  return res;
-}
+*   /* FIXME: overflow check. Not used, BTW */
+*   static char *strreplace(char s[], char token[], char replace[])
+*   {
+*     static char res[200];
+*     char *p1, *p2;
+*     int l;
+*   
+*     res[0] = '\0';
+*     l = strlen(token);
+*     p1 = p2 = s;
+*     while( (p2 = strstr(p1, token)) ) {
+*        strncat(res, p1, p2 - p1);
+*        strcat(res, replace);
+*        p1 = p2 = p2 + l;
+*     }
+*     strcat(res, p1);
+*     return res;
+*   }
 #endif
 
 char *utf8_enc[]={
@@ -118,7 +118,7 @@ static void set_ps_colors(unsigned int pixel)
 
 static void ps_xdrawarc(int layer, int fillarc, double x, double y, double r, double a, double b)
 {
- if(fill && fillarc)
+ if(fill_pattern && fillarc)
    fprintf(fd, "%g %g %g %g %g A %g %g LT C F S\n", x, y, r, -a, -a-b, x, y);
  else
    fprintf(fd, "%g %g %g %g %g A S\n", x, y, r, -a, -a-b);
@@ -140,7 +140,7 @@ static void ps_xfillrectange(int layer, double x1, double y1, double x2,
                   double y2)
 {
  fprintf(fd, "%g %g %g %g R\n", x1,y1,x2-x1,y2-y1);
- if( (fill_type[layer] == 1) && fill) {
+ if( (fill_type[layer] == 1) && fill_pattern) {
    fprintf(fd, "%g %g %g %g RF\n", x1,y1,x2-x1,y2-y1);
    /* fprintf(fd,"fill\n"); */
  }
@@ -174,7 +174,7 @@ static void ps_drawpolygon(int c, int what, double *x, double *y, int points, in
     if(i==0) fprintf(fd, "NP\n%g %g MT\n", xx, yy);
     else fprintf(fd, "%g %g LT\n", xx, yy);
   }
-  if(fill && fill_type[c] && poly_fill) {
+  if(fill_pattern && fill_type[c] && poly_fill) {
     fprintf(fd, "C F S\n");
   } else {
     fprintf(fd, "S\n");
@@ -417,8 +417,8 @@ static void old_ps_draw_string(int gctext,  const char *str,
  text_bbox(str, xscale, yscale, rot, flip, hcenter, vcenter,
            x1,y1, &rx1,&ry1,&rx2,&ry2, &no_of_lines, &longest_line);
  #endif
- xscale*=nocairo_font_xscale;
- yscale*=nocairo_font_yscale;
+ xscale*=tclgetdoublevar("nocairo_font_xscale");
+ yscale*=tclgetdoublevar("nocairo_font_yscale");
 
  if(!textclip(xctx->areax1,xctx->areay1,xctx->areax2,xctx->areay2,rx1,ry1,rx2,ry2)) return;
  set_ps_colors(gctext);
@@ -457,8 +457,8 @@ static void ps_drawgrid()
 {
  double x,y;
  double delta,tmp;
- if(!draw_grid) return;
- delta=cadgrid* xctx->mooz;
+ if( !tclgetboolvar("draw_grid")) return;
+ delta=tclgetdoublevar("cadgrid")* xctx->mooz;
  while(delta<CADGRIDTHRESHOLD) delta*=CADGRIDMULTIPLY;  /* <-- to be improved,but works */
  x = xctx->xorigin* xctx->mooz;y = xctx->yorigin* xctx->mooz;
  set_ps_colors(GRIDLAYER);
@@ -676,8 +676,9 @@ void create_ps(char **psfile, int what)
   }
 
   fill_ps_colors();
-  old_grid=draw_grid;
-  draw_grid=0;
+  old_grid=tclgetboolvar("draw_grid");
+  tclsetvar("draw_grid", "0");
+
 
   boundbox.x1 = xctx->areax1;
   boundbox.x2 = xctx->areax2;
@@ -709,10 +710,10 @@ void create_ps(char **psfile, int what)
     fprintf(fd, "%%%%BeginProlog\n\n");
   
     for(i = 0; i < sizeof(utf8_enc)/sizeof(char *); i++) {
-      fprintf(fd, utf8_enc[i]);
+      fprintf(fd, "%s", utf8_enc[i]);
     }
     for(i = 0; i < sizeof(utf8)/sizeof(char *); i++) {
-      fprintf(fd, utf8[i]);
+      fprintf(fd, "%s", utf8[i]);
     }
   
     fprintf(fd, "/Times /Times chararr recode\n");
@@ -852,10 +853,10 @@ void create_ps(char **psfile, int what)
       y2 = Y_TO_XSCHEM(xctx->areay2);
       for(init_wire_iterator(&ctx, x1, y1, x2, y2); ( wireptr = wire_iterator_next(&ctx) ) ;) {
         i = wireptr->n;
-        if( xctx->wire[i].end1 >1 ) { /* 20150331 draw_dots */
+        if( xctx->wire[i].end1 >1 ) {
           ps_drawarc(WIRELAYER, 1, xctx->wire[i].x1, xctx->wire[i].y1, cadhalfdotsize, 0, 360, 0);
         }
-        if( xctx->wire[i].end2 >1 ) { /* 20150331 draw_dots */
+        if( xctx->wire[i].end2 >1 ) {
           ps_drawarc(WIRELAYER, 1, xctx->wire[i].x2, xctx->wire[i].y2, cadhalfdotsize, 0, 360, 0);
         }
       }
@@ -870,7 +871,7 @@ void create_ps(char **psfile, int what)
     fprintf(fd, "%%%%EOF\n");
     fclose(fd);
   }
-  draw_grid=old_grid;
+  tclsetboolvar("draw_grid", old_grid);
   my_free(879, &ps_colors);
 }
 

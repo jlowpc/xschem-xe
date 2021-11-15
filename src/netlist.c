@@ -276,7 +276,7 @@ void hash_inst_pin(int what, int i, int j)
         xctx->inst[i].name, j, prop_ptr);
     statusmsg(str,2);
     tcleval("wm deiconify .infotext"); /* critical error: force ERC window showing */
-    if(!netlist_count) {
+    if(!xctx->netlist_count) {
       xctx->inst[i].color = -PINLAYER;
       xctx->hilight_nets=1;
     }
@@ -394,20 +394,20 @@ void netlist_options(int i)
 
   str = get_tok_value(xctx->inst[i].prop_ptr, "top_subckt", 0);
   if(str[0]) {
-    top_subckt = 0;
     /* fprintf(errfp, "netlist_options(): prop_ptr=%s\n", xctx->inst[i].prop_ptr); */
-    if(!strcmp(str, "true")) top_subckt = 1;
+    if(!strcmp(str, "true")) tclsetintvar("top_subckt", 1);
+    else tclsetintvar("top_subckt", 0);
   }
   str = get_tok_value(xctx->inst[i].prop_ptr, "spiceprefix", 0);
   if(str[0]) {
-    spiceprefix = 1;
     /* fprintf(errfp, "netlist_options(): prop_ptr=%s\n", xctx->inst[i].prop_ptr); */
-    if(!strcmp(str, "false")) spiceprefix = 0;
+    if(!strcmp(str, "false")) tclsetvar("spiceprefix", "0");
+    else tclsetvar("spiceprefix", "1");
   }
 
   str = get_tok_value(xctx->inst[i].prop_ptr, "hiersep", 0);
   if(str[0]) {
-    my_snprintf(hiersep, S(hiersep), "%s", str);
+    my_snprintf(xctx->hiersep, S(xctx->hiersep), "%s", str);
   }
 }
 
@@ -448,11 +448,11 @@ static void signal_short( char *n1, char *n2)
    dbg(1, "signal_short(): signal_short: shorted: %s - %s", n1, n2);
    statusmsg(str,2);
    tcleval("wm deiconify .infotext"); /* critical error: force ERC window showing */
-   if(!netlist_count) {
+   if(!xctx->netlist_count) {
       bus_hilight_lookup(n1, xctx->hilight_color, XINSERT);
-      if(incr_hilight) incr_hilight_color();
+      if(tclgetboolvar("incr_hilight")) incr_hilight_color();
       bus_hilight_lookup(n2, xctx->hilight_color, XINSERT);
-      if(incr_hilight) incr_hilight_color();
+      if(tclgetboolvar("incr_hilight")) incr_hilight_color();
    }
  }
 }
@@ -652,11 +652,11 @@ void prepare_netlist_structs(int for_netlist)
   if (for_netlist>0 && xctx->prep_net_structs) return;
   else if (!for_netlist && xctx->prep_hi_structs) return;
   /* delete instance pins spatial hash, wires spatial hash, node_hash, wires and inst nodes.*/
-  else delete_netlist_structs();
-  xctx->simdata.valid = 0;
+  delete_netlist_structs();
+  free_simdata(); /* invalidate simulation cache */
   dbg(1, "prepare_netlist_structs(): extraction\n");
-  if(netlist_count == 0 ) startlevel = xctx->currsch;
-  print_erc =  netlist_count == 0 || startlevel < xctx->currsch;
+  if(xctx->netlist_count == 0 ) startlevel = xctx->currsch;
+  print_erc =  xctx->netlist_count == 0 || startlevel < xctx->currsch;
 
   if (for_netlist>0) {
     my_snprintf(nn, S(nn), "-----------%s", xctx->sch[xctx->currsch]);
@@ -1075,7 +1075,6 @@ int sym_vs_sch_pins()
       rects = xctx->sym[i].rects[PINLAYER];
 
       my_strdup2(1248, &sch, get_tok_value(xctx->sym[i].prop_ptr, "schematic", 0));
-      tcl_hook(&sch);
       my_strncpy(filename, abs_sym_path(sch, ""), S(filename));
       my_free(1249, &sch);
       if(!filename[0]) {
@@ -1132,7 +1131,11 @@ int sym_vs_sch_pins()
               load_ascii_string( &tmp, fd);
               break;
             case 'A':
-              fscanf(fd, "%d",&tmpi);
+              if(fscanf(fd, "%d",&tmpi)< 1) {
+                 fprintf(errfp,"sym_vs_sch_pins(): WARNING:  missing fields for ARC object, ignoring\n");
+                 read_line(fd, 0);
+                 break;
+              }
               if(fscanf(fd, "%lf %lf %lf %lf %lf ",&tmpd, &tmpd, &tmpd, &tmpd, &tmpd) < 5) {
                 fprintf(errfp,"sym_vs_sch_pins(): WARNING:  missing fields for ARC object, ignoring\n");
                 read_line(fd, 0);

@@ -1,4 +1,4 @@
-v {xschem version=2.9.9 file_version=1.2 }
+v {xschem version=3.0.0 file_version=1.2 }
 G {}
 K {}
 V {}
@@ -6,6 +6,10 @@ S {}
 E {}
 T {CMOS DIFFERENTIAL AMPLIFIER
 EXAMPLE} 250 -650 0 0 0.4 0.4 {}
+T {This is an example of a code block that will
+be placed as a header in the netlist.
+use 'place=header' attribute and set the
+header text as a 'value' attribute} 720 -720 0 0 0.4 0.4 {}
 N 30 -310 30 -280 {lab=VCC}
 N 30 -310 60 -310 {lab=VCC}
 N 260 -240 260 -190 {lab=GN}
@@ -90,11 +94,14 @@ value=".temp 30
 .option savecurrents
 .save all @m4[gm] @m5[gm] @m1[gm]
 .control
+save all
 op
+* tran 1n 300n
+* dc vvcc 0 5 0.01
 write cmos_example.raw
 .endc
 
-"  net_name=true}
+"}
 C {lab_pin.sym} 500 -430 0 0 {name=p12 lab=G  net_name=true}
 C {launcher.sym} 700 -60 0 0 {name=h1
 descr=Backannotate
@@ -108,3 +115,9 @@ C {ngspice_probe.sym} 600 -260 0 0 {name=r3}
 C {ngspice_probe.sym} 770 -420 0 0 {name=r4}
 C {ngspice_get_value.sym} 620 -160 0 0 {name=r5 node=i(@$\{path\}m1[id])
 descr="I="}
+C {code.sym} 920 -580 0 0 {name=HEADER
+place=header
+only_toplevel=true
+value="** ======================== **
+** This is a netlist header **
+** ======================== **"}

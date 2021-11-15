@@ -40,13 +40,13 @@ void global_tedax_netlist(int global)  /* netlister driver */
  statusmsg("",2);  /* clear infowindow */
  record_global_node(2, NULL, NULL); /* delete list of global nodes */
  bus_char[0] = bus_char[1] = '\0';
- hiersep[0]='.'; hiersep[1]='\0';
+ xctx->hiersep[0]='.'; xctx->hiersep[1]='\0';
  str_tmp = tclgetvar("bus_replacement_char");
  if(str_tmp && str_tmp[0] && str_tmp[1]) {
    bus_char[0] = str_tmp[0];
    bus_char[1] = str_tmp[1];
  }
- netlist_count=0;
+ xctx->netlist_count=0;
  my_snprintf(netl_filename, S(netl_filename), "%s/.%s_%d", 
    netlist_dir, skip_dir(xctx->sch[xctx->currsch]), getpid());
  fd=fopen(netl_filename, "w");
@@ -73,7 +73,7 @@ void global_tedax_netlist(int global)  /* netlister driver */
  fprintf(fd,"tEDAx v1\nbegin netlist v1 %s\n", skip_dir( xctx->sch[xctx->currsch]) );
 
  tedax_netlist(fd, 0);
- netlist_count++;
+ xctx->netlist_count++;
 
  /*fprintf(fd,"**** begin user architecture code\n"); */
  /*if(xctx->schprop && xctx->schprop[0]) fprintf(fd, "%s\n", xctx->schprop); */
@@ -130,12 +130,12 @@ void global_tedax_netlist(int global)  /* netlister driver */
 
  /* print globals nodes found in netlist 28032003 */
  record_global_node(0,fd,NULL);
- fprintf(fd, "__HIERSEP__ %s\n", hiersep);
+ fprintf(fd, "__HIERSEP__ %s\n", xctx->hiersep);
 
  dbg(1, "global_tedax_netlist(): starting awk on netlist!\n");
 
  fclose(fd);
- if(netlist_show) {
+ if(tclgetboolvar("netlist_show")) {
   my_snprintf(tcl_cmd_netlist, S(tcl_cmd_netlist), "netlist {%s} show {%s}", netl_filename, cellname);
   tcleval(tcl_cmd_netlist);
  }
@@ -144,7 +144,7 @@ void global_tedax_netlist(int global)  /* netlister driver */
   tcleval(tcl_cmd_netlist);
  }
  if(!debug_var) xunlink(netl_filename);
- netlist_count = 0;
+ xctx->netlist_count = 0;
 }
 
 
@@ -162,7 +162,6 @@ void tedax_block_netlist(FILE *fd, int i)
      tedax_stop=0;
   if((str_tmp = get_tok_value(xctx->sym[i].prop_ptr, "schematic",0 ))[0]) {
     my_strdup2(1256, &sch, str_tmp);
-    tcl_hook(&sch);
     my_strncpy(filename, abs_sym_path(sch, ""), S(filename));
     my_free(1257, &sch);
   } else {
@@ -188,7 +187,7 @@ void tedax_block_netlist(FILE *fd, int i)
   fprintf(fd, "\n");
   load_schematic(1,filename, 0);
   tedax_netlist(fd, tedax_stop);
-  netlist_count++;
+  xctx->netlist_count++;
 
   if(xctx->schprop && xctx->schprop[0]) {
     fprintf(fd,"#**** begin user architecture code\n");
@@ -232,8 +231,8 @@ void tedax_netlist(FILE *fd, int tedax_stop )
 
      if( type && !IS_LABEL_OR_PIN(type) ) {
        /* already done in global_tedax_netlist */
-       if(!strcmp(type,"netlist_commands") && netlist_count==0) continue;
-       if(netlist_count &&
+       if(!strcmp(type,"netlist_commands") && xctx->netlist_count==0) continue;
+       if(xctx->netlist_count &&
           !strcmp(get_tok_value(xctx->inst[i].prop_ptr, "only_toplevel", 0), "true")) continue;
        if(!strcmp(type,"netlist_commands")) {
          fprintf(fd,"#**** begin user architecture code\n");
@@ -246,7 +245,7 @@ void tedax_netlist(FILE *fd, int tedax_stop )
     }
     my_free(967, &type);
   }
-  if(!tedax_stop && !netlist_count) redraw_hilights(0); /* draw_hilight_net(1); */
+  if(!tedax_stop && !xctx->netlist_count) redraw_hilights(0); /* draw_hilight_net(1); */
 }
 
 

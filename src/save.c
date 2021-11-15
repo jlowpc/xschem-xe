@@ -1057,7 +1057,7 @@ void load_schematic(int load_symbols, const char *filename, int reset_undo) /* 2
     if( (fd=fopen(name,fopen_read_mode))== NULL) {
       fprintf(errfp, "load_schematic(): unable to open file: %s, filename=%s\n",
           name, filename ? filename : "<NULL>");
-      my_snprintf(msg, S(msg), "alert_ {Unable to open file: %s}", filename ? filename: "(null)");
+      my_snprintf(msg, S(msg), "update; alert_ {Unable to open file: %s}", filename ? filename: "(null)");
       tcleval(msg);
       clear_drawing();
     } else {
@@ -1089,8 +1089,13 @@ void load_schematic(int load_symbols, const char *filename, int reset_undo) /* 2
     set_modify(0);
     clear_drawing();
     for(i=0;;i++) {
-      if(i == 0) my_snprintf(name, S(name), "%s.sch", "untitled");
-      else my_snprintf(name, S(name), "%s-%d.sch", "untitled", i);
+      if(netlist_type == CAD_SYMBOL_ATTRS) {
+        if(i == 0) my_snprintf(name, S(name), "%s.sym", "untitled");
+        else my_snprintf(name, S(name), "%s-%d.sym", "untitled", i);
+      } else {
+        if(i == 0) my_snprintf(name, S(name), "%s.sch", "untitled");
+        else my_snprintf(name, S(name), "%s-%d.sch", "untitled", i);
+      }
       if(stat(name, &buf)) break;
     }
     my_snprintf(xctx->sch[xctx->currsch], S(xctx->sch[xctx->currsch]), "%s/%s", pwd_dir, name);
@@ -1102,7 +1107,7 @@ void load_schematic(int load_symbols, const char *filename, int reset_undo) /* 2
       tcleval( "wm iconname . \"xschem - [file tail [xschem get schname]]\"");
     }
   }
-  if(autotrim_wires) trim_wires();
+  if(tclgetboolvar("autotrim_wires")) trim_wires();
   update_conn_cues(0, 0);
 }
 
@@ -1113,7 +1118,7 @@ void delete_undo(void)
   int i;
   char diff_name[PATH_MAX]; /* overflow safe 20161122 */
 
-  for(i=0; i<max_undo; i++) {
+  for(i=0; i<MAX_UNDO; i++) {
     my_snprintf(diff_name, S(diff_name), "%s/undo%d",xctx->undo_dirname, i);
     xunlink(diff_name);
   }
@@ -1138,21 +1143,21 @@ void push_undo(void)
     FILE *fd;
     char diff_name[PATH_MAX+100]; /* overflow safe 20161122 */
 
-    if(no_undo)return;
+    if(xctx->no_undo)return;
     dbg(1, "push_undo(): cur_undo_ptr=%d tail_undo_ptr=%d head_undo_ptr=%d\n",
        xctx->cur_undo_ptr, xctx->tail_undo_ptr, xctx->head_undo_ptr);
 
 
     #if HAS_POPEN==1
-    my_snprintf(diff_name, S(diff_name), "gzip --fast -c > %s/undo%d", xctx->undo_dirname, xctx->cur_undo_ptr%max_undo);
+    my_snprintf(diff_name, S(diff_name), "gzip --fast -c > %s/undo%d", xctx->undo_dirname, xctx->cur_undo_ptr%MAX_UNDO);
     fd = popen(diff_name,"w");
     if(!fd) {
       fprintf(errfp, "push_undo(): failed to open write pipe %s\n", diff_name);
-      no_undo=1;
+      xctx->no_undo=1;
       return;
     }
     #elif HAS_PIPE==1
-    my_snprintf(diff_name, S(diff_name), "%s/undo%d", xctx->undo_dirname, xctx->cur_undo_ptr%max_undo);
+    my_snprintf(diff_name, S(diff_name), "%s/undo%d", xctx->undo_dirname, xctx->cur_undo_ptr%MAX_UNDO);
     pipe(pd);
     if((pid = fork()) ==0) {                                    /* child process */
       static char f[PATH_MAX] = "";
@@ -1166,29 +1171,33 @@ void push_undo(void)
       /* the following 2 statements are a replacement for dup2() which is not c89
        * however these are not atomic, if another thread takes stdin
        * in between we are in trouble */
+      #if(HAS_DUP2) 
+      dup2(pd[0], 0);
+      #else
       close(0); /* close stdin */
       dup(pd[0]); /* duplicate read side of pipe to stdin */
-      if(!f[0]) my_strncpy(f, get_file_path("gzip"), S(f));
-      execl(f, f, "-c", NULL);       /* replace current process with comand */
+      #endif
+      if(!f[0]) my_strncpy(f, "gzip", S(f));
+      execlp(f, f, "--fast", "-c", NULL);       /* replace current process with comand */
       /* never gets here */
-      fprintf(errfp, "push_undo(): problems with execl\n");
+      fprintf(errfp, "push_undo(): problems with execlp\n");
       Tcl_Eval(interp, "exit");
     }
     close(pd[0]);                                       /* close read side of pipe */
     fd=fdopen(pd[1],"w");
     #else /* uncompressed undo */
-    my_snprintf(diff_name, S(diff_name), "%s/undo%d", xctx->undo_dirname, xctx->cur_undo_ptr%max_undo);
+    my_snprintf(diff_name, S(diff_name), "%s/undo%d", xctx->undo_dirname, xctx->cur_undo_ptr%MAX_UNDO);
     fd = fopen(diff_name,"w");
     if(!fd) {
       fprintf(errfp, "push_undo(): failed to open undo file %s\n", diff_name);
-      no_undo=1;
+      xctx->no_undo=1;
       return;
     }
     #endif
     write_xschem_file(fd);
     xctx->cur_undo_ptr++;
     xctx->head_undo_ptr = xctx->cur_undo_ptr;
-    xctx->tail_undo_ptr = xctx->head_undo_ptr <= max_undo? 0: xctx->head_undo_ptr-max_undo;
+    xctx->tail_undo_ptr = xctx->head_undo_ptr <= MAX_UNDO? 0: xctx->head_undo_ptr-MAX_UNDO;
     #if HAS_POPEN==1
     pclose(fd);
     #elif HAS_PIPE==1
@@ -1209,7 +1218,7 @@ void pop_undo(int redo)
   FILE *diff_fd;
   #endif
 
-  if(no_undo)return;
+  if(xctx->no_undo)return;
   if(redo) {
     if(xctx->cur_undo_ptr < xctx->head_undo_ptr) {
       dbg(1, "pop_undo(): redo; cur_undo_ptr=%d tail_undo_ptr=%d head_undo_ptr=%d\n",
@@ -1234,15 +1243,15 @@ void pop_undo(int redo)
   unselect_all();
 
   #if HAS_POPEN==1
-  my_snprintf(diff_name, S(diff_name), "gunzip -c %s/undo%d", xctx->undo_dirname, xctx->cur_undo_ptr%max_undo);
+  my_snprintf(diff_name, S(diff_name), "gzip -d -c %s/undo%d", xctx->undo_dirname, xctx->cur_undo_ptr%MAX_UNDO);
   fd=popen(diff_name, "r");
   if(!fd) {
     fprintf(errfp, "pop_undo(): failed to open read pipe %s\n", diff_name);
-    no_undo=1;
+    xctx->no_undo=1;
     return;
   }
   #elif HAS_PIPE==1
-  my_snprintf(diff_name, S(diff_name), "%s/undo%d", xctx->undo_dirname, xctx->cur_undo_ptr%max_undo);
+  my_snprintf(diff_name, S(diff_name), "%s/undo%d", xctx->undo_dirname, xctx->cur_undo_ptr%MAX_UNDO);
   pipe(pd);
   if((pid = fork())==0) {                                     /* child process */
     static char f[PATH_MAX] = "";
@@ -1253,22 +1262,26 @@ void pop_undo(int redo)
       Tcl_Eval(interp, "exit");
     }
     /* connect write side of pipe to stdout */
+    #if HAS_DUP2
+    dup2(pd[1], 1);
+    #else
     close(1);    /* close stdout */
     dup(pd[1]);  /* write side of pipe --> stdout */
-    if(!f[0]) my_strncpy(f, get_file_path("gunzip"), S(f));
-    execl(f, f, "-c", NULL);       /* replace current process with command */
+    #endif
+    if(!f[0]) my_strncpy(f, "gzip", S(f));
+    execlp(f, f, "-d", "-c", NULL);       /* replace current process with command */
     /* never gets here */
-    dbg(1, "pop_undo(): problems with execl\n");
+    dbg(1, "pop_undo(): problems with execlp\n");
     Tcl_Eval(interp, "exit");
   }
   close(pd[1]);                                       /* close write side of pipe */
   fd=fdopen(pd[0],"r");
   #else /* uncompressed undo */
-  my_snprintf(diff_name, S(diff_name), "%s/undo%d", xctx->undo_dirname, xctx->cur_undo_ptr%max_undo);
+  my_snprintf(diff_name, S(diff_name), "%s/undo%d", xctx->undo_dirname, xctx->cur_undo_ptr%MAX_UNDO);
   fd=fopen(diff_name, "r");
   if(!fd) {
     fprintf(errfp, "pop_undo(): failed to open read pipe %s\n", diff_name);
-    no_undo=1;
+    xctx->no_undo=1;
     return;
   }
   #endif
@@ -2216,7 +2229,6 @@ void create_sch_from_sym(void)
   {
     my_strdup2(1250, &sch,
       get_tok_value((xctx->inst[xctx->sel_array[0].n].ptr+ xctx->sym)->prop_ptr, "schematic",0 ));
-    tcl_hook(&sch);
     my_strncpy(schname, abs_sym_path(sch, ""), S(schname));
     my_free(1251, &sch);
     if(!schname[0]) {
@@ -2360,8 +2372,8 @@ void descend_symbol(void)
 }
 
 /* 20111023 align selected object to current grid setting */
-#define SNAP_TO_GRID(a)  (a=ROUND(( a)/cadsnap)*cadsnap )
-void round_schematic_to_grid(double cadsnap)
+#define SNAP_TO_GRID(a)  (a=ROUND(( a)/c_snap)*c_snap )
+void round_schematic_to_grid(double c_snap)
 {
  int i, c, n, p;
  rebuild_selected_array();

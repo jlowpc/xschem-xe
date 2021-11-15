@@ -23,7 +23,7 @@
 #ifndef CADGLOBALS
 #define CADGLOBALS
 
-#define XSCHEM_VERSION "2.9.9"
+#define XSCHEM_VERSION "3.0.0"
 #define XSCHEM_FILE_VERSION "1.2"
 
 #if HAS_PIPE == 1
@@ -191,7 +191,7 @@ extern char win_temp_dir[PATH_MAX];
 #define MENUSTARTRECT 4096  /*  start rect invoked from menu */
 #define MENUSTARTZOOM 8192  /*  start zoom box invoked from menu */
 #define STARTPAN2     16384 /*  new pan method with mouse button3 */
-#define MENUSTARTTEXT 32768 /*  20161201 click to place text if action starts from menu */
+#define PLACE_TEXT 32768
 #define MENUSTARTSNAPWIRE 65536   /*  start wire invoked from menu, snap to pin variant 20171022 */
 #define STARTPOLYGON 131072
 #define MENUSTARTPOLYGON 262144
@@ -223,6 +223,7 @@ extern char win_temp_dir[PATH_MAX];
 /* viewers xschem can generate plot commands for */
 #define NGSPICE 1
 #define GAW 2
+#define BESPICE 3
 
 /*    some useful primes */
 /*    109, 163, 251, 367, 557, 823, 1237, 1861, 2777, 4177, 6247, 9371, 14057 */
@@ -244,7 +245,7 @@ extern char win_temp_dir[PATH_MAX];
 #define ABORT  512 /*  used in move/copy_objects for aborting without unselecting */
 #define THICK 1024 /*  used to draw thick lines (buses) */
 #define ROTATELOCAL 2048 /*  rotate each selected object around its own anchor point 20171208 */
-#define CLEAR 4096 /* used in new_wire to clear previous rubber when switching manhattan_lines */
+#define CLEAR 4096 /* used in new_wire to clear previous rubber when switching xctx->manhattan_lines */
 /* #define DRAW 8192 */  /* was used in bbox() to draw things by using XCopyArea after setting clip rectangle */
 #define HILIGHT 8192  /* used when calling draw_*symbol_outline() for hilighting instead of normal draw */
 #define FONTWIDTH 20
@@ -491,19 +492,14 @@ struct iterator_ctx {
 struct simdata_pin {
                   char *function;
                   char *go_to;
+                  int value;
                   short clock;
                  };
  
-struct simdata_inst {
+struct simdata {
                   struct simdata_pin *pin;
                   int npin;
                  };
-
-struct simdata {
-                 struct simdata_inst *inst;
-                 int ninst;
-                 int valid;
-               };
 
 typedef struct {
   xWire *wire;
@@ -564,11 +560,11 @@ typedef struct {
   int prep_hi_structs;
   int prep_hash_inst;
   int prep_hash_wires;
-  struct simdata simdata;
+  struct simdata *simdata;
+  int simdata_ninst;
   int modified;
   int semaphore;
   int get_tok_size;
-  int get_tok_value_size;
   char netlist_name[PATH_MAX];
   char current_dirname[PATH_MAX];
   int netlist_unconn_cnt; /* unique count of unconnected pins while netlisting */
@@ -605,6 +601,7 @@ typedef struct {
   double rx1, rx2, ry1, ry2;
   short move_rot;
   short move_flip;
+  int manhattan_lines;
   double x1, y_1, x2, y_2, deltax, deltay;
   int movelastsel;
   short rotatelocal;
@@ -625,6 +622,15 @@ typedef struct {
   XSegment *biggridpoint;
   XPoint *gridpoint;
   char plotfile[PATH_MAX];
+  int enable_drill;
+  int pending_fullzoom;
+  char hiersep[20];
+  int no_undo;
+  int draw_single_layer;
+  int draw_dots;
+  int no_draw;
+  int draw_pixmap; /* pixmap used as 2nd buffer */
+  int netlist_count; /* netlist counter incremented at any cell being netlisted */
 } Xschem_ctx;
 
 struct Lcc { /* used for symbols containing schematics as instances (LCC, Local Custom Cell) */
@@ -702,18 +708,29 @@ struct instentry {
 
 /* GLOBAL VARIABLES */
 extern Xschem_ctx *xctx;
+/*********** Variables backed in xschem.tcl ***********/
+extern int cadlayers; 
+extern int has_x; 
+extern int rainbow_colors; 
+extern int draw_window; 
+extern int only_probes; 
+extern char *netlist_dir; 
+extern int color_ps; 
+extern int constrained_move;
+extern int netlist_type;
+extern int flat_netlist;
+extern int *enable_layer;
+extern int hide_symbols;
+extern int sym_txt;
+extern double cairo_font_scale; /*  default: 1.0, allows to adjust font size */
+extern double cairo_vert_correct;
+extern double nocairo_vert_correct;
+extern double cairo_font_line_spacing;
+extern int debug_var;
+/*********** End of variables backed in xschem.tcl ***********/
 extern int help;
 extern char *cad_icon[];
-extern int manhattan_lines;
-extern int cadlayers;
-extern int *active_layer;
-extern int *enable_layer;
-extern int n_active_layers;
 extern int do_print;
-extern int has_x;
-extern int no_draw;
-extern int sym_txt;
-extern int rainbow_colors;
 extern FILE *errfp;
 extern int no_readline;
 extern char *filename;
@@ -724,98 +741,38 @@ extern int load_initfile;
 extern char rcfile[PATH_MAX];
 extern char *tcl_command;
 extern char tcl_script[PATH_MAX];
-extern int persistent_command;
-extern int autotrim_wires;
-extern int dis_uniq_names;
-
 extern int tcp_port;
-extern int debug_var;
 extern char **color_array;
 extern unsigned int color_index[];
-extern int change_lw; /*  allow change line width */
-extern int thin_text;
-extern int incr_hilight;
-extern int auto_hilight;
-extern int fill; /*  fill rectangles */
-extern int draw_grid;
-extern int big_grid_points;
+extern int n_active_layers; /* can not be put in Xctx, since it is bound to enable_layer[] */
+extern int *active_layer; /* can not be put in Xctx, since it is bound to enable_layer[] */
+extern int *fill_type; /* for every layer: 0: no fill, 1, solid fill, 2: stipple fill */
+                       /* can not be put in Xctx, since it sets XSetFillStyle */
+extern int fill_pattern; /*  fill rectangles, can not be put in Xctx, since it sets XSetFillStyle */
 extern int text_svg;
 extern int text_ps;
-extern double cadgrid;
 extern double cadhalfdotsize;
-extern int draw_pixmap; /*  pixmap used as 2nd buffer */
-extern int draw_window;
-extern XEvent xev;
-extern KeySym key;
-extern unsigned short enable_stretch;
-extern unsigned int button;
-extern unsigned int state; /*  status of shift,ctrl etc.. */
-extern int currentsch;
-extern char *xschem_version_string;
-extern int split_files;
-extern char *netlist_dir;
 extern char initial_netlist_name[PATH_MAX];
 extern char bus_char[];
-extern int max_undo;
-extern int draw_dots;
-extern int draw_single_layer;
 extern int yyparse_error;
 extern char *xschem_executable;
-extern int depth;
-extern int *fill_type; /* 20171117 for every layer: 0: no fill, 1, solid fill, 2: stipple fill */
 extern Tcl_Interp *interp;
-extern double cadsnap;
 extern double *character[256];
-extern int constrained_move;
-extern int netlist_show;
-extern int flat_netlist;
-extern int netlist_type;
 extern int do_netlist;
 extern int do_simulation;
 extern int do_waves;
-extern int netlist_count;
-extern int top_subckt;
-extern int spiceprefix;
-extern char hiersep[20];
 extern int quit;
-extern int show_erc;
-extern int color_ps;
-extern int transparent_svg;
-extern int only_probes;
-extern int pending_fullzoom;
-extern int fullscreen;
-extern int unzoom_nodrift;
-extern int dark_colorscheme;
-extern double color_dim;
-extern int no_undo;
-extern int enable_drill;
-extern size_t get_tok_value_size;
-extern size_t get_tok_size;
 extern int batch_mode; /* no TCL console */
-extern int hide_symbols; /* draw only a bounding box for component instances and @symname, @name texts */
-extern int show_pin_net_names;
-extern int en_hilight_conn_inst;
-extern char svg_font_name[80];
-/* CAIRO specific global variables */
-extern char cairo_font_name[80];
-extern double cairo_font_scale; /*  default: 1.0, allows to adjust font size */
-extern double nocairo_font_xscale;
-extern double nocairo_font_yscale;
-extern double cairo_font_line_spacing; /*  allows to change line spacing: default: 1.0 */
-extern double cairo_vert_correct;
-extern double nocairo_vert_correct;
-extern const char fopen_read_mode[];
+extern const char fopen_read_mode[]; /* "r" on unix, "rb" on windows */
 
 /* X11 specific globals */
 extern Colormap colormap;
-extern Window pre_window;
-extern Window parent_of_topwindow;
 extern unsigned char **pixdata;
 extern unsigned char pixdata_init[22][32];
-extern GC *gc, *gcstipple, gctiled;
+extern GC *gc, *gcstipple;
 extern Display *display;
 extern int screen_number;
-extern XRectangle *rectangle;
+extern int screendepth;
 extern Pixmap cad_icon_pixmap, cad_icon_mask, *pixmap;
 extern XColor xcolor_array[];
 extern Visual *visual;
@@ -836,7 +793,7 @@ extern double timer(int start);
 extern void enable_layers(void);
 extern void set_snap(double);
 extern void set_grid(double);
-extern void create_plot_cmd(int viewer);
+extern void create_plot_cmd(void);
 extern void set_modify(int mod);
 extern void dbg(int level, char *fmt, ...);
 extern void here(int i);
@@ -917,7 +874,7 @@ extern void xwin_exit(void);
 extern void resetcairo(int create, int clear, int force_or_resize);
 extern int Tcl_AppInit(Tcl_Interp *interp);
 extern int source_tcl_file(char *s);
-extern int callback(int event, int mx, int my, KeySym key,
+extern int callback(const char *winpath, int event, int mx, int my, KeySym key,
                         int button, int aux, int state);
 extern void resetwin(int create_pixmap, int clear_pixmap, int force, int w, int h);
 extern void find_closest_net(double mx,double my);
@@ -1055,10 +1012,16 @@ extern int xschem(ClientData clientdata, Tcl_Interp *interp,
 extern const char *tcleval(const char str[]);
 extern const char *tclresult(void);
 extern const char *tclgetvar(const char *s);
+extern int tclgetboolvar(const char *s);
+extern int tclgetintvar(const char *s);
+extern double tclgetdoublevar(const char *s);
 extern void tclsetvar(const char *s, const char *value);
-extern void tcl_hook(char **res);
+extern void tclsetdoublevar(const char *s, const double value);
+extern void tclsetboolvar(const char *s, const int value);
+extern void tclsetintvar(const char *s, const int value);
+extern const char *tcl_hook2(char **res);
 extern void statusmsg(char str[],int n);
-extern void place_text(int draw_text, double mx, double my);
+extern int place_text(int draw_text, double mx, double my);
 extern void init_inst_iterator(struct iterator_ctx *ctx, double x1, double y1, double x2, double y2);
 extern struct instentry *inst_iterator_next(struct iterator_ctx *ctx);
 extern void init_wire_iterator(struct iterator_ctx *ctx, double x1, double y1, double x2, double y2);
@@ -1067,6 +1030,7 @@ extern void check_unique_names(int rename);
 
 extern void clear_instance_hash();
 
+extern unsigned int str_hash(const char *tok);
 extern void free_hash(struct hashentry **table);
 extern struct hashentry *str_hash_lookup(struct hashentry **table, const char *token, const char *value, int what);
 extern void free_int_hash(struct int_hashentry **table);
@@ -1077,7 +1041,7 @@ extern int isonlydigit(const char *s);
 extern const char *translate(int inst, const char* s);
 extern const char* translate2(struct Lcc *lcc, int level, char* s);
 extern void print_tedax_element(FILE *fd, int inst);
-extern void print_spice_element(FILE *fd, int inst);
+extern int print_spice_element(FILE *fd, int inst);
 extern void print_spice_subckt(FILE *fd, int symbol);
 extern void print_tedax_subckt(FILE *fd, int symbol);
 extern void print_vhdl_element(FILE *fd, int inst);
@@ -1104,7 +1068,7 @@ extern void new_prop_string(int i, const char *old_prop,int fast, int dis_uniq_n
 extern void hash_name(char *token, int remove);
 extern void hash_all_names(int n);
 extern void symbol_bbox(int i, double *x1,double *y1, double *x2, double *y2);
-extern char *escape_chars(char *dest, const char *source, int size);
+/* extern char *escape_chars(char *dest, const char *source, int size); */
 
 extern void set_inst_prop(int i);
 extern void unselect_wire(int i);
@@ -1178,7 +1142,7 @@ extern void windowid();
 extern void preview_window(const char *what, const char *tk_win_path, const char *filename);
 extern void new_schematic(const char *what, const char *tk_win_path, const char *filename);
 extern int window_state (Display *disp, Window win, char *arg);
-extern void toggle_fullscreen();
+extern void toggle_fullscreen(const char *topwin);
 extern void toggle_only_probes();
 extern void update_symbol(const char *result, int x);
 extern void tclexit(ClientData s);

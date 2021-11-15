@@ -26,27 +26,35 @@
 # /home/schippes/share/doc/xschem/rom8k
 
 #### For testing in build src directory
-#### if unset following paths are set:
+#### if unset following paths are set and maintained if existing:
 #
+# ~/.xschem/xschem_library
 # ../xschem_library/devices
+# ../xschem_library/examples
+# ../xschem_library/ngspice
+# ../xschem_library/logic
+# ../xschem_library/xschem_simulator
+# ../xschem_library/binto7seg
+# ../xschem_library/pcb
+# ../xschem_library/rom8k
 
 #### For testing after installation: uncomment following lines
 # set xschem_doc_dir [file dirname ${XSCHEM_SHAREDIR}]/doc/xschem
 # set XSCHEM_LIBRARY_PATH {}
 # append XSCHEM_LIBRARY_PATH :~/.xschem/xschem_library
 # append XSCHEM_LIBRARY_PATH :${XSCHEM_SHAREDIR}/xschem_library/devices
-# append XSCHEM_LIBRARY_PATH ${xschem_doc_dir}/examples
-# append XSCHEM_LIBRARY_PATH ${xschem_doc_dir}/ngspice
-# append XSCHEM_LIBRARY_PATH ${xschem_doc_dir}/xschem_simulator
-# append XSCHEM_LIBRARY_PATH ${xschem_doc_dir}/rom8k
-# append XSCHEM_LIBRARY_PATH ${xschem_doc_dir}/logic
-# append XSCHEM_LIBRARY_PATH ${xschem_doc_dir}/pcb
-# append XSCHEM_LIBRARY_PATH ${xschem_doc_dir}/binto7seg
-# append XSCHEM_LIBRARY_PATH ${xschem_doc_dir}/symgen
-# append XSCHEM_LIBRARY_PATH ${xschem_doc_dir}/xTAG
-# append XSCHEM_LIBRARY_PATH ${xschem_doc_dir}/rulz-r8c33
-# append XSCHEM_LIBRARY_PATH ${xschem_doc_dir}/gschem_import
-# append XSCHEM_LIBRARY_PATH ${xschem_doc_dir}/gschem_import/sym
+# append XSCHEM_LIBRARY_PATH :${xschem_doc_dir}/examples
+# append XSCHEM_LIBRARY_PATH :${xschem_doc_dir}/ngspice
+# append XSCHEM_LIBRARY_PATH :${xschem_doc_dir}/xschem_simulator
+# append XSCHEM_LIBRARY_PATH :${xschem_doc_dir}/rom8k
+# append XSCHEM_LIBRARY_PATH :${xschem_doc_dir}/logic
+# append XSCHEM_LIBRARY_PATH :${xschem_doc_dir}/pcb
+# append XSCHEM_LIBRARY_PATH :${xschem_doc_dir}/binto7seg
+# append XSCHEM_LIBRARY_PATH :${xschem_doc_dir}/symgen
+# append XSCHEM_LIBRARY_PATH :${xschem_doc_dir}/xTAG
+# append XSCHEM_LIBRARY_PATH :${xschem_doc_dir}/rulz-r8c33
+# append XSCHEM_LIBRARY_PATH :${xschem_doc_dir}/gschem_import
+# append XSCHEM_LIBRARY_PATH :${xschem_doc_dir}/gschem_import/sym
 
 #### For Windows, use ; instead of :, and enclosed pathname with ""
 # append XSCHEM_LIBRARY_PATH ";${XSCHEM_SHAREDIR}/../xschem_library"
@@ -92,10 +100,12 @@
 #### set xschem_libs { {/cmoslib/} {/analoglib/.*pass} buffer }
 #### in this case all schematic cells of directory cmoslib and cells containing
 #### /analoglib/...pass and buffer will be excluded from netlisting
-set xschem_libs {}
+#### default value: empty
+# set xschem_libs {}
 #### noprint_libs is a list with same rules as for xschem_libs. This
 #### variable controls hierarchical print
-set noprint_libs {}
+#### default value: empty
+# set noprint_libs {}
 ###########################################################################
 #### CHANGE DEFAULT [] WITH SOME OTHER CHARACTERS FOR BUSSED SIGNALS 
 #### IN SPICE NETLISTS (EXAMPLE: DATA[7] --> DATA<7>) 
@@ -283,6 +293,12 @@ set noprint_libs {}
 ###########################################################################
 #### set xschem listening port; default: not enabled
 # set xschem_listen_port 2021
+
+###########################################################################
+#### BESPICE WAVE SOCKET CONNECTION
+###########################################################################
+#### set bespice wave listening port; default: not enabled
+# set bespice_listen_port 2022
 
 ###########################################################################
 #### UTILE SPICE STIMULI DESCRIPTION LANGUAGE AND TRANSLATOR

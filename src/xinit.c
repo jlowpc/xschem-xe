@@ -156,7 +156,7 @@ void windowid()
   Tk_Window mainwindow;
 
   unsigned int ww;
-  Window framewin, rootwindow;
+  Window framewin, rootwindow, parent_of_topwindow;
   Window *framewin_child_ptr;
   unsigned int framewindow_nchildren;
 
@@ -267,7 +267,7 @@ void init_color_array(double dim)
  double rr, gg, bb;
  static int done=0;
 
- dim_bg = tclgetvar("dim_background")[0] == '1' ? 1: 0;
+ dim_bg = tclgetboolvar("color_dim");
  for(i=0;i<cadlayers;i++) {
    my_snprintf(s, S(s), "lindex $colors %d",i);
    tcleval(s);
@@ -399,6 +399,7 @@ void alloc_xschem_data()
   xctx->schsymbolprop=NULL; /* symbol property string */
   xctx->schverilogprop=NULL;/* verilog */
   xctx->version_string = NULL;
+  xctx->rectcolor= 4;  /* this is the current layer when xschem started. */
   xctx->currsch = 0;
   xctx->ui_state = 0;
   xctx->need_reb_sel_arr = 1;
@@ -406,15 +407,13 @@ void alloc_xschem_data()
   xctx->maxsel = 0;
   xctx->prep_net_structs = 0;
   xctx->prep_hi_structs = 0;
-  xctx->simdata.inst = NULL;
-  xctx->simdata.ninst = 0;
-  xctx->simdata.valid = 0;
+  xctx->simdata = NULL;
+  xctx->simdata_ninst = 0;
   xctx->prep_hash_inst = 0;
   xctx->prep_hash_wires = 0;
   xctx->modified = 0;
   xctx->semaphore = 0;
   xctx->get_tok_size = 0;
-  xctx->get_tok_value_size = 0;
   xctx->netlist_name[0] = '\0';
   xctx->plotfile[0] = '\0';
   xctx->netlist_unconn_cnt = 0; /* unique count of unconnected pins while netlisting */
@@ -447,6 +446,7 @@ void alloc_xschem_data()
   xctx->rx1 = xctx->rx2 = xctx->ry1 = xctx->ry2 = 0.0;
   xctx->move_rot = 0;
   xctx->move_flip = 0;
+  xctx->manhattan_lines = 0;
   xctx->x1 = xctx->y_1 = xctx->x2 = xctx->y_2 = xctx->deltax = xctx->deltay = 0.0;
   xctx->movelastsel = 0;
   xctx->rotatelocal=0;
@@ -467,7 +467,6 @@ void alloc_xschem_data()
   xctx->hilight_time = 0; /* timestamp for sims */
   xctx->hilight_nets = 0;
   xctx->hilight_color = 0;
-  xctx->rectcolor = 0;
   for(i=0;i<CADMAXHIER;i++) {
     xctx->sch_path[i]=NULL;
     xctx->sch_path_hash[i]=0;
@@ -522,6 +521,14 @@ void alloc_xschem_data()
   xctx->sel_array=my_calloc(619, xctx->maxsel, sizeof(Selected));
   xctx->biggridpoint=(XSegment*)my_calloc(1213, CADMAXGRIDPOINTS,sizeof(XSegment));
   xctx->gridpoint=(XPoint*)my_calloc(608, CADMAXGRIDPOINTS,sizeof(XPoint));
+  xctx->enable_drill = 0;
+  xctx->pending_fullzoom = 0;
+  my_strncpy(xctx->hiersep, ".", S(xctx->hiersep));
+  xctx->no_undo = 0;
+  xctx->draw_single_layer = -1;
+  xctx->draw_dots = 1;
+  xctx->no_draw = 0;
+  xctx->draw_pixmap = 1;
 }
 
 void alloc_data()
@@ -530,11 +537,11 @@ void alloc_data()
 
  alloc_xschem_data();
  /* global context / graphic preferences/settings */
+ fill_type=my_calloc(640, cadlayers, sizeof(int));
+ active_layer=my_calloc(563, cadlayers, sizeof(int));
  color_array=my_calloc(637, cadlayers, sizeof(char*));
  gc=my_calloc(638, cadlayers, sizeof(GC));
  gcstipple=my_calloc(639, cadlayers, sizeof(GC));
- fill_type=my_calloc(640, cadlayers, sizeof(int));
- active_layer=my_calloc(563, cadlayers, sizeof(int));
  pixdata=my_calloc(641, cadlayers, sizeof(char*));
  for(i=0;i<cadlayers;i++)
  {
@@ -591,14 +598,14 @@ void xwin_exit(void)
    my_free(1101, &color_array[i]);
    my_free(1102, &pixdata[i]);
  }
- my_free(1120, &fill_type);
- my_free(1121, &active_layer);
  my_free(1122, &pixdata);
  my_free(1123, &enable_layer);
  my_free(1135, &gc);
  my_free(1136, &gcstipple);
  my_free(1137, &color_array);
  my_free(1138, &tcl_command);
+ my_free(1121, &active_layer);
+ my_free(1120, &fill_type);
  clear_expandlabel_data();
  get_sym_template(NULL, NULL); /* clear static data in function */
  list_tokens(NULL, 0); /* clear static data in function */
@@ -606,6 +613,7 @@ void xwin_exit(void)
  translate2(NULL, 0, NULL); /* clear static data in function */
  subst_token(NULL, NULL, NULL); /* clear static data in function */
  find_nth(NULL, '\0', 0); /* clear static data in function */
+ tcl_hook2(NULL); /* clear static data in function */
  save_ascii_string(NULL, NULL, 0); /* clear static data in function */
  dbg(1, "xwin_exit(): removing font\n");
  for(i=0;i<127;i++) my_free(1140, &character[i]);
@@ -659,7 +667,7 @@ void xwin_exit(void)
 int build_colors(double dim)
 {
     int i;
-    if(dark_colorscheme) {
+    if(tclgetboolvar("dark_colorscheme")) {
       tcleval("llength $dark_colors");
       if(atoi(tclresult())>=cadlayers){
         tcleval("set colors $dark_colors");
@@ -812,62 +820,96 @@ void preview_window(const char *what, const char *tk_win_path, const char *filen
   }
 }
 
+#define MAX_NEW_WINDOWS 20
 void new_schematic(const char *what, const char *tk_win_path, const char *filename)
 {
-  static int n = 0, cnt = 0;
-  static Xschem_ctx *save_xctx[20]; /* save pointer to current schematic context structure */
-  static Window new_window;
-  static Tk_Window tknew_window[20];
+  static int cnt = 0;
+  static Xschem_ctx *save_xctx[MAX_NEW_WINDOWS]; /* save pointer to current schematic context structure */
+  static Tk_Window tknew_window[MAX_NEW_WINDOWS];
+  int i, n;
+  Window new_window;
+  Tk_Window tkwin;
 
-  dbg(1, "------\n");
   if(!strcmp(what, "create")) {
     dbg(1, "new_schematic() create, save ctx\n");
-    if(cnt == 0) save_xctx[0] = xctx; /* save current schematic */
+    if(cnt == 0) {
+      for(i = 0; i < MAX_NEW_WINDOWS; i++) {
+        save_xctx[i] = NULL;
+        tknew_window[i] = NULL;
+      }
+      save_xctx[0] = xctx; /* save current schematic */
+      tknew_window[0] = Tk_NameToWindow(interp, ".drw", mainwindow);
+    }
+    if(cnt + 1 >= MAX_NEW_WINDOWS) return; /* no more free slots */
     cnt++;
-    n = cnt;
-    tknew_window[cnt] = Tk_NameToWindow(interp, tk_win_path, mainwindow);
-    Tk_MakeWindowExist(tknew_window[cnt]);
-    new_window = Tk_WindowId(tknew_window[cnt]);
+    for(i = 1; i < MAX_NEW_WINDOWS; i++) { /* search 1st free slot */
+      if(save_xctx[i] == NULL) {
+        n = i;
+        break;
+      }
+    }
+    tknew_window[n] = Tk_NameToWindow(interp, tk_win_path, mainwindow);
+    Tk_MakeWindowExist(tknew_window[n]);
+    new_window = Tk_WindowId(tknew_window[n]);
     dbg(1, "new_schematic() draw\n");
     xctx = NULL;      /* reset for preview */
     alloc_xschem_data(); /* alloc data into xctx */
-    save_xctx[cnt] = xctx;
+    save_xctx[n] = xctx;
     dbg(1, "new_schematic() draw, load schematic\n");
     xctx->window = new_window;
-    resetwin(1, 0, 1, 0, 0);  /* create preview pixmap.  resetwin(create_pixmap, clear_pixmap, force) */
+    resetwin(1, 0, 1, 0, 0);  /* create preview pixmap.  resetwin(create_pixmap, clear_pixmap, force, w, h) */
     load_schematic(1,filename, 0);
     zoom_full(1, 0, 1, 0.97); /* draw */
-  } else if(!strcmp(what, "redraw")) {
-    Xschem_ctx *save;
-    save = xctx;
-    n = atoi(tk_win_path);
-    if(n <0) n = 0;
-    if(n > cnt) n = cnt;
-    xctx = save_xctx[n];
-    draw();
-    xctx = save;
-    set_modify(xctx->modified);
   } else if(!strcmp(what, "destroy")) {
-    if(cnt > 0) {
+    if(cnt) {
+      int close = 0;
       dbg(1, "new_schematic() destroy\n");
-      xctx = save_xctx[cnt];
-      delete_schematic_data();
-      save_xctx[cnt] = NULL;
-      Tk_DestroyWindow(tknew_window[cnt]);
-      cnt--;
-      n = 0;
-      xctx = save_xctx[0]; /* restore schematic */
-      set_modify(xctx->modified);
+      if(xctx->modified && has_x) {
+        tcleval("tk_messageBox -type okcancel -message {UNSAVED data: want to exit?}");
+        if(strcmp(tclresult(),"ok")==0) close = 1;
+      }
+      else close = 1;
+      Tcl_ResetResult(interp);
+      if(close) {
+        tkwin =  Tk_NameToWindow(interp, tk_win_path, mainwindow);
+        for(i = 1; i < MAX_NEW_WINDOWS; i++) {
+          if(tkwin == tknew_window[i]) {
+            n = i;
+            break;
+          }
+        }
+        if(n >= 1 && n < MAX_NEW_WINDOWS) {
+          xctx = save_xctx[n];
+          delete_schematic_data();
+          save_xctx[n] = NULL;
+          Tcl_VarEval(interp, "winfo parent ", tk_win_path, NULL);
+          Tk_DestroyWindow(tknew_window[n]);
+          Tcl_VarEval(interp, "destroy ", tclresult(), NULL);
+          tknew_window[n] = NULL;
+          xctx = save_xctx[0]; /* restore schematic */
+          set_modify(xctx->modified);
+          cnt--;
+        }
+      }
     }
   } else if(!strcmp(what, "switch")) {
-    n = atoi(tk_win_path);
-    if(n <0) n = 0;
-    if(n > cnt) n = cnt;
-    xctx = save_xctx[n];
-    change_linewidth(xctx->lw); /* restore correct linewidth since it was changed in preview
-                                 * need to do the XSetLineAttributes */
-    set_modify(xctx->modified);
-    /* draw();*/
+    if(cnt) {
+      dbg(1, "new_schematic() switch\n");
+      tkwin =  Tk_NameToWindow(interp, tk_win_path, mainwindow);
+      for(i = 0; i < MAX_NEW_WINDOWS; i++) {
+        if(tkwin == tknew_window[i]) {
+          n = i;
+          break;
+        }
+      }
+      if(n >= 0 && n < MAX_NEW_WINDOWS) {
+        xctx = save_xctx[n];
+        change_linewidth(xctx->lw);  /* restore correct linewidth since it was changed in preview
+                                      * need to do the XSetLineAttributes */
+        set_modify(xctx->modified);
+        /* draw();*/
+      }
+    }
   }
 }
 
@@ -878,9 +920,11 @@ void change_linewidth(double w)
   changed=0;
   /* choose line width automatically based on zoom */
   if(w<0.) {
-    if(change_lw)  {
-      xctx->lw=xctx->mooz * 0.09 * cadsnap;
-      cadhalfdotsize = CADHALFDOTSIZE +  0.04 * (cadsnap-10);
+    int cs;
+    cs = tclgetdoublevar("cadsnap");
+    if(tclgetboolvar("change_lw"))  {
+      xctx->lw=xctx->mooz * 0.09 * cs;
+      cadhalfdotsize = CADHALFDOTSIZE +  0.04 * (cs-10);
       changed=1;
     }
   /* explicitly set line width */
@@ -937,7 +981,8 @@ void resetcairo(int create, int clear, int force_or_resize)
       fprintf(errfp, "ERROR: invalid cairo xcb surface\n");
     }
     xctx->cairo_save_ctx = cairo_create(xctx->cairo_save_sfc);
-    cairo_select_font_face(xctx->cairo_save_ctx, cairo_font_name, CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
+    cairo_select_font_face(xctx->cairo_save_ctx, tclgetvar("cairo_font_name"), 
+      CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
     cairo_set_font_size(xctx->cairo_save_ctx, 20);
     cairo_set_line_width(xctx->cairo_save_ctx, 1);
     cairo_set_line_join(xctx->cairo_save_ctx, CAIRO_LINE_JOIN_ROUND);
@@ -959,17 +1004,18 @@ void resetcairo(int create, int clear, int force_or_resize)
       fprintf(errfp, "ERROR: invalid cairo surface\n");
     }
     xctx->cairo_ctx = cairo_create(xctx->cairo_sfc);
-    cairo_select_font_face(xctx->cairo_ctx, cairo_font_name, CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
+    cairo_select_font_face(xctx->cairo_ctx, tclgetvar("cairo_font_name"),
+      CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
     cairo_set_font_size(xctx->cairo_ctx, 20);
     cairo_set_line_width(xctx->cairo_ctx, 1);
     cairo_set_line_join(xctx->cairo_ctx, CAIRO_LINE_JOIN_ROUND);
     cairo_set_line_cap(xctx->cairo_ctx, CAIRO_LINE_CAP_ROUND);
     #if 0
-    #if HAS_XCB==1 && HAS_XRENDER==1
-    cairo_xcb_surface_set_size(xctx->cairo_sfc, xctx->xschem_w, xctx->xschem_h);
-    #else
-    cairo_xlib_surface_set_size(xctx->cairo_sfc, xctx->xschem_w, xctx->xschem_h);
-    #endif /* HAS_XCB  && HAS_XRENDER */
+    *  #if HAS_XCB==1 && HAS_XRENDER==1
+    *  cairo_xcb_surface_set_size(xctx->cairo_sfc, xctx->xschem_w, xctx->xschem_h);
+    *  #else
+    *  cairo_xlib_surface_set_size(xctx->cairo_sfc, xctx->xschem_w, xctx->xschem_h);
+    *  #endif /* HAS_XCB  && HAS_XRENDER */
     #endif
   }
   #endif /* HAS_CAIRO */
@@ -1036,9 +1082,9 @@ void resetwin(int create_pixmap, int clear_pixmap, int force, int w, int h)
         }
         if(create_pixmap) {
           #ifdef __unix__
-          xctx->save_pixmap = XCreatePixmap(display, xctx->window, xctx->xschem_w, xctx->xschem_h, depth);
+          xctx->save_pixmap = XCreatePixmap(display, xctx->window, xctx->xschem_w, xctx->xschem_h, screendepth);
           #else
-          xctx->save_pixmap = Tk_GetPixmap(display, xctx->window, xctx->xschem_w, xctx->xschem_h, depth);
+          xctx->save_pixmap = Tk_GetPixmap(display, xctx->window, xctx->xschem_w, xctx->xschem_h, screendepth);
           #endif
           xctx->gctiled = XCreateGC(display,xctx->window,0L, NULL);
           XSetTile(display,xctx->gctiled, xctx->save_pixmap);
@@ -1049,9 +1095,9 @@ void resetwin(int create_pixmap, int clear_pixmap, int force, int w, int h)
         }
       }
     }
-    if(pending_fullzoom) {
+    if(xctx->pending_fullzoom) {
       zoom_full(0, 0, 1, 0.97);
-      pending_fullzoom=0;
+      xctx->pending_fullzoom=0;
     }
     dbg(1, "resetwin(): Window reset\n");
   } /* end if(has_x) */
@@ -1066,6 +1112,7 @@ int Tcl_AppInit(Tcl_Interp *inter)
  struct stat buf;
  const char *home_buff;
  int running_in_src_dir;
+ int fs;
  /* XVisualInfo vinfo; */
 
  #if HAS_XCB==1
@@ -1105,6 +1152,11 @@ int Tcl_AppInit(Tcl_Interp *inter)
  tclsetvar("XSCHEM_LIBRARY_PATH", tclresult());
 
  running_in_src_dir = 0;
+ /* create user conf dir , remove ~ if present */
+ my_snprintf(tmp, S(tmp),"regsub {^~/} {%s} {%s/}", USER_CONF_DIR, home_dir);
+ tcleval(tmp);
+ my_snprintf(user_conf_dir, S(user_conf_dir), "%s", tclresult());
+ tclsetvar("USER_CONF_DIR", user_conf_dir);
  /* test if running xschem in src/ dir (usually for testing) */
  if( !stat("./xschem.tcl", &buf) && !stat("./systemlib", &buf) && !stat("./xschem", &buf)) {
    running_in_src_dir = 1;
@@ -1114,18 +1166,37 @@ int Tcl_AppInit(Tcl_Interp *inter)
    tcleval(tmp);
    tclsetvar("XSCHEM_LIBRARY_PATH", tclresult());
    */
-   my_snprintf(tmp, S(tmp), "subst [file dirname \"%s\"]/xschem_library/devices", pwd_dir);
+   my_snprintf(tmp, S(tmp), 
+      "set XSCHEM_LIBRARY_PATH %s/xschem_library", user_conf_dir);
    tcleval(tmp);
-   tclsetvar("XSCHEM_LIBRARY_PATH", tclresult());
+   my_snprintf(tmp, S(tmp), 
+      "append XSCHEM_LIBRARY_PATH : [file dirname \"%s\"]/xschem_library/devices", pwd_dir);
+   tcleval(tmp);
+   my_snprintf(tmp, S(tmp), 
+      "append XSCHEM_LIBRARY_PATH : [file dirname \"%s\"]/xschem_library/examples", pwd_dir);
+   tcleval(tmp);
+   my_snprintf(tmp, S(tmp), 
+      "append XSCHEM_LIBRARY_PATH : [file dirname \"%s\"]/xschem_library/ngspice", pwd_dir);
+   tcleval(tmp);
+   my_snprintf(tmp, S(tmp), 
+      "append XSCHEM_LIBRARY_PATH : [file dirname \"%s\"]/xschem_library/logic", pwd_dir);
+   tcleval(tmp);
+   my_snprintf(tmp, S(tmp), 
+      "append XSCHEM_LIBRARY_PATH : [file dirname \"%s\"]/xschem_library/xschem_simulator", pwd_dir);
+   tcleval(tmp);
+   my_snprintf(tmp, S(tmp), 
+      "append XSCHEM_LIBRARY_PATH : [file dirname \"%s\"]/xschem_library/binto7seg", pwd_dir);
+   tcleval(tmp);
+   my_snprintf(tmp, S(tmp), 
+      "append XSCHEM_LIBRARY_PATH : [file dirname \"%s\"]/xschem_library/pcb", pwd_dir);
+   tcleval(tmp);
+   my_snprintf(tmp, S(tmp), 
+      "append XSCHEM_LIBRARY_PATH : [file dirname \"%s\"]/xschem_library/rom8k", pwd_dir);
+   tcleval(tmp);
  } else if( !stat(XSCHEM_SHAREDIR, &buf) ) {
    tclsetvar("XSCHEM_SHAREDIR",XSCHEM_SHAREDIR);
    /* ... else give up searching, may set later after loading xschemrc */
  }
- /* create user conf dir , remove ~ if present */
- my_snprintf(tmp, S(tmp),"regsub {^~/} {%s} {%s/}", USER_CONF_DIR, home_dir);
- tcleval(tmp);
- my_snprintf(user_conf_dir, S(user_conf_dir), "%s", tclresult());
- tclsetvar("USER_CONF_DIR", user_conf_dir);
 #else
    char install_dir[MAX_PATH]="";
    char *up_hier=NULL, *win_xschem_library_path=NULL;
@@ -1136,10 +1207,10 @@ int Tcl_AppInit(Tcl_Interp *inter)
      /*3*/ "xschem_library/examples", 
      /*4*/ "xschem_library/ngspice", 
      /*5*/ "xschem_library/logic", 
-     /*6*/ "xschem_library/binto7seg", 
-     /*7*/ "xschem_library/pcb", 
-     /*8*/ "xschem_library/rom8k",
-     /*9*/ "xschem_library/xschem_simulator"};
+     /*6*/ "xschem_library/xschem_simulator"};
+     /*7*/ "xschem_library/binto7seg", 
+     /*8*/ "xschem_library/pcb", 
+     /*9*/ "xschem_library/rom8k",
    GetModuleFileNameA(NULL, install_dir, MAX_PATH);
    change_to_unix_fn(install_dir);
    int dir_len=strlen(install_dir);
@@ -1168,7 +1239,7 @@ int Tcl_AppInit(Tcl_Interp *inter)
    tclsetvar("XSCHEM_LIBRARY_PATH", win_xschem_library_path_clean);
    my_free(432, &win_xschem_library_path);
    my_free(441, &up_hier);
- char* gxschem_library=NULL, *xschem_sharedir=NULL;
+ char *xschem_sharedir=NULL;
  if ((xschem_sharedir=getenv("XSCHEM_SHAREDIR")) != NULL) {
    if (!stat(xschem_sharedir, &buf)) {
      tclsetvar("XSCHEM_SHAREDIR", xschem_sharedir);
@@ -1333,8 +1404,6 @@ int Tcl_AppInit(Tcl_Interp *inter)
  dbg(1, "Tcl_AppInit(): resolved xschem_executable=%s\n", xschem_executable);
 
  /* set global variables fetching data from tcl code 25122002 */
- if(tclgetvar("dark_colorscheme")[0] == '1') dark_colorscheme = 1;
- else dark_colorscheme = 0;
  if(netlist_type==-1) {
   if(!strcmp(tclgetvar("netlist_type"),"vhdl") ) netlist_type=CAD_VHDL_NETLIST;
   else if(!strcmp(tclgetvar("netlist_type"),"verilog") ) netlist_type=CAD_VERILOG_NETLIST;
@@ -1345,33 +1414,26 @@ int Tcl_AppInit(Tcl_Interp *inter)
    override_netlist_type(-1); /* set tcl netlist_type */
  }
 
- split_files=atoi(tclgetvar("split_files"));
- netlist_show=atoi(tclgetvar("netlist_show"));
- unzoom_nodrift=atoi(tclgetvar("unzoom_nodrift"));
- show_pin_net_names = atoi(tclgetvar("show_pin_net_names"));
-
+ cairo_font_line_spacing = tclgetdoublevar("cairo_font_line_spacing");
  if(color_ps==-1)
    color_ps=atoi(tclgetvar("color_ps"));
  else  {
    my_snprintf(tmp, S(tmp), "%d",color_ps);
    tclsetvar("color_ps",tmp);
  }
- if(transparent_svg==-1)
-   transparent_svg=atoi(tclgetvar("transparent_svg"));
- else  {
-   my_snprintf(tmp, S(tmp), "%d",transparent_svg);
-   tclsetvar("transparent_svg",tmp);
- }
- change_lw=atoi(tclgetvar("change_lw"));
  l_width=atoi(tclgetvar("line_width"));
- if(change_lw == 1) l_width = 0.0;
+ if(tclgetboolvar("change_lw")) l_width = 0.0;
  draw_window=atoi(tclgetvar("draw_window"));
- incr_hilight=atoi(tclgetvar("incr_hilight"));
- enable_stretch=atoi(tclgetvar("enable_stretch"));
- big_grid_points=atoi(tclgetvar("big_grid_points"));
- draw_grid=atoi(tclgetvar("draw_grid"));
  cadlayers=atoi(tclgetvar("cadlayers"));
  if(debug_var==-10) debug_var=0;
+ my_snprintf(tmp, S(tmp), "%.16g",CADGRID);
+ Tcl_VarEval(interp, "set_ne cadgrid ", tmp, NULL);
+ my_snprintf(tmp, S(tmp), "%.16g",CADSNAP);
+ Tcl_VarEval(interp, "set_ne cadsnap ", tmp, NULL);
+ cairo_vert_correct = tclgetdoublevar("cairo_vert_correct");
+ nocairo_vert_correct = tclgetdoublevar("nocairo_vert_correct");
+ cairo_font_scale = tclgetdoublevar("cairo_font_scale");
+ only_probes = tclgetdoublevar("only_probes");
 
  /*                             */
  /*  [m]allocate dynamic memory */
@@ -1381,8 +1443,8 @@ int Tcl_AppInit(Tcl_Interp *inter)
  init_pixdata();
  init_color_array(0.0);
  my_snprintf(tmp, S(tmp), "%d",debug_var);
- tclsetvar("tcl_debug",tmp );
- tclsetvar("menu_tcl_debug",debug_var ? "1" : "0" );
+ tclsetvar("debug_var",tmp );
+ tclsetvar("menu_debug_var",debug_var ? "1" : "0" );
  if(flat_netlist) tclsetvar("flat_netlist","1");
 
  xctx->xschem_w = CADWIDTH;
@@ -1465,7 +1527,8 @@ int Tcl_AppInit(Tcl_Interp *inter)
                 formats[i].direct.alpha_shift == 24)
                     format_rgba = formats[i];
     }
-    my_free(1145, &formats_reply);
+    free(formats_reply); /* can not use my_free() since not allocated by my_* allocator wrappers */
+    formats_reply = NULL;
     #endif /* HAS_XRENDER */
     /*/---------------------------------------------------- */
     /* /20171125 */
@@ -1473,8 +1536,8 @@ int Tcl_AppInit(Tcl_Interp *inter)
 
     screen_number = Tk_ScreenNumber(mainwindow);
     colormap = Tk_Colormap(mainwindow);
-    depth = Tk_Depth(mainwindow);
-    dbg(1, "Tcl_AppInit(): screen depth: %d\n",depth);
+    screendepth = Tk_Depth(mainwindow);
+    dbg(1, "Tcl_AppInit(): screen depth: %d\n",screendepth);
     visual = Tk_Visual(mainwindow);
 
     /*
@@ -1484,7 +1547,6 @@ int Tcl_AppInit(Tcl_Interp *inter)
     visual = vinfo.visual;
     */
     dbg(1, "Tcl_AppInit(): done step b of xinit()\n");
-    xctx->rectcolor= 4;  /* this is the current layer when xschem started. */
     for(i=0;i<cadlayers;i++)
     {
      pixmap[i] = XCreateBitmapFromData(display, xctx->window, (char*)(pixdata[i]),16,16);
@@ -1505,8 +1567,6 @@ int Tcl_AppInit(Tcl_Interp *inter)
     resetwin(1, 0, 1, 0, 0);
     #if HAS_CAIRO==1
     /* load font from tcl 20171112 */
-    tcleval("xschem set svg_font_name $svg_font_name");
-    tcleval("xschem set cairo_font_name $cairo_font_name");
     tclsetvar("has_cairo","1");
     #endif
 
@@ -1547,16 +1607,16 @@ int Tcl_AppInit(Tcl_Interp *inter)
                /* leaving undo buffer and other garbage around. */
 
  /*                                                                                  */
- /* Completing tk windows creation (see xschem.tcl, build_windows) and event binding */
+ /* Completing tk windows creation (see xschem.tcl, pack_widgets) and event binding */
  /* *AFTER* X initialization done                                                    */
  /*                                                                                  */
- if(has_x) tcleval("build_windows");
+ if(has_x) tcleval("pack_widgets");
 
- fullscreen=atoi(tclgetvar("fullscreen"));
- if(fullscreen) {
-   fullscreen = 0;
+ fs=tclgetintvar("fullscreen");
+ if(fs) {
+   tclsetvar("fullscreen", "0");
    tcleval("update");
-   toggle_fullscreen();
+   toggle_fullscreen(".");
  }
 
  /*                                */
@@ -1582,24 +1642,24 @@ int Tcl_AppInit(Tcl_Interp *inter)
     char f[PATH_MAX];
 
 #ifdef __unix__
-    if(filename[0] == '~' && filename[1] == '/') {
-      my_snprintf(f, S(f), "%s%s", home_dir, filename + 1);
-    } else if(filename[0] == '.' && filename[1] == '/') {
-      my_snprintf(f, S(f), "%s%s", pwd_dir, filename + 1);
-    } else if(filename[0] !='/') {
-      my_snprintf(f, S(f), "%s/%s", pwd_dir, filename);
-    } else {
-      my_snprintf(f, S(f), "%s", filename);
-    }
+   if(filename[0] == '~' && filename[1] == '/') {
+     my_snprintf(f, S(f), "%s%s", home_dir, filename + 1);
+   } else if(filename[0] == '.' && filename[1] == '/') {
+     my_snprintf(f, S(f), "%s%s", pwd_dir, filename + 1);
+   } else if(filename[0] !='/') {
+     my_snprintf(f, S(f), "%s/%s", pwd_dir, filename);
+   } else {
+     my_snprintf(f, S(f), "%s", filename);
+   }
 #else
-    my_strncpy(f, abs_sym_path(filename, ""), S(f));
+   my_strncpy(f, abs_sym_path(filename, ""), S(f));
 #endif
-    dbg(1, "Tcl_AppInit(): filename %s given, removing symbols\n", filename);
-    remove_symbols();
-    /* if do_netlist=1 call load_schematic with 'reset_undo=0' avoiding call 
-       to tcl is_xschem_file that could change netlist_type to symbol */
-    load_schematic(1, f, !do_netlist);
-    Tcl_VarEval(interp, "update_recent_file {", f, "}", NULL);
+   dbg(1, "Tcl_AppInit(): filename %s given, removing symbols\n", filename);
+   remove_symbols();
+   /* if do_netlist=1 call load_schematic with 'reset_undo=0' avoiding call 
+      to tcl is_xschem_file that could change netlist_type to symbol */
+   load_schematic(1, f, !do_netlist);
+   Tcl_VarEval(interp, "update_recent_file {", f, "}", NULL);
  } else if(!tcl_script[0]) {
    char * tmp;
    char filename[PATH_MAX];
@@ -1616,7 +1676,7 @@ int Tcl_AppInit(Tcl_Interp *inter)
  zoom_full(0, 0, 1, 0.97);   /* Necessary to tell xschem the
                   * initial area to display
                   */
- pending_fullzoom=1;
+ xctx->pending_fullzoom=1;
  if(do_netlist) {
    if(debug_var>=1) {
      if(flat_netlist)

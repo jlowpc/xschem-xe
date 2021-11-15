@@ -39,7 +39,9 @@ void global_verilog_netlist(int global)  /* netlister driver */
  struct stat buf;
  char *subckt_name;
  char *abs_path = NULL;
+ int split_f;
 
+ split_f = tclgetboolvar("split_files");
  xctx->netlist_unconn_cnt=0; /* unique count of unconnected pins while netlisting */
  statusmsg("",2);  /* clear infowindow */
  if(xctx->modified) {
@@ -47,7 +49,7 @@ void global_verilog_netlist(int global)  /* netlister driver */
    if(save_ok == -1) return;
  }
  free_hash(subckt_table);
- netlist_count=0;
+ xctx->netlist_count=0;
  /* top sch properties used for library use declarations and type definitions */
  /* to be printed before any entity declarations */
 
@@ -80,7 +82,7 @@ void global_verilog_netlist(int global)  /* netlister driver */
   my_strdup(105, &type,(xctx->inst[i].ptr+ xctx->sym)->type);
   if( type && (strcmp(type,"timescale")==0 || strcmp(type,"verilog_preprocessor")==0) )
   {
-   str_tmp = get_tok_value( (xctx->inst[i].ptr+ xctx->sym)->prop_ptr ,"verilog_format",0);
+   str_tmp = get_tok_value( (xctx->inst[i].ptr+ xctx->sym)->prop_ptr ,"verilog_format",2);
    my_strdup(106, &tmp_string, str_tmp);
    fprintf(fd, "%s\n", str_tmp ? translate(i, tmp_string) : "(NULL)");
   }
@@ -240,7 +242,7 @@ void global_verilog_netlist(int global)  /* netlister driver */
 
  dbg(1, "global_verilog_netlist(): netlisting  top level\n");
  verilog_netlist(fd, 0);
- netlist_count++;
+ xctx->netlist_count++;
  fprintf(fd,"---- begin user architecture code\n");
 
  for(i=0;i<xctx->instances;i++) {
@@ -262,7 +264,7 @@ void global_verilog_netlist(int global)  /* netlister driver */
  fprintf(fd,"---- end user architecture code\n");
  fprintf(fd, "endmodule\n");
 
- if(split_files) {
+ if(split_f) {
    fclose(fd);
    my_snprintf(tcl_cmd_netlist, S(tcl_cmd_netlist), "netlist {%s} noshow {%s}", netl_filename, cellname);
    override_netlist_type(CAD_VERILOG_NETLIST);
@@ -301,9 +303,9 @@ void global_verilog_netlist(int global)  /* netlister driver */
       if (str_hash_lookup(subckt_table, subckt_name, "", XLOOKUP)==NULL)
       {
         str_hash_lookup(subckt_table, subckt_name, "", XINSERT);
-        if( split_files && strcmp(get_tok_value(xctx->sym[i].prop_ptr,"vhdl_netlist",0),"true")==0 )
+        if( split_f && strcmp(get_tok_value(xctx->sym[i].prop_ptr,"vhdl_netlist",0),"true")==0 )
           vhdl_block_netlist(fd, i);
-        else if(split_files && strcmp(get_tok_value(xctx->sym[i].prop_ptr,"spice_netlist",0),"true")==0 )
+        else if(split_f && strcmp(get_tok_value(xctx->sym[i].prop_ptr,"spice_netlist",0),"true")==0 )
           spice_block_netlist(fd, i);
         else
           if( strcmp(get_tok_value(xctx->sym[i].prop_ptr,"verilog_primitive",0), "true"))
@@ -331,9 +333,9 @@ void global_verilog_netlist(int global)  /* netlister driver */
  my_free(1074, &stored_flags);
 
  dbg(1, "global_verilog_netlist(): starting awk on netlist!\n");
- if(!split_files) {
+ if(!split_f) {
    fclose(fd);
-   if(netlist_show) {
+   if(tclgetboolvar("netlist_show")) {
     my_snprintf(tcl_cmd_netlist, S(tcl_cmd_netlist), "netlist {%s} show {%s}", netl_filename, cellname);
     tcleval(tcl_cmd_netlist);
    }
@@ -347,7 +349,7 @@ void global_verilog_netlist(int global)  /* netlister driver */
  my_free(1076, &port_value);
  my_free(1077, &tmp_string);
  my_free(1078, &type);
- netlist_count = 0;
+ xctx->netlist_count = 0;
 }
 
 
@@ -366,20 +368,21 @@ void verilog_block_netlist(FILE *fd, int i)
   char cellname[PATH_MAX];
   const char *str_tmp;
   char *sch = NULL;
+  int split_f;
 
+  split_f = tclgetboolvar("split_files");
   if(!strcmp( get_tok_value(xctx->sym[i].prop_ptr,"verilog_stop",0),"true") )
      verilog_stop=1;
   else
      verilog_stop=0;
   if((str_tmp = get_tok_value(xctx->sym[i].prop_ptr, "schematic",0 ))[0]) {
     my_strdup2(1260, &sch, str_tmp);
-    tcl_hook(&sch);
     my_strncpy(filename, abs_sym_path(sch, ""), S(filename));
     my_free(1261, &sch);
   } else {
     my_strncpy(filename, add_ext(abs_sym_path(xctx->sym[i].name, ""), ".sch"), S(filename));
   }
-  if(split_files) {
+  if(split_f) {
     my_snprintf(netl_filename, S(netl_filename), "%s/.%s_%d",
        netlist_dir,  skip_dir(xctx->sym[i].name), getpid());
     dbg(1, "global_vhdl_netlist(): split_files: netl_filename=%s\n", netl_filename);
@@ -408,7 +411,7 @@ void verilog_block_netlist(FILE *fd, int i)
    my_strdup(544, &type,(xctx->inst[j].ptr+ xctx->sym)->type);
    if( type && ( strcmp(type,"timescale")==0  || strcmp(type,"verilog_preprocessor")==0) )
    {
-    str_tmp = get_tok_value( (xctx->inst[j].ptr+ xctx->sym)->prop_ptr ,"verilog_format",0);
+    str_tmp = get_tok_value( (xctx->inst[j].ptr+ xctx->sym)->prop_ptr ,"verilog_format",2);
     my_strdup(545, &tmp_string, str_tmp);
     fprintf(fd, "%s\n", str_tmp ? translate(j, tmp_string) : "(NULL)");
    }
@@ -470,7 +473,7 @@ void verilog_block_netlist(FILE *fd, int i)
 
   dbg(1, "verilog_block_netlist():       netlisting %s\n", skip_dir( xctx->sch[xctx->currsch]));
   verilog_netlist(fd, verilog_stop);
-  netlist_count++;
+  xctx->netlist_count++;
   fprintf(fd,"---- begin user architecture code\n");
   for(l=0;l<xctx->instances;l++) {
     if( strcmp(get_tok_value(xctx->inst[l].prop_ptr,"verilog_ignore",0),"true")==0 ) continue;
@@ -478,7 +481,7 @@ void verilog_block_netlist(FILE *fd, int i)
     if(!strcmp(get_tok_value( (xctx->inst[l].ptr+ xctx->sym)->prop_ptr, "verilog_ignore",0 ), "true") ) {
       continue;
     }
-    if(netlist_count &&
+    if(xctx->netlist_count &&
       !strcmp(get_tok_value(xctx->inst[l].prop_ptr, "only_toplevel", 0), "true")) continue;
 
     my_strdup(569, &type,(xctx->inst[l].ptr+ xctx->sym)->type);
@@ -492,7 +495,7 @@ void verilog_block_netlist(FILE *fd, int i)
   }
   fprintf(fd,"---- end user architecture code\n");
   fprintf(fd, "endmodule\n");
-  if(split_files) {
+  if(split_f) {
     fclose(fd);
     my_snprintf(tcl_cmd_netlist, S(tcl_cmd_netlist), "netlist {%s} noshow {%s}", netl_filename, cellname);
     override_netlist_type(CAD_VERILOG_NETLIST);
@@ -554,5 +557,5 @@ void verilog_netlist(FILE *fd , int verilog_stop)
    my_free(1084, &type);
  }
  dbg(1, "verilog_netlist():       end\n");
- if(!verilog_stop && !netlist_count) redraw_hilights(0); /*draw_hilight_net(1); */
+ if(!verilog_stop && !xctx->netlist_count) redraw_hilights(0); /*draw_hilight_net(1); */
 }

@@ -59,88 +59,90 @@ void print_version()
   exit(EXIT_SUCCESS);
 }
 
-char *escape_chars(char *dest, const char *source, int size)
-{
-  int s=0;
-  int d=0;
-  size--; /* reserve space for \0 */
-  while(source && source[s]) {
-    switch(source[s]) {
-      case '\n':
-        if(d < size-1) {
-          dest[d++] = '\\';
-          dest[d++] = 'n';
-        }
-        break;
-      case '\t':
-        if(d < size-1) {
-          dest[d++] = '\\';
-          dest[d++] = 't';
-        }
-        break;
-      case '\\':
-      case '\'':
-      case ' ':
-      case ';':
-      case '$':
-      case '!':
-      case '#':
-      case '{':
-      case '}':
-      case '[':
-      case ']':
-      case '"':
-        if(d < size-1) {
-           dest[d++] = '\\';
-           dest[d++] = source[s];
-        }
-        break;
-      default:
-        if(d < size) dest[d++] = source[s];
-    }
-    s++;
-  }
-  dest[d] = '\0';
-  return dest;
-}
+#if 0
+*   char *escape_chars(char *dest, const char *source, int size)
+*   {
+*     int s=0;
+*     int d=0;
+*     size--; /* reserve space for \0 */
+*     while(source && source[s]) {
+*       switch(source[s]) {
+*         case '\n':
+*           if(d < size-1) {
+*             dest[d++] = '\\';
+*             dest[d++] = 'n';
+*           }
+*           break;
+*         case '\t':
+*           if(d < size-1) {
+*             dest[d++] = '\\';
+*             dest[d++] = 't';
+*           }
+*           break;
+*         case '\\':
+*         case '\'':
+*         case ' ':
+*         case ';':
+*         case '$':
+*         case '!':
+*         case '#':
+*         case '{':
+*         case '}':
+*         case '[':
+*         case ']':
+*         case '"':
+*           if(d < size-1) {
+*              dest[d++] = '\\';
+*              dest[d++] = source[s];
+*           }
+*           break;
+*         default:
+*           if(d < size) dest[d++] = source[s];
+*       }
+*       s++;
+*     }
+*     dest[d] = '\0';
+*     return dest;
+*   }
+#endif
 
 void set_snap(double newsnap) /*  20161212 set new snap factor and just notify new value */
 {
-    char str[256];
     static double default_snap = -1.0;
+    int cs;
 
+    cs = tclgetdoublevar("cadsnap");
     if(default_snap == -1.0) {
-      default_snap = atof(tclgetvar("snap"));
+      default_snap = cs;
       if(default_snap==0.0) default_snap = CADSNAP;
     }
-    cadsnap = newsnap ? newsnap : default_snap;
-    sprintf(str, "%.16g", cadsnap);
-    if(cadsnap == default_snap) {
+    cs = newsnap ? newsnap : default_snap;
+    if(cs == default_snap) {
       tcleval(".statusbar.3 configure -background PaleGreen");
     } else {
       tcleval(".statusbar.3 configure -background OrangeRed");
     }
-    tclsetvar("snap", str);
+    tclsetdoublevar("cadsnap", cs);
 }
 
 void set_grid(double newgrid)
 {
-    char str[256];
     static double default_grid = -1.0;
+    double cg;
 
+    cg = tclgetdoublevar("cadgrid");
     if(default_grid == -1.0) {
-      default_grid = atof(tclgetvar("grid"));
+      default_grid = cg;
       if(default_grid==0.0) default_grid = CADGRID;
     }
-    cadgrid = newgrid ? newgrid : default_grid;
-    sprintf(str, "%.16g", cadgrid);
-    dbg(1, "set_grid(): default_grid = %.16g, cadgrid=%.16g\n", default_grid, cadgrid);
-    if(cadgrid == default_grid) {
+    cg = newgrid ? newgrid : default_grid;
+    dbg(1, "set_grid(): default_grid = %.16g, cadgrid=%.16g\n", default_grid, cg);
+    if(cg == default_grid) {
       tcleval(".statusbar.5 configure -background PaleGreen");
     } else {
       tcleval(".statusbar.5 configure -background OrangeRed");
     }
-    tclsetvar("grid", str);
+    tclsetdoublevar("cadgrid", cg);
 }
 
 int set_netlist_dir(int force, char *dir)
@@ -197,54 +199,73 @@ const char *add_ext(const char *f, const char *ext)
 void toggle_only_probes()
 {
   static double save_lw;
-  if(!only_probes) {
+
+  only_probes =  tclgetboolvar("only_probes");
+  if(only_probes) {
     save_lw = xctx->lw;
     xctx->lw=3.0;
   } else {
     xctx->lw= save_lw;
   }
-  only_probes =!only_probes;
-  if(only_probes) {
-      tclsetvar("only_probes","1");
-  }
-  else {
-      tclsetvar("only_probes","0");
-  }
   change_linewidth(xctx->lw);
   draw();
 }
 
-void toggle_fullscreen()
+void toggle_fullscreen(const char *topwin)
 {
+  char *mytopwin = NULL;
   char fullscr[]="add,fullscreen";
   char normal[]="remove,fullscreen";
   static int menu_removed = 0;
-  fullscreen = (fullscreen+1)%2;
-  if(fullscreen==1) tclsetvar("fullscreen","1");
-  else if(fullscreen==2) tclsetvar("fullscreen","2");
+  unsigned int topwin_id;
+  Window rootwindow, parent_id;
+  Window *framewin_child_ptr;
+  unsigned int framewindow_nchildren;
+  int fs;
+
+
+  if(!strcmp(topwin, ".drw")) {
+    my_strdup2(1290, &mytopwin, "");
+    tcleval( "winfo id .");
+    sscanf(tclresult(), "0x%x", (unsigned int *) &topwin_id);
+  } else {
+    Tcl_VarEval(interp, "winfo toplevel ", topwin, NULL);
+    my_strdup2(1291, &mytopwin, tclresult());
+    Tcl_VarEval(interp, "winfo id ", mytopwin, NULL);
+    sscanf(tclresult(), "0x%x", (unsigned int *) &topwin_id);
+  }
+
+  XQueryTree(display, topwin_id, &rootwindow, &parent_id, &framewin_child_ptr, &framewindow_nchildren);
+
+
+  fs = tclgetintvar("fullscreen");
+  fs = (fs+1)%2;
+  if(fs==1) tclsetvar("fullscreen","1");
+  else if(fs==2) tclsetvar("fullscreen","2");
   else tclsetvar("fullscreen","0");
 
-  dbg(1, "toggle_fullscreen(): fullscreen=%d\n", fullscreen);
-  if(fullscreen==2) {
-    tcleval("pack forget .menubar .statusbar; update");
+  dbg(1, "toggle_fullscreen(): fullscreen=%d\n", fs);
+  if(fs==2) {
+    Tcl_VarEval(interp, "pack forget ", mytopwin, ".menubar ", mytopwin, ".statusbar; update", NULL);
     menu_removed = 1;
   }
-  if(fullscreen !=2 && menu_removed) {
-    tcleval("pack .menubar -anchor n -side top -fill x  -before .drw\n\
-             pack .statusbar -after .drw -anchor sw  -fill x; update");
+  if(fs !=2 && menu_removed) {
+    Tcl_VarEval(interp, "pack ", mytopwin, ".menubar -anchor n -side top -fill x  -before ", mytopwin, ".drw\n\
+             pack ", mytopwin, ".statusbar -after ", mytopwin, ".drw -anchor sw  -fill x; update", NULL);
     menu_removed=0;
   }
 
 
-  if(fullscreen == 1) {
-    window_state(display , parent_of_topwindow,fullscr);
-  } else if(fullscreen == 2) {
-    window_state(display , parent_of_topwindow,normal);
-    window_state(display , parent_of_topwindow,fullscr);
+  if(fs == 1) {
+    window_state(display , parent_id,fullscr);
+  } else if(fs == 2) {
+    window_state(display , parent_id,normal);
+    window_state(display , parent_id,fullscr);
   } else {
-    window_state(display , parent_of_topwindow,normal);
+    window_state(display , parent_id,normal);
   }
-  pending_fullzoom=1;
+  xctx->pending_fullzoom=1;
+  my_free(1291, &mytopwin);
 }
 
 #ifdef __unix__
@@ -273,15 +294,20 @@ void new_window(const char *cell, int symbol)
     } else if (!pid2) {
       /* child of child */
       if(!cell || !cell[0]) {
-        execl(xschem_executable,xschem_executable,"-b", NULL);
+        if(!symbol)
+          execl(xschem_executable,xschem_executable,"-b", "--tcl",
+                "set netlist_type spice; set XSCHEM_START_WINDOW {}", NULL);
+        else
+          execl(xschem_executable,xschem_executable,"-b", "--tcl",
+                "set netlist_type symbol; set XSCHEM_START_WINDOW {}", NULL);
       }
       else if(!symbol) {
         my_strncpy(f, cell, S(f));
-        execl(xschem_executable,xschem_executable,"-b",f, NULL);
+        execl(xschem_executable,xschem_executable,"-b", "--tcl", "set netlist_type spice", f, NULL);
       }
       else {
         my_strncpy(f, cell, S(f));
-        execl(xschem_executable,xschem_executable,"-b",f, NULL);
+        execl(xschem_executable,xschem_executable,"-b", "--tcl", "set netlist_type symbol", f, NULL);
       }
     } else {
       /* error */
@@ -854,7 +880,7 @@ int place_symbol(int pos, const char *symbol_name, double x, double y, short rot
   dbg(1, "place_symbol() :all inst_ptr members set\n");  /*  03-02-2000 */
   if(first_call) hash_all_names(n);
   if(inst_props) {
-    new_prop_string(n, inst_props,!first_call, dis_uniq_names); /*  20171214 first_call */
+    new_prop_string(n, inst_props,!first_call, tclgetboolvar("disable_unique_names")); /*  20171214 first_call */
   }
   else {
     set_inst_prop(n); /* no props, get from sym template, also calls new_prop_string() */
@@ -948,7 +974,6 @@ void schematic_in_new_window(void)
 
   my_strdup2(1246, &sch, get_tok_value(
     (xctx->inst[xctx->sel_array[0].n].ptr+ xctx->sym)->prop_ptr, "schematic",0 ));
-  tcl_hook(&sch);
   my_strncpy(filename, abs_sym_path(sch, ""), S(filename));
   my_free(1247, &sch);
   if(!filename[0]) {
@@ -961,7 +986,7 @@ void schematic_in_new_window(void)
 
 void launcher(void)
 {
-  const char *str;
+  const char *url;
   char program[PATH_MAX];
   int n;
   rebuild_selected_array();
@@ -973,19 +998,13 @@ void launcher(void)
     select_object(mx,my,0, 0);
     n=xctx->sel_array[0].n;
     my_strncpy(program, get_tok_value(xctx->inst[n].prop_ptr,"program",0), S(program)); /* handle backslashes */
-    str = get_tok_value(xctx->inst[n].prop_ptr,"url",0); /* handle backslashes */
-    dbg(1, "launcher(): str=%s\n", str);
-    if(str[0] || (program[0])) {
-      tclsetvar("launcher_var",str);
-      if(program[0]) { /*  20170413 leave launcher_program empty if unspecified */
-        tclsetvar("launcher_program",program);
-      } else {
-        tclsetvar("launcher_program","");
-      }
-      tcleval( "launcher");
+    url = get_tok_value(xctx->inst[n].prop_ptr,"url",0); /* handle backslashes */
+    dbg(1, "launcher(): url=%s\n", url);
+    if(url[0] || (program[0])) { /* open url with appropriate program */
+      Tcl_VarEval(interp, "launcher {", url, "} {", program, "}", NULL);
     } else {
       my_strncpy(program, get_tok_value(xctx->inst[n].prop_ptr,"tclcommand",0), S(program));
-      if(program[0]) { /*  20170415 execute tcl command */
+      if(program[0]) { /* execute tcl command */
         tcleval(program);
       }
     }
@@ -1094,7 +1113,6 @@ void descend_schematic(int instnumber)
 
   my_strdup2(1244, &sch, 
     get_tok_value((xctx->inst[xctx->sel_array[0].n].ptr+ xctx->sym)->prop_ptr, "schematic",0 ));
-  tcl_hook(&sch);
   my_strncpy(filename, abs_sym_path(sch, ""), S(filename));
   my_free(1245, &sch);
   unselect_all();
@@ -1338,7 +1356,7 @@ void zoom_full(int dr, int sel, int flags, double shrink)
   double bboxw, bboxh, schw, schh;
 
   if(flags & 1) {
-    if(change_lw) {
+    if(tclgetboolvar("change_lw")) {
       xctx->lw = 1.;
     }
     xctx->areax1 = -2*INT_WIDTH(xctx->lw);
@@ -1358,7 +1376,7 @@ void zoom_full(int dr, int sel, int flags, double shrink)
   if(yzoom > xctx->zoom) xctx->zoom = yzoom;
   xctx->zoom /= shrink;
   /* we do this here since change_linewidth may not be called  if flags & 1 == 0*/
-  cadhalfdotsize = CADHALFDOTSIZE +  0.04 * (cadsnap-10);
+  cadhalfdotsize = CADHALFDOTSIZE +  0.04 * (tclgetdoublevar("cadsnap")-10);
 
   xctx->mooz = 1 / xctx->zoom;
   if(flags & 2) {
@@ -1401,7 +1419,7 @@ void view_unzoom(double z)
   xctx->mooz=1/xctx->zoom;
   /* 20181022 make unzoom and zoom symmetric  */
   /* keeping the mouse pointer as the origin */
-  if(unzoom_nodrift) {
+  if(tclgetboolvar("unzoom_nodrift")) {
     xctx->xorigin=-xctx->mousex_snap+(xctx->mousex_snap+xctx->xorigin)*factor;
     xctx->yorigin=-xctx->mousey_snap+(xctx->mousey_snap+xctx->yorigin)*factor;
   } else {
@@ -1607,10 +1625,12 @@ void restore_selection(double x1, double y1, double x2, double y2)
 void new_wire(int what, double mx_snap, double my_snap)
 {
   int big =  xctx->wires> 2000 || xctx->instances > 2000 ;
+  int s_pnetname;
+  s_pnetname = tclgetboolvar("show_pin_net_names");
   if( (what & PLACE) ) {
     if( (xctx->ui_state & STARTWIRE) && (xctx->nl_x1!=xctx->nl_x2 || xctx->nl_y1!=xctx->nl_y2) ) {
       push_undo();
-      if(manhattan_lines==1) {
+      if(xctx->manhattan_lines==1) {
         if(xctx->nl_xx2!=xctx->nl_xx1) {
           xctx->nl_xx1 = xctx->nl_x1; xctx->nl_yy1 = xctx->nl_y1;
           xctx->nl_xx2 = xctx->nl_x2; xctx->nl_yy2 = xctx->nl_y2;
@@ -1627,7 +1647,7 @@ void new_wire(int what, double mx_snap, double my_snap)
           hash_wire(XINSERT, xctx->wires-1, 1);
           drawline(WIRELAYER,NOW, xctx->nl_xx2,xctx->nl_yy1,xctx->nl_xx2,xctx->nl_yy2, 0);
         }
-      } else if(manhattan_lines==2) {
+      } else if(xctx->manhattan_lines==2) {
         if(xctx->nl_yy2!=xctx->nl_yy1) {
           xctx->nl_xx1 = xctx->nl_x1; xctx->nl_yy1 = xctx->nl_y1;
           xctx->nl_xx2 = xctx->nl_x2; xctx->nl_yy2 = xctx->nl_y2;
@@ -1653,12 +1673,12 @@ void new_wire(int what, double mx_snap, double my_snap)
         drawline(WIRELAYER,NOW, xctx->nl_xx1,xctx->nl_yy1,xctx->nl_xx2,xctx->nl_yy2, 0);
       }
       xctx->prep_hi_structs = 0;
-      if(autotrim_wires) trim_wires();
-      if(show_pin_net_names || xctx->hilight_nets) {
+      if(tclgetboolvar("autotrim_wires")) trim_wires();
+      if(s_pnetname || xctx->hilight_nets) {
         prepare_netlist_structs(0);
         if(!big) {
           bbox(START , 0.0 , 0.0 , 0.0 , 0.0);
-          if(show_pin_net_names || xctx->hilight_nets) {
+          if(s_pnetname || xctx->hilight_nets) {
             int_hash_lookup(xctx->node_redraw_table,  xctx->wire[xctx->wires-1].node, 0, XINSERT_NOREPLACE);
             find_inst_to_be_redrawn();
           }
@@ -1678,7 +1698,7 @@ void new_wire(int what, double mx_snap, double my_snap)
       xctx->nl_yy1=xctx->nl_y1;
       xctx->nl_xx2=xctx->mousex_snap;
       xctx->nl_yy2=xctx->mousey_snap;
-      if(manhattan_lines==1) {
+      if(xctx->manhattan_lines==1) {
         xctx->nl_x2 = mx_snap; xctx->nl_y2 = my_snap;
         xctx->nl_xx1 = xctx->nl_x1; xctx->nl_yy1 = xctx->nl_y1;
         xctx->nl_xx2 = xctx->nl_x2; xctx->nl_yy2 = xctx->nl_y2;
@@ -1688,7 +1708,7 @@ void new_wire(int what, double mx_snap, double my_snap)
         xctx->nl_xx2 = xctx->nl_x2; xctx->nl_yy2 = xctx->nl_y2;
         ORDER(xctx->nl_xx2,xctx->nl_yy1,xctx->nl_xx2,xctx->nl_yy2);
         drawtempline(gc[WIRELAYER], NOW, xctx->nl_xx2,xctx->nl_yy1,xctx->nl_xx2,xctx->nl_yy2);
-      } else if(manhattan_lines==2) {
+      } else if(xctx->manhattan_lines==2) {
         xctx->nl_x2 = mx_snap; xctx->nl_y2 = my_snap;
         xctx->nl_xx1 = xctx->nl_x1; xctx->nl_yy1 = xctx->nl_y1;
         xctx->nl_xx2 = xctx->nl_x2; xctx->nl_yy2 = xctx->nl_y2;
@@ -1712,7 +1732,7 @@ void new_wire(int what, double mx_snap, double my_snap)
     xctx->ui_state &= ~STARTWIRE;
   }
   if( (what & RUBBER)  ) {
-    if(manhattan_lines==1) {
+    if(xctx->manhattan_lines==1) {
       xctx->nl_xx1=xctx->nl_x1;xctx->nl_yy1=xctx->nl_y1;
       xctx->nl_xx2=xctx->nl_x2;xctx->nl_yy2=xctx->nl_y2;
       ORDER(xctx->nl_xx1,xctx->nl_yy1,xctx->nl_xx2,xctx->nl_yy1);
@@ -1733,7 +1753,7 @@ void new_wire(int what, double mx_snap, double my_snap)
         ORDER(xctx->nl_xx2,xctx->nl_yy1,xctx->nl_xx2,xctx->nl_yy2);
         drawtempline(gc[WIRELAYER], NOW, xctx->nl_xx2,xctx->nl_yy1,xctx->nl_xx2,xctx->nl_yy2);
       }
-    } else if(manhattan_lines==2) {
+    } else if(xctx->manhattan_lines==2) {
       xctx->nl_xx1 = xctx->nl_x1; xctx->nl_yy1 = xctx->nl_y1;
       xctx->nl_xx2 = xctx->nl_x2; xctx->nl_yy2 = xctx->nl_y2;
       ORDER(xctx->nl_xx1,xctx->nl_yy1,xctx->nl_xx1,xctx->nl_yy2);
@@ -1873,7 +1893,7 @@ void new_line(int what)
     if( (xctx->nl_x1!=xctx->nl_x2 || xctx->nl_y1!=xctx->nl_y2) && (xctx->ui_state & STARTLINE) )
     {
       push_undo();
-      if(manhattan_lines==1) {
+      if(xctx->manhattan_lines==1) {
         if(xctx->nl_xx2!=xctx->nl_xx1) {
           xctx->nl_xx1 = xctx->nl_x1; xctx->nl_yy1 = xctx->nl_y1;
           xctx->nl_xx2 = xctx->nl_x2; xctx->nl_yy2 = xctx->nl_y2;
@@ -1888,7 +1908,7 @@ void new_line(int what)
           storeobject(-1, xctx->nl_xx2,xctx->nl_yy1,xctx->nl_xx2,xctx->nl_yy2,LINE,xctx->rectcolor,0,NULL);
           drawline(xctx->rectcolor,NOW, xctx->nl_xx2,xctx->nl_yy1,xctx->nl_xx2,xctx->nl_yy2, 0);
         }
-      } else if(manhattan_lines==2) {
+      } else if(xctx->manhattan_lines==2) {
         if(xctx->nl_yy2!=xctx->nl_yy1) {
           xctx->nl_xx1 = xctx->nl_x1; xctx->nl_yy1 = xctx->nl_y1;
           xctx->nl_xx2 = xctx->nl_x2; xctx->nl_yy2 = xctx->nl_y2;
@@ -1921,7 +1941,7 @@ void new_line(int what)
 
   if(what & RUBBER)
   {
-    if(manhattan_lines==1) {
+    if(xctx->manhattan_lines==1) {
       xctx->nl_xx1=xctx->nl_x1;xctx->nl_yy1=xctx->nl_y1;
       xctx->nl_xx2=xctx->nl_x2;xctx->nl_yy2=xctx->nl_y2;
       ORDER(xctx->nl_xx1,xctx->nl_yy1,xctx->nl_xx2,xctx->nl_yy1);
@@ -1942,7 +1962,7 @@ void new_line(int what)
         ORDER(xctx->nl_xx2,xctx->nl_yy1,xctx->nl_xx2,xctx->nl_yy2);
         drawtempline(gc[xctx->rectcolor], NOW, xctx->nl_xx2,xctx->nl_yy1,xctx->nl_xx2,xctx->nl_yy2);
       }
-    } else if(manhattan_lines==2) {
+    } else if(xctx->manhattan_lines==2) {
       xctx->nl_xx1 = xctx->nl_x1; xctx->nl_yy1 = xctx->nl_y1;
       xctx->nl_xx2 = xctx->nl_x2; xctx->nl_yy2 = xctx->nl_y2;
       ORDER(xctx->nl_xx1,xctx->nl_yy1,xctx->nl_xx1,xctx->nl_yy2);
@@ -2096,7 +2116,7 @@ int text_bbox(const char *str, double xscale, double yscale,
   cairo_text_extents_t ext;
   cairo_font_extents_t fext;
   double ww, hh, maxw;
-
+  
   /*                will not match exactly font metrics when doing ps/svg output , but better than nothing */
   if(!has_x) return text_bbox_nocairo(str, xscale, yscale, rot, flip, hcenter, vcenter, x1, y1,
                                       rx1, ry1, rx2, ry2, cairo_lines, cairo_longest_line);
@@ -2135,7 +2155,7 @@ int text_bbox(const char *str, double xscale, double yscale,
     if(maxw > ww) ww= maxw;
   }
   my_free(1159, &s);
-  hh = hh*fext.height*cairo_font_line_spacing;
+  hh = hh*fext.height * cairo_font_line_spacing;
   *cairo_longest_line = ww;
 
   *rx1=x1;*ry1=y1;
@@ -2182,7 +2202,7 @@ int text_bbox(const char *str,double xscale, double yscale,
 {
  register int c=0, length =0;
  double w, h;
-
+  
   w=0;h=1;
   *cairo_lines = 1;
   if(str!=NULL) while( str[c] )
@@ -2192,9 +2212,9 @@ int text_bbox(const char *str,double xscale, double yscale,
    if(length > w)
      w = length;
   }
-  w *= (FONTWIDTH+FONTWHITESPACE)*xscale*nocairo_font_xscale;
+  w *= (FONTWIDTH+FONTWHITESPACE)*xscale* tclgetdoublevar("nocairo_font_xscale");
   *cairo_longest_line = w;
-  h *= (FONTHEIGHT+FONTDESCENT+FONTWHITESPACE)*yscale*nocairo_font_yscale;
+  h *= (FONTHEIGHT+FONTDESCENT+FONTWHITESPACE)*yscale* tclgetdoublevar("nocairo_font_yscale");
   *rx1=x1;*ry1=y1;
   if(     rot==0) *ry1-=nocairo_vert_correct;
   else if(rot==1) *rx1+=nocairo_vert_correct;
@@ -2229,7 +2249,7 @@ int text_bbox(const char *str,double xscale, double yscale,
   return 1;
 }
 
-void place_text(int draw_text, double mx, double my)
+int place_text(int draw_text, double mx, double my)
 {
   char *txt;
   int textlayer;
@@ -2237,7 +2257,7 @@ void place_text(int draw_text, double mx, double my)
   int save_draw;
   xText *t = &xctx->text[xctx->texts];
   #if HAS_CAIRO==1
-  char  *textfont;
+  const char  *textfont;
   #endif
 
   tclsetvar("props","");
@@ -2252,7 +2272,7 @@ void place_text(int draw_text, double mx, double my)
   dbg(1, "place_text(): hsize=%s vsize=%s\n",tclgetvar("hsize"), tclgetvar("vsize") );
 
   txt =  (char *)tclgetvar("retval");
-  if(!strcmp(txt,"")) return;   /*  dont allocate text object if empty string given */
+  if(!strcmp(txt,"")) return 0;   /*  dont allocate text object if empty string given */
   push_undo();
   check_text_storage();
   t->txt_ptr=NULL;
@@ -2295,7 +2315,7 @@ void place_text(int draw_text, double mx, double my)
   if((textfont && textfont[0]) || t->flags) {
     cairo_font_slant_t slant;
     cairo_font_weight_t weight;
-    textfont = (t->font && t->font[0]) ? t->font : cairo_font_name;
+    textfont = (t->font && t->font[0]) ? t->font : tclgetvar("cairo_font_name");
     weight = ( t->flags & TEXT_BOLD) ? CAIRO_FONT_WEIGHT_BOLD : CAIRO_FONT_WEIGHT_NORMAL;
     slant = CAIRO_FONT_SLANT_NORMAL;
     if(t->flags & TEXT_ITALIC) slant = CAIRO_FONT_SLANT_ITALIC;
@@ -2318,11 +2338,13 @@ void place_text(int draw_text, double mx, double my)
     cairo_restore(xctx->cairo_save_ctx);
   }
   #endif
-  select_text(xctx->texts, SELECTED, 0);
+  xctx->texts++;
+  select_text(xctx->texts - 1, SELECTED, 0);
+  rebuild_selected_array(); /* sets xctx->ui_state |= SELECTION */
   drawtemprect(gc[SELLAYER], END, 0.0, 0.0, 0.0, 0.0);
   drawtempline(gc[SELLAYER], END, 0.0, 0.0, 0.0, 0.0);
-  xctx->texts++;
   set_modify(1);
+  return 1;
 }
 
 void pan2(int what, int mx, int my)

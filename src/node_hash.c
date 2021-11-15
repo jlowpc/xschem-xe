@@ -22,17 +22,6 @@
 
 #include "xschem.h"
 
-static unsigned int nh_hash(const char *tok)
-{
-  register unsigned int hash = 0;
-  register int c;
-
-  while ( (c = *tok++) )
-      hash = c + hash * 65599;
-  return hash;
-}
-
-
 struct node_hashentry **get_node_table_ptr(void)
 {
  return xctx->node_table;
@@ -226,7 +215,7 @@ struct node_hashentry *node_hash_lookup(const char *token, const char *dir,int w
  else if(!strcmp(dir,"out") ) d.out=1;
  else if(!strcmp(dir,"inout") ) d.inout=1;
  d.port=port;
- hashcode=nh_hash(token);
+ hashcode=str_hash(token);
  index=hashcode % HASHSIZE;
  entry=xctx->node_table[index];
  preventry=&xctx->node_table[index];
@@ -303,8 +292,9 @@ void traverse_node_hash()
  int i;
  struct node_hashentry *entry;
  char str[2048]; /* 20161122 overflow safe */
-
- if(!show_erc)return;
+ int incr_hi;
+ 
+ incr_hi = tclgetboolvar("incr_hilight");
  for(i=0;i<HASHSIZE;i++)
  {
   entry = xctx->node_table[i];
@@ -314,37 +304,37 @@ void traverse_node_hash()
      if(entry->d.out + entry->d.inout + entry->d.in == 1)
      {
        my_snprintf(str, S(str), "open net: %s", entry->token);
-       if(!netlist_count) bus_hilight_lookup(entry->token, xctx->hilight_color, XINSERT_NOREPLACE);
-       if(incr_hilight) incr_hilight_color();
+       if(!xctx->netlist_count) bus_hilight_lookup(entry->token, xctx->hilight_color, XINSERT_NOREPLACE);
+       if(incr_hi) incr_hilight_color();
        statusmsg(str,2);
      }
      else if(entry->d.out ==0  && entry->d.inout == 0)
      {
        my_snprintf(str, S(str), "undriven node: %s", entry->token);
-       if(!netlist_count) bus_hilight_lookup(entry->token, xctx->hilight_color, XINSERT_NOREPLACE);
-       if(incr_hilight) incr_hilight_color();
+       if(!xctx->netlist_count) bus_hilight_lookup(entry->token, xctx->hilight_color, XINSERT_NOREPLACE);
+       if(incr_hi) incr_hilight_color();
        statusmsg(str,2);
        tcleval("wm deiconify .infotext"); /* critical error: force ERC window showing */
      }
      else if(entry->d.out >=2 && entry->d.port>=0)  /*  era d.port>=2   03102001 */
      {
        my_snprintf(str, S(str), "shorted output node: %s", entry->token);
-       if(!netlist_count) bus_hilight_lookup(entry->token, xctx->hilight_color, XINSERT_NOREPLACE);
-       if(incr_hilight) incr_hilight_color();
+       if(!xctx->netlist_count) bus_hilight_lookup(entry->token, xctx->hilight_color, XINSERT_NOREPLACE);
+       if(incr_hi) incr_hilight_color();
        statusmsg(str,2);
      }
      else if(entry->d.in ==0 && entry->d.inout == 0)
      {
        my_snprintf(str, S(str), "node: %s goes nowhere", entry->token);
-       if(!netlist_count) bus_hilight_lookup(entry->token, xctx->hilight_color, XINSERT_NOREPLACE);
-       if(incr_hilight) incr_hilight_color();
+       if(!xctx->netlist_count) bus_hilight_lookup(entry->token, xctx->hilight_color, XINSERT_NOREPLACE);
+       if(incr_hi) incr_hilight_color();
        statusmsg(str,2);
      }
      else if(entry->d.out >=2 && entry->d.inout == 0 && entry->d.port>=0)  /*  era d.port>=2   03102001 */
      {
        my_snprintf(str, S(str), "shorted output node: %s", entry->token);
-       if(!netlist_count) bus_hilight_lookup(entry->token, xctx->hilight_color, XINSERT_NOREPLACE);
-       if(incr_hilight) incr_hilight_color();
+       if(!xctx->netlist_count) bus_hilight_lookup(entry->token, xctx->hilight_color, XINSERT_NOREPLACE);
+       if(incr_hi) incr_hilight_color();
        statusmsg(str,2);
      }
    }
