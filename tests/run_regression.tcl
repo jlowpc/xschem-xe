@@ -4,7 +4,7 @@
 #  This file is part of XSCHEM,
 #  a schematic capture and Spice/Vhdl/Verilog netlisting tool for circuit 
 #  simulation.
-#  Copyright (C) 1998-2020 Stefan Frederik Schippers
+#  Copyright (C) 1998-2022 Stefan Frederik Schippers
 # 
 #  This program is free software; you can redistribute it and/or modify
 #  it under the terms of the GNU General Public License as published by
@@ -55,3 +55,6 @@ foreach tc $tcases {
 } else {
   puts "Couldn't open $log_fn to write.  Investigate please."
 }
+
+source test_utility.tcl
+exec $xschem_cmd -q --script xschemtest.tcl > stefan_xschemtest.log 2>@1

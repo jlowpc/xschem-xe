@@ -47,7 +47,7 @@ user:~$ xschem .../xschem_library/examples/0_examples_top.sch
 usage: xschem [options] [schematic | symbol ]
 Options:
   -h  --help           Print this help.
-  -b  --batch          Detach Xschem from console.
+  -b  --detach         Detach Xschem from console and fork in the background.
   -n  --netlist        Do a netlist of the given schematic cell.
   -v  --version        Print version information and exit.
   -V  --vhdl           Set netlist type to VHDL.
@@ -57,6 +57,7 @@ Options:
   -w  --verilog        Set netlist type to Verilog.
   --tcl &lt;tcl_script&gt;   Execute specified tcl instructions before any other action,
                        this can be used to change xschemrc variables.
+  --command &lt;tcl_cmd&gt;  Execute specified tcl commands after completing startup.
   --script &lt;file&gt;      Execute specified tcl file as a command script (perhaps with xschem  commands).
   --tcp_port &lt;number&gt;  Listen to specified tcp port for client connections. (number &gt;=1024).
   -i  --no_rcload      Do not load any xschemrc file.
@@ -66,6 +67,7 @@ Options:
   --netlist_filename &lt;file&gt;
   -t  --tedax          Set netlist type to tEDAx.
   -s  --spice          Set netlist type to SPICE.
+  -y  --symbol         Set netlist type to SYMBOL (used when drawing symbols)
   -x  --no_x           Don't use X (only command mode).
   -z  --rainbow        Use a raibow-looking layer color table.
   -W  --waves          Show simulation waveforms.

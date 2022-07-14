@@ -6,6 +6,7 @@
 #include "find_x.h"
 #include "find_gtk2.h"
 #include "find_gtk3.h"
+#include "find_gtk4.h"
 #include "find_lesstif2.h"
 #include "find_gd.h"
 #include "find_cairo.h"
@@ -26,6 +27,10 @@ void deps_gui_init()
 	dep_add("libs/gui/gtk2/key_prefix",     find_gtk2_key_prefix);
 	dep_add("libs/gui/gtk2/modversion",     find_gtk2_modversion);
 	dep_add("libs/gui/gtk3/*",              find_gtk3);
+	dep_add("libs/gui/gtk4/*",              find_gtk4);
+	dep_add("libs/gui/gtk4/modversion",     find_gtk4_modversion);
+	dep_add("libs/gui/epoxy/*",             find_epoxy);
+	dep_add("libs/gui/lesstif2/exthi/*",    find_lesstif2_exthi);
 	dep_add("libs/gui/lesstif2/*",          find_lesstif2);
 	dep_add("libs/gui/libstroke/*",         find_libstroke);
 	dep_add("libs/gui/gd/gdImagePng/*",     find_gdimagepng);
@@ -36,6 +41,8 @@ void deps_gui_init()
 	dep_add("libs/gui/cairo/*",             find_cairo);
 	dep_add("libs/gui/cairo-xcb/*",         find_cairo_xcb);
 	dep_add("libs/gui/gl/*",                find_gl);
+	dep_add("libs/gui/gl/vao/*",            find_gl_vao);
+	dep_add("libs/gui/gl/fb_attachment/*",  find_gl_fb_attachment);
 	dep_add("libs/gui/glu/*",               find_glu);
 	dep_add("libs/gui/glut/*",              find_glut);
 	dep_add("libs/gui/wgl/*",               find_gui_wgl);

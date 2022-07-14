@@ -3,7 +3,7 @@
  * This file is part of XSCHEM,
  * a schematic capture and Spice/Vhdl/Verilog netlisting tool for circuit
  * simulation.
- * Copyright (C) 1998-2020 Stefan Frederik Schippers
+ * Copyright (C) 1998-2022 Stefan Frederik Schippers
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -25,24 +25,24 @@
 #define Y_TO_PS(y) ( (y+xctx->yorigin)* xctx->mooz )
 
 #if 0
-/* FIXME: overflow check. Not used, BTW */
-static char *strreplace(char s[], char token[], char replace[])
-{
-  static char res[200];
-  char *p1, *p2;
-  int l;
-
-  res[0] = '\0';
-  l = strlen(token);
-  p1 = p2 = s;
-  while( (p2 = strstr(p1, token)) ) {
-     strncat(res, p1, p2 - p1);
-     strcat(res, replace);
-     p1 = p2 = p2 + l;
-  }
-  strcat(res, p1);
-  return res;
-}
+*   /* FIXME: overflow check. Not used, BTW */
+*   static char *strreplace(char s[], char token[], char replace[])
+*   {
+*     static char res[200];
+*     char *p1, *p2;
+*     int l;
+*   
+*     res[0] = '\0';
+*     l = strlen(token);
+*     p1 = p2 = s;
+*     while( (p2 = strstr(p1, token)) ) {
+*        strncat(res, p1, p2 - p1);
+*        strcat(res, replace);
+*        p1 = p2 = p2 + l;
+*     }
+*     strcat(res, p1);
+*     return res;
+*   }
 #endif
 
 char *utf8_enc[]={
@@ -89,9 +89,9 @@ char *utf8[]={
 static FILE *fd;
 
 typedef struct {
- int red;
- int green;
- int blue;
+ unsigned int red;
+ unsigned int green;
+ unsigned int blue;
 } Ps_color;
 
 static Ps_color *ps_colors;
@@ -118,7 +118,7 @@ static void set_ps_colors(unsigned int pixel)
 
 static void ps_xdrawarc(int layer, int fillarc, double x, double y, double r, double a, double b)
 {
- if(fill && fillarc)
+ if(xctx->fill_pattern && fillarc)
    fprintf(fd, "%g %g %g %g %g A %g %g LT C F S\n", x, y, r, -a, -a-b, x, y);
  else
    fprintf(fd, "%g %g %g %g %g A S\n", x, y, r, -a, -a-b);
@@ -140,7 +140,7 @@ static void ps_xfillrectange(int layer, double x1, double y1, double x2,
                   double y2)
 {
  fprintf(fd, "%g %g %g %g R\n", x1,y1,x2-x1,y2-y1);
- if( (fill_type[layer] == 1) && fill) {
+ if( (xctx->fill_type[layer] == 1) && xctx->fill_pattern) {
    fprintf(fd, "%g %g %g %g RF\n", x1,y1,x2-x1,y2-y1);
    /* fprintf(fd,"fill\n"); */
  }
@@ -174,7 +174,7 @@ static void ps_drawpolygon(int c, int what, double *x, double *y, int points, in
     if(i==0) fprintf(fd, "NP\n%g %g MT\n", xx, yy);
     else fprintf(fd, "%g %g LT\n", xx, yy);
   }
-  if(fill && fill_type[c] && poly_fill) {
+  if(xctx->fill_pattern && xctx->fill_type[c] && poly_fill) {
     fprintf(fd, "C F S\n");
   } else {
     fprintf(fd, "S\n");
@@ -264,12 +264,12 @@ static void ps_drawline(int gc, double linex1,double liney1,double linex2,double
 
 static void ps_draw_string_line(int layer, char *s, double x, double y, double size, 
            short rot, short flip, int lineno, double fontheight, double fontascent, 
-           double fontdescent, int llength, int no_of_lines, int longest_line)
+           double fontdescent, int llength, int no_of_lines, double longest_line)
 {
   double ix, iy;
   short rot1;
-  unsigned char c;
-  int line_delta, offset;
+  unsigned char c, offset;
+  double line_delta;
   double lines;
   set_ps_colors(layer);
   if(s==NULL) return;
@@ -343,16 +343,27 @@ static void ps_draw_string(int layer, const char *str, short rot, short flip, in
   char c;
   int lineno=0;
   double size, height, ascent, descent;
-  int llength=0, no_of_lines, longest_line;
+  int llength=0, no_of_lines;
+  double longest_line;
 
-  if(str==NULL || !has_x ) return;
+  if(str==NULL) return;
   size = xscale*53.;
   height =  size*xctx->mooz * 1.147; /* was 1.147 */
   ascent =  size*xctx->mooz * 0.808; /* was 0.908 */
   descent = size*xctx->mooz * 0.219; /* was 0.219 */
 
-  text_bbox(str, xscale, yscale, rot, flip, hcenter, vcenter,
+  #if HAS_CAIRO==1
+  if(!has_x) 
+    text_bbox_nocairo(str, xscale, yscale, rot, flip, hcenter, vcenter,
             x,y, &textx1,&texty1,&textx2,&texty2, &no_of_lines, &longest_line);
+  else
+    text_bbox(str, xscale, yscale, rot, flip, hcenter, vcenter,
+            x,y, &textx1,&texty1,&textx2,&texty2, &no_of_lines, &longest_line);
+  #else
+    text_bbox(str, xscale, yscale, rot, flip, hcenter, vcenter,
+            x,y, &textx1,&texty1,&textx2,&texty2, &no_of_lines, &longest_line);
+  #endif
+  
   if(!textclip(xctx->areax1,xctx->areay1,xctx->areax2,
                xctx->areay2,textx1,texty1,textx2,texty2)) {
     return;
@@ -407,7 +418,8 @@ static void old_ps_draw_string(int gctext,  const char *str,
 {
  double a,yy,curr_x1,curr_y1,curr_x2,curr_y2,rx1,rx2,ry1,ry2;
  int pos=0,cc,pos2=0;
- int i, no_of_lines, longest_line;
+ int i, no_of_lines;
+ double longest_line;
 
  if(str==NULL) return;
  #if HAS_CAIRO==1
@@ -417,8 +429,8 @@ static void old_ps_draw_string(int gctext,  const char *str,
  text_bbox(str, xscale, yscale, rot, flip, hcenter, vcenter,
            x1,y1, &rx1,&ry1,&rx2,&ry2, &no_of_lines, &longest_line);
  #endif
- xscale*=nocairo_font_xscale;
- yscale*=nocairo_font_yscale;
+ xscale*=tclgetdoublevar("nocairo_font_xscale");
+ yscale*=tclgetdoublevar("nocairo_font_yscale");
 
  if(!textclip(xctx->areax1,xctx->areay1,xctx->areax2,xctx->areay2,rx1,ry1,rx2,ry2)) return;
  set_ps_colors(gctext);
@@ -457,8 +469,8 @@ static void ps_drawgrid()
 {
  double x,y;
  double delta,tmp;
- if(!draw_grid) return;
- delta=cadgrid* xctx->mooz;
+ if( !tclgetboolvar("draw_grid")) return;
+ delta=tclgetdoublevar("cadgrid")* xctx->mooz;
  while(delta<CADGRIDTHRESHOLD) delta*=CADGRIDMULTIPLY;  /* <-- to be improved,but works */
  x = xctx->xorigin* xctx->mooz;y = xctx->yorigin* xctx->mooz;
  set_ps_colors(GRIDLAYER);
@@ -483,38 +495,58 @@ static void ps_drawgrid()
 
 
 
-static void ps_draw_symbol(int n,int layer, short tmp_flip, short rot, double xoffset, double yoffset)
+static void ps_draw_symbol(int n,int layer, int what, short tmp_flip, short rot, double xoffset, double yoffset)
                             /* draws current layer only, should be called within  */
 {                           /* a "for(i=0;i<cadlayers;i++)" loop */
- int j;
+ int j, hide = 0;
  double x0,y0,x1,y1,x2,y2;
  short flip; 
  int textlayer;
  xLine line;
- xRect box;
+ xRect rect;
  xText text;
  xArc arc;
  xPoly polygon;
  xSymbol *symptr;
  char *textfont;
+ int show_hidden_texts = tclgetboolvar("show_hidden_texts");
 
   if(xctx->inst[n].ptr == -1) return;
-  if( (layer != PINLAYER && !enable_layer[layer]) ) return;
+  if( (layer != PINLAYER && !xctx->enable_layer[layer]) ) return;
+  if( (xctx->hide_symbols==1 && (xctx->inst[n].ptr+ xctx->sym)->prop_ptr &&
+      !strcmp( (xctx->inst[n].ptr+ xctx->sym)->type, "subcircuit") ) || (xctx->hide_symbols == 2) ) {
+    hide = 1;
+  } else {
+    hide = 0;
+  }
+
   if(layer==0)
   {
-   x1=X_TO_PS(xctx->inst[n].x1);
-   x2=X_TO_PS(xctx->inst[n].x2);
-   y1=Y_TO_PS(xctx->inst[n].y1);
-   y2=Y_TO_PS(xctx->inst[n].y2);
-   if(OUTSIDE(x1,y1,x2,y2,xctx->areax1,xctx->areay1,xctx->areax2,xctx->areay2))
-   {
-    xctx->inst[n].flags|=1;
-    return;
-   }
-   else xctx->inst[n].flags&=~1;
-
-   /* following code handles different text color for labels/pins 06112002 */
-
+    x1=X_TO_PS(xctx->inst[n].x1);
+    x2=X_TO_PS(xctx->inst[n].x2);
+    y1=Y_TO_PS(xctx->inst[n].y1);
+    y2=Y_TO_PS(xctx->inst[n].y2);
+    if(OUTSIDE(x1,y1,x2,y2,xctx->areax1,xctx->areay1,xctx->areax2,xctx->areay2))
+    {
+      xctx->inst[n].flags|=1;
+      return;
+    }
+    else xctx->inst[n].flags&=~1;
+ 
+    /* pdfmarks, only if doing hierarchy print and if symbol has a subcircuit */ 
+    if(what != 7) {
+      if(!strcmp(get_tok_value((xctx->inst[n].ptr+ xctx->sym)->prop_ptr, "type", 0), "subcircuit")) {
+        fprintf(fd, 
+          "[ "
+          "/Rect [ %g %g %g %g ] "
+          "/Border [0 0 0] "
+          "/Dest /%s "
+          "/Subtype /Link "
+          "/ANN pdfmark\n",
+          x1, y1, x2, y2,
+          add_ext(skip_dir(xctx->inst[n].name), ".sch"));
+      }
+    }
   }
   else if(xctx->inst[n].flags&1)
   {
@@ -568,22 +600,24 @@ static void ps_draw_symbol(int n,int layer, short tmp_flip, short rot, double xo
      ROTATION(rot, flip, 0.0,0.0,arc.x,arc.y,x1,y1);
      ps_drawarc(layer, arc.fill, x0+x1, y0+y1, arc.r, angle, arc.b, arc.dash);
    }
-   if( enable_layer[layer] ) for(j=0;j< (xctx->inst[n].ptr+ xctx->sym)->rects[layer];j++)
+   if( xctx->enable_layer[layer] ) for(j=0;j< (xctx->inst[n].ptr+ xctx->sym)->rects[layer];j++)
    {
-    box = ((xctx->inst[n].ptr+ xctx->sym)->rect[layer])[j];
-    ROTATION(rot, flip, 0.0,0.0,box.x1,box.y1,x1,y1);
-    ROTATION(rot, flip, 0.0,0.0,box.x2,box.y2,x2,y2);
+    rect = ((xctx->inst[n].ptr+ xctx->sym)->rect[layer])[j];
+    ROTATION(rot, flip, 0.0,0.0,rect.x1,rect.y1,x1,y1);
+    ROTATION(rot, flip, 0.0,0.0,rect.x2,rect.y2,x2,y2);
     RECTORDER(x1,y1,x2,y2);
-    ps_filledrect(layer, x0+x1, y0+y1, x0+x2, y0+y2, box.dash);
+    ps_filledrect(layer, x0+x1, y0+y1, x0+x2, y0+y2, rect.dash);
    }
    if(  (layer==TEXTWIRELAYER  && !(xctx->inst[n].flags&2) ) ||
-        (sym_txt && (layer==TEXTLAYER)   && (xctx->inst[n].flags&2) ) )
+        (xctx->sym_txt && (layer==TEXTLAYER)   && (xctx->inst[n].flags&2) ) )
    {
     const char *txtptr;
     for(j=0;j< (xctx->inst[n].ptr+ xctx->sym)->texts;j++)
     {
      text = (xctx->inst[n].ptr+ xctx->sym)->text[j];
      /* if(text.xscale*FONTWIDTH* xctx->mooz<1) continue; */
+     if(!show_hidden_texts && (text.flags & HIDE_TEXT)) continue;
+     if( hide && text.txt_ptr && strcmp(text.txt_ptr, "@symname") && strcmp(text.txt_ptr, "@name") ) continue;
      txtptr= translate(n, text.txt_ptr);
      ROTATION(rot, flip, 0.0,0.0,text.x0,text.y0,x1,y1);
      textlayer = layer;
@@ -593,7 +627,7 @@ static void ps_draw_symbol(int n,int layer, short tmp_flip, short rot, double xo
        if(textlayer < 0 || textlayer >= cadlayers) textlayer = layer;
      }
       /* display PINLAYER colored instance texts even if PINLAYER disabled */
-     if(xctx->inst[n].color == -PINLAYER || enable_layer[textlayer]) {
+     if(xctx->inst[n].color == -PINLAYER || xctx->enable_layer[textlayer]) {
        my_snprintf(ps_font_family, S(ps_font_name), "Helvetica");
        my_snprintf(ps_font_name, S(ps_font_name), "Helvetica");
        textfont = symptr->text[j].font;
@@ -634,11 +668,12 @@ static void fill_ps_colors()
 {
  char s[200]; /* overflow safe 20161122 */
  unsigned int i,c;
- if(debug_var>=1) {
-   tcleval( "puts $ps_colors");
- }
+ /* if(debug_var>=1) {
+  *   tcleval( "puts $ps_colors");
+  * }
+  */
  for(i=0;i<cadlayers;i++) {
-   my_snprintf(s, S(s), "lindex $ps_colors %d", i);
+   my_snprintf(s, S(s), "lindex $ps_colors %u", i);
    tcleval( s);
    sscanf(tclresult(),"%x", &c);
    ps_colors[i].red   = (c & 0xff0000) >> 16;
@@ -662,7 +697,8 @@ void create_ps(char **psfile, int what)
   int c,i, textlayer;
   int old_grid;
   const char *textfont;
-  
+  int show_hidden_texts = tclgetboolvar("show_hidden_texts");
+
   if(what & 1) { /* prolog */
     numpages = 0;
     if(!(fd = open_tmpfile("psplot_", psfile)) ) {
@@ -672,12 +708,14 @@ void create_ps(char **psfile, int what)
   }
   ps_colors=my_calloc(311, cadlayers, sizeof(Ps_color));
   if(ps_colors==NULL){
-    fprintf(errfp, "create_ps(): calloc error\n");tcleval( "exit");
+    fprintf(errfp, "create_ps(): calloc error\n");
+    return;
   }
 
   fill_ps_colors();
-  old_grid=draw_grid;
-  draw_grid=0;
+  old_grid=tclgetboolvar("draw_grid");
+  tclsetvar("draw_grid", "0");
+
 
   boundbox.x1 = xctx->areax1;
   boundbox.x2 = xctx->areax2;
@@ -709,10 +747,10 @@ void create_ps(char **psfile, int what)
     fprintf(fd, "%%%%BeginProlog\n\n");
   
     for(i = 0; i < sizeof(utf8_enc)/sizeof(char *); i++) {
-      fprintf(fd, utf8_enc[i]);
+      fprintf(fd, "%s", utf8_enc[i]);
     }
     for(i = 0; i < sizeof(utf8)/sizeof(char *); i++) {
-      fprintf(fd, utf8[i]);
+      fprintf(fd, "%s", utf8[i]);
     }
   
     fprintf(fd, "/Times /Times chararr recode\n");
@@ -759,6 +797,15 @@ void create_ps(char **psfile, int what)
     fprintf(fd, "%%%%BeginPageSetup\n");
     fprintf(fd, "%%%%EndPageSetup\n");
   
+    /* add small page title */
+    fprintf(fd, "/Helvetica FF 10 SCF SF NP 20 %g MT (%s) show\n", pagey - 20, xctx->current_name);
+
+    /* Add anchor for pdfmarks */
+    fprintf(fd,
+      "[ "
+      "/Dest /%s "
+      "/DEST pdfmark\n", get_cell_w_ext(xctx->current_name, 0));
+
     scaley = scale = (pagey-2 * margin) / dy;
     dbg(1, "scale=%g pagex=%g pagey=%g dx=%g dy=%g\n", scale, pagex, pagey, dx, dy);
     if(dx * scale > (pagex - 2 * margin)) {
@@ -769,14 +816,14 @@ void create_ps(char **psfile, int what)
       -scale * boundbox.x1 + margin, pagey - (scaley - scale) * dy - margin + scale * boundbox.y1);
     fprintf(fd, "%g %g scale\n", scale, -scale);
     fprintf(fd, "1 setlinejoin 1 setlinecap\n");
-  
-  
+
     set_lw();
     ps_drawgrid();
   
     for(i=0;i<xctx->texts;i++)
     {
       textlayer = xctx->text[i].layer;
+      if(!show_hidden_texts && (xctx->text[i].flags & HIDE_TEXT)) continue;
       if(textlayer < 0 ||  textlayer >= cadlayers) textlayer = TEXTLAYER;
   
       my_snprintf(ps_font_family, S(ps_font_name), "Helvetica");
@@ -818,8 +865,10 @@ void create_ps(char **psfile, int what)
           xctx->line[c][i].x2, xctx->line[c][i].y2, xctx->line[c][i].dash);
       for(i=0;i<xctx->rects[c];i++)
       {
-        ps_filledrect(c, xctx->rect[c][i].x1, xctx->rect[c][i].y1,
-          xctx->rect[c][i].x2, xctx->rect[c][i].y2, xctx->rect[c][i].dash);
+        if(c != GRIDLAYER || !(xctx->rect[c][i].flags & 1) )  {
+          ps_filledrect(c, xctx->rect[c][i].x1, xctx->rect[c][i].y1,
+            xctx->rect[c][i].x2, xctx->rect[c][i].y2, xctx->rect[c][i].dash);
+        }
       }
       for(i=0;i<xctx->arcs[c];i++)
       {
@@ -831,7 +880,7 @@ void create_ps(char **psfile, int what)
           xctx->poly[c][i].fill, xctx->poly[c][i].dash);
       }
       for(i=0;i<xctx->instances;i++)
-        ps_draw_symbol(i,c,0,0,0.0,0.0);
+        ps_draw_symbol(i,c,what,0,0,0.0,0.0);
     }
     set_ps_colors(WIRELAYER);
     for(i=0;i<xctx->wires;i++)
@@ -841,9 +890,9 @@ void create_ps(char **psfile, int what)
   
     {
       double x1, y1, x2, y2;
-      struct wireentry *wireptr;
+      Wireentry *wireptr;
       int i;
-      struct iterator_ctx ctx;
+      Iterator_ctx ctx;
       update_conn_cues(0, 0);
       /* draw connecting dots */
       x1 = X_TO_XSCHEM(xctx->areax1);
@@ -852,16 +901,15 @@ void create_ps(char **psfile, int what)
       y2 = Y_TO_XSCHEM(xctx->areay2);
       for(init_wire_iterator(&ctx, x1, y1, x2, y2); ( wireptr = wire_iterator_next(&ctx) ) ;) {
         i = wireptr->n;
-        if( xctx->wire[i].end1 >1 ) { /* 20150331 draw_dots */
+        if( xctx->wire[i].end1 >1 ) {
           ps_drawarc(WIRELAYER, 1, xctx->wire[i].x1, xctx->wire[i].y1, cadhalfdotsize, 0, 360, 0);
         }
-        if( xctx->wire[i].end2 >1 ) { /* 20150331 draw_dots */
+        if( xctx->wire[i].end2 >1 ) {
           ps_drawarc(WIRELAYER, 1, xctx->wire[i].x2, xctx->wire[i].y2, cadhalfdotsize, 0, 360, 0);
         }
       }
     }
-  
-    dbg(1, "ps_draw(): INT_WIDTH(lw)=%d plotfile=%s\n",INT_WIDTH(xctx->lw), plotfile);
+    dbg(1, "ps_draw(): INT_WIDTH(lw)=%d plotfile=%s\n",INT_WIDTH(xctx->lw), xctx->plotfile);
     fprintf(fd, "showpage\n\n");
   }
   if(what & 4) { /* trailer */
@@ -870,7 +918,7 @@ void create_ps(char **psfile, int what)
     fprintf(fd, "%%%%EOF\n");
     fclose(fd);
   }
-  draw_grid=old_grid;
+  tclsetboolvar("draw_grid", old_grid);
   my_free(879, &ps_colors);
 }
 
@@ -883,13 +931,13 @@ int ps_draw(int what)
 
  if(what & 1) { /* prolog */
    if(!lastdir[0]) my_strncpy(lastdir, pwd_dir, S(lastdir));
-   if(!plotfile[0]) {
-     Tcl_VarEval(interp, "tk_getSaveFile -title {Select destination file} -initialfile ",
-       get_cell(xctx->sch[xctx->currsch], 0) , ".pdf -initialdir ", lastdir, NULL);
+   if(has_x && !xctx->plotfile[0]) {
+     tclvareval("tk_getSaveFile -title {Select destination file} -initialfile {",
+       get_cell(xctx->sch[xctx->currsch], 0) , ".pdf} -initialdir {", lastdir, "}", NULL);
      r = tclresult();
      if(r[0]) {
-       my_strncpy(plotfile, r, S(plotfile));
-       Tcl_VarEval(interp, "file dirname ", plotfile, NULL);
+       my_strncpy(xctx->plotfile, r, S(xctx->plotfile));
+       tclvareval("file dirname {", xctx->plotfile, "}", NULL);
        my_strncpy(lastdir, tclresult(), S(lastdir));
      }
      else return 0;
@@ -897,12 +945,12 @@ int ps_draw(int what)
  }
  create_ps(&psfile, what);
  if(what & 4) { /* trailer */
-   if(plotfile[0]) {
-     my_snprintf(tmp, S(tmp), "convert_to_pdf {%s} {%s}", psfile, plotfile);
+   if(xctx->plotfile[0]) {
+     my_snprintf(tmp, S(tmp), "convert_to_pdf {%s} {%s}", psfile, xctx->plotfile);
    } else {
      my_snprintf(tmp, S(tmp), "convert_to_pdf {%s} plot.pdf", psfile);
    }
-   my_strncpy(plotfile,"", S(plotfile));
+   my_strncpy(xctx->plotfile,"", S(xctx->plotfile));
    tcleval( tmp);
    Tcl_SetResult(interp,"",TCL_STATIC);
  }

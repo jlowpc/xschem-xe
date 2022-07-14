@@ -3,7 +3,7 @@
  * This file is part of XSCHEM,
  * a schematic capture and Spice/Vhdl/Verilog netlisting tool for circuit
  * simulation.
- * Copyright (C) 1998-2020 Stefan Frederik Schippers
+ * Copyright (C) 1998-2022 Stefan Frederik Schippers
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -83,7 +83,9 @@ void read_binary_block()
   }
   /* read binary block */
   for(p = 0; p < npoints; p++) {
-    fread(values[p], sizeof(double), nvars, fd);
+    if(fread(values[p], sizeof(double), nvars, fd) != nvars) {
+       fprintf(stderr, "Warning: binary block is not of correct size\n");
+    }
   }
   if(debug) fprintf(stderr, "done reading binary block\n");
 }
