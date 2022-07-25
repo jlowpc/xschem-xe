@@ -842,9 +842,9 @@ int callback(const char *winpath, int event, int mx, int my, KeySym key,
      dbg(1, "callback(): switching window context: %s --> %s, semaphore=%d\n", old_winpath, winpath, xctx->semaphore);
      if(old_winpath[0]) tclvareval("save_ctx ", old_winpath, NULL);
      tclvareval("restore_ctx ", winpath, NULL);
-     tclvareval("housekeeping_ctx", NULL);
    }
    new_schematic("switch_win", winpath, "");
+   tclvareval("housekeeping_ctx", NULL);
  }
  /* artificially set semaphore to allow only redraw operations in switched schematic,
   * so we don't need  to switch tcl context which is costly performance-wise
@@ -2160,9 +2160,9 @@ int callback(const char *winpath, int event, int mx, int my, KeySym key,
    }
    if(xctx->ui_state & STARTPAN) {
      xctx->ui_state &=~STARTPAN;
-     xctx->mx_save = mx; xctx->my_save = my;
-     xctx->mx_double_save=xctx->mousex_snap;
-     xctx->my_double_save=xctx->mousey_snap;
+     /* xctx->mx_save = mx; xctx->my_save = my; */
+     /* xctx->mx_double_save=xctx->mousex_snap; */
+     /* xctx->my_double_save=xctx->mousey_snap; */
      break;
    }
 
@@ -2555,9 +2555,9 @@ int callback(const char *winpath, int event, int mx, int my, KeySym key,
    }
    if(xctx->ui_state & STARTPAN) {
      xctx->ui_state &=~STARTPAN;
-     xctx->mx_save = mx; xctx->my_save = my;
-     xctx->mx_double_save=xctx->mousex_snap;
-     xctx->my_double_save=xctx->mousey_snap;
+     /* xctx->mx_save = mx; xctx->my_save = my; */
+     /* xctx->mx_double_save=xctx->mousex_snap; */
+     /* xctx->my_double_save=xctx->mousey_snap; */
      redraw_w_a_l_r_p_rubbers();
      break;
    }
