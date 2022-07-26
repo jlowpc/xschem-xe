@@ -10,8 +10,18 @@
 #################################################################################
 
 proc xetcl_is_memory_net {net} {
-  if {![info exists $net]} {return 0}
-  set comp2 xe_get_net_composite2_name $net
+  if {[info exists $net]} {return 0}
+  set comp2 [xe_get_net_composite2_name $net]
   if {$comp2 eq "memory"} {return 1}
   return 0
+}
+
+# Find precharged nets.
+proc xetcl_is_pc_net {net} {
+  if {[info exists $net]} {return 0}
+  set family [xe_get_net_family_name $net]
+  if {$family ne "pc"} {return 0}
+  set type [xe_get_net_type_name $net]
+  if {($type ne "z") && ($type ne "intpc")} {return 0}
+  return 1
 }

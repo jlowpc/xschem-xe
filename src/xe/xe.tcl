@@ -1437,15 +1437,18 @@ proc xetcl_run_xe_ckc {} {
     source $XE_ROOT_DIR/$script
   }
   xetcl_load
-  set filename $wd/${design}_beta_ratio.csv
-  set fd [open $filename w]
-  set a [catch "open \"$filename\" w" fd]
-  if {$a} {
-    puts stderr "Can not open file to run beta_ratio: $filename"
-  } else {   
-    xetcl_check_beta_ratio $fd   
-    close $fd
-  } 
+  foreach script $check_scripts {
+    regexp {check_(.*)\.tcl} $script matched check_name
+    set filename $wd/${design}_${check_name}.csv
+    set fd [open $filename w]
+    set a [catch "open \"$filename\" w" fd]
+    if {$a} {
+      puts stderr "Can not open file to run $check_name: $filename"
+    } else {   
+      xetcl_check_${check_name} $fd   
+      close $fd
+    } 
+  }
   #xetcl_driver_weff
   #xetcl_finfet_device_size
   #xetcl_sram6t_device_size

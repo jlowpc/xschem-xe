@@ -99,7 +99,7 @@ proc xetcl_check_beta_ratio {{fd {}}} {
           puts $fd "$subckt_nm,$name,$min_beta,$max_beta,$severity,$xetcl_beta_ratio_min_ratio,$xetcl_beta_ratio_max_ratio"
         }
       }
-    }
+    #}
   }
   #close $fd
 }
