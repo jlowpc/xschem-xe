@@ -96,9 +96,9 @@ proc xetcl_check_charge_share {{fd {}}} {
         set severity Normal
       }
       if {$fd eq ""} {
-        puts "$subckt_nm,$name,$c1_z,$c1_int,$c0_int,$cap_ratio,$severity,$xetcl_charge_sharing_ratio_limit"
+        puts "$subckt_nm,$name,[format "%.2f" $c1_z],[format "%.2f" $c1_int],[format "%.2f" $c0_int],[format "%.2f" $cap_ratio],$severity,[format "%.2f" $xetcl_charge_sharing_ratio_limit]"
       } else {
-        puts $fd "$subckt_nm,$name,$c1_z,$c1_int,$c0_int,$cap_ratio,$severity,$xetcl_charge_sharing_ratio_limit"
+        puts $fd "$subckt_nm,$name,[format "%.2f" $c1_z],[format "%.2f" $c1_int],[format "%.2f" $c0_int],[format "%.2f" $cap_ratio],$severity,[format "%.2f" $xetcl_charge_sharing_ratio_limit]"
       }
     }
   }

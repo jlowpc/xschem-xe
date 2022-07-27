@@ -133,9 +133,11 @@ proc xetcl_configure_xe_win_clear {} {
   set xe_uds_interim {}
 }
 
-proc xetcl_save_xe_conf {filename} {
-  global xe_conf_dict
+proc xetcl_save_xe_conf {} {
+  global USER_CONF_DIR xe_conf_dict
   xetcl_configure_xe_win_save_interim
+  set design [file tail [file rootname [xschem get schname]]]
+  set filename $USER_CONF_DIR/$design.xe_save
   set fd [open $filename w]
   set a [catch "open \"$filename\" w" fd]
   if {$a} {
@@ -146,21 +148,30 @@ proc xetcl_save_xe_conf {filename} {
   }
 }
 
-proc xetcl_load_xe_conf {filename} {
+proc xetcl_auto_load_save_file {} {
   global xe_conf_dict xe_wd_interim xe_uds_interim xe_tfs_interim
-  source $filename
-  if {[info exists xe_conf_dict(xe_wd)]} {set xe_wd_interim $xe_conf_dict(xe_wd)}
-  if {[info exists xe_conf_dict(xe_uds)]} {set xe_uds_interim $xe_conf_dict(xe_uds)}
-  if {[info exists xe_conf_dict(xe_tfs)]} {set xe_tfs_interim $xe_conf_dict(xe_tfs)}
+  global USER_CONF_DIR has_x
+  set design [file tail [file rootname [xschem get schname]]]
+  if { [file exists $USER_CONF_DIR/$design.xe_save] } {
+    if {[catch { source $USER_CONF_DIR/$design.xe_save } err] } {
+      puts "Problems loading xe's save data for this design: $err"
+      if {[info exists has_x]} {
+        tk_messageBox -message  "Problems loading xe's save data for this desig: $err" \
+            -icon warning -parent . -type ok
+      }
+    }
+  }
 }
 
 # TBD: working directory doesn't exist.
 # modified should only be updated if something is changed
 proc xetcl_configure_xe_win {load} {
-  global xe_conf_dict    xe_wd_interim xe_uds_interim xe_tfs_interim 
+  global xe_conf_dict xe_wd_interim xe_uds_interim xe_tfs_interim 
   global netlist_type netlist_dir
-  global XE_RESULT XE_THREAD xeconf_file_save
+  global XE_RESULT XE_THREAD
   catch {destroy .xe_conf} 
+  xetcl_auto_load_save_file
+  
   toplevel .xe_conf -class dialog
   wm title .xe_conf {XE Configuration}
   wm geometry .xe_conf 700x340
@@ -172,6 +183,10 @@ proc xetcl_configure_xe_win {load} {
   label .xe_conf.wd.left.label   -text {Working Directory:}
   button .xe_conf.wd.left.button -text Select -command "xetcl_configure_xe_win_select_dir .xe_conf"
   entry .xe_conf.wd.right.entry  -textvariable xe_wd_interim
+
+  
+
+
   if {[info exists xe_conf_dict(xe_wd)]} {set xe_wd_interim $xe_conf_dict(xe_wd)}
   pack .xe_conf.wd             -side top -fill x
   pack .xe_conf.wd.left        -side left
@@ -179,7 +194,7 @@ proc xetcl_configure_xe_win {load} {
   pack .xe_conf.wd.left.button -side bottom -pady 5
   pack .xe_conf.wd.right       -side left -fill x -expand true
   pack .xe_conf.wd.right.entry  -fill x -expand true
-
+  # Auto fill UD and TF once working directory is specified
   # User Directive
   frame .xe_conf.ud -padx 5 -pady 5
   frame .xe_conf.ud.left
@@ -247,23 +262,8 @@ proc xetcl_configure_xe_win {load} {
       unset XE_THREAD
     }  -padx 20
   }
-  button .xe_conf.open -text Open -command { \
-    set xe_config_fn [tk_getOpenFile -parent .xe_conf]
-    if {$xe_config_fn ne ""} {
-      xetcl_load_xe_conf $xe_config_fn 
-    }
-  } -padx 20
   button .xe_conf.save -text Save -command { \
-    set save_fn ""
-    if {![info exists xeconf_file_save] || $xeconf_file_save eq ""} {
-      set save_fn [tk_getSaveFile -parent .xe_conf]
-    } else {
-      set save_fn [tk_getSaveFile -parent .xe_conf -initialfile $xeconf_file_save]
-    }
-    if {$save_fn ne ""} {
-      set xeconf_file_save $save_fn
-      xetcl_save_xe_conf $xeconf_file_save 
-    }
+    xetcl_save_xe_conf 
   } -padx 20
   pack .xe_conf.cancel -side right
   pack .xe_conf.clear -side right
@@ -273,7 +273,6 @@ proc xetcl_configure_xe_win {load} {
   } else {
     pack .xe_conf.run -side right 
   }
-  pack .xe_conf.open -side left
   pack .xe_conf.save -side left
   
   bind .xe_conf <Escape> {destroy .xe_conf}
@@ -281,6 +280,24 @@ proc xetcl_configure_xe_win {load} {
     xetcl_configure_xe_win_save_interim; \
     destroy .xe_conf; \
   }
+
+  bind .xe_conf.wd.right.entry <FocusOut> {
+    if {![info exists xe_conf_dict(xe_wd)] || $xe_conf_dict(xe_wd) ne $xe_wd_interim} {
+      set design [file tail [file rootname [xschem get schname]]]
+      set dirname [xetcl_backslash_to_slash $xe_wd_interim]
+      set ud_fn "${dirname}/${design}.xe_ud"
+      set tf_fn "${dirname}/${design}.xe_tf"
+      if {[info exists xe_uds_interim] && [file exists $ud_fn]} { 
+        .xe_conf.ud.right.list insert 0 $ud_fn
+        set xe_uds_interim $ud_fn
+      }
+      if {[info exists xe_tfs_interim] && [file exists $tf_fn]} { 
+        .xe_conf.tf.right.list insert 0 $tf_fn
+        set xe_tfs_interim $tf_fn
+      }
+    }
+  }
+  
   focus  .xe_conf
 }
 

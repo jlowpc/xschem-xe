@@ -94,9 +94,9 @@ proc xetcl_check_beta_ratio {{fd {}}} {
           set severity Normal
         }
         if {$fd eq ""} {
-          puts "$subckt_nm,$name,$min_beta,$max_beta,$severity,$xetcl_beta_ratio_min_ratio,$xetcl_beta_ratio_max_ratio"
+          puts "$subckt_nm,$name,[format "%.2f" $min_beta],[format "%.2f" $max_beta],$severity,[format "%.2f" $xetcl_beta_ratio_min_ratio],[format "%.2f" $xetcl_beta_ratio_max_ratio]"
         } else {
-          puts $fd "$subckt_nm,$name,$min_beta,$max_beta,$severity,$xetcl_beta_ratio_min_ratio,$xetcl_beta_ratio_max_ratio"
+          puts $fd "$subckt_nm,$name,[format "%.2f" $min_beta],[format "%.2f" $max_beta],$severity,[format "%.2f" $xetcl_beta_ratio_min_ratio],[format "%.2f" $xetcl_beta_ratio_max_ratio]"
         }
       }
     #}
