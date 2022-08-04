@@ -9,36 +9,6 @@
 # 07/26/2022: Initial                                                           #
 #################################################################################
 
-proc get_net_max_beta {net subckt_nm net_nm ht} {
-  upvar #0 $ht cache_ht
-  global xetcl_beta_ratio_use_w_as_finfet
-  set subckt_net $subckt_nm$net_nm
-  if {[info exists cache_ht] && [info exists cache_ht($subckt_net)]} {return $cache_ht[$subckt_net]}
-  set max_beta 0
-  if {[xe_get_finfet_model_type]==0 || $xetcl_beta_ratio_use_w_as_finfet==1} {
-    set max_beta [xe_get_net_max_beta $net]
-  } else {
-    set max_beta [xe_get_net_max_fin_beta $net]
-  }
-  set cache_ht($subckt_net) $max_beta
-  return $max_beta
-}
-
-proc get_net_min_beta {net subckt_nm net_nm ht} {
-  upvar #0 $ht cache_ht
-  global xetcl_beta_ratio_use_w_as_finfet
-  set subckt_net $subckt_nm$net_nm
-  if {[info exists cache_ht] && [info exists cache_ht($subckt_net)]} {return $cache_ht[$subckt_net]}
-  set min_beta 0
-  if {[xe_get_finfet_model_type]==0 || $xetcl_beta_ratio_use_w_as_finfet==1} {
-    set min_beta [xe_get_net_min_beta $net]
-  } else {
-    set min_beta [xe_get_net_min_fin_beta $net]
-  }
-  set cache_ht($subckt_net) $min_beta
-  return $min_beta
-}
-
 proc xetcl_check_charge_share {{fd {}}} {
   global xetcl_charge_sharing_ratio_limit
   global xetcl_charge_sharing_fatal_adj xetcl_charge_sharing_error_adj xetcl_charge_sharing_warn_adj
@@ -68,29 +38,26 @@ proc xetcl_check_charge_share {{fd {}}} {
     incr num_checked_objects
         
     set c1_z [xe_get_net_cap1 $net]
-    set c0_z [xe_get_net_cap0 $net]
-    set c1_stack [xe_get_net_ccr_pd_cap1 $net]
-    set c0_stack [xe_get_net_ccr_pd_cap0 $net]
-    set c1_int [expr {$c1_stack - $c1_z}] 
-    set c0_int [expr {$c0_stack - $c0_z}] 
+    set c0_int [xe_get_pc_net_internal_nets_cap0 $net 1]
+    set c1_int [xe_get_pc_net_internal_pc_cap1 $net]
+    #set c1_int [expr {$c1_stack - $c1_z}] 
+    #set c0_int [expr {$c0_stack - $c0_z}] 
     set cap_ratio 0.0
-    set c1_total [expr {$c1_z + $c1_stack}]
-    set c_total [expr {$c1_total + $c0_stack}]
+    set c_total [expr {$c1_z + $c0_int + $c1_int}]
     if {$c_total > 0.0} {
-      set cap_ratio [expr {$c1_total/$c_total}]
+      set cap_ratio [expr {$c0_int/$c_total}]
     }
-#      if {$c_total < $xetcl_charge_sharing_ratio_limit} 
-    if {1} {
+    if {$cap_ratio < $xetcl_charge_sharing_ratio_limit} {
       #summary = "{Beta ratio (%.*g, %.*g) out of range (%.*g, %.*g)}" %(self.xg.precision, min_beta, self.xg.precision, max_beta, self.xg.precision, self.min_ratio, self.xg.precision, self.max_ratio)
       set fatal_limit [expr $xetcl_charge_sharing_ratio_limit-$xetcl_charge_sharing_fatal_adj] 
       set error_limit [expr $xetcl_charge_sharing_ratio_limit-$xetcl_charge_sharing_error_adj] 
       set warn_limit [expr $xetcl_charge_sharing_ratio_limit-$xetcl_charge_sharing_warn_adj] 
         
-      if {$cap_ratio > $fatal_limit} {
+      if {$cap_ratio < $fatal_limit} {
         set severity Fatal
-      } elseif {$cap_ratio > $error_limit} {
+      } elseif {$cap_ratio < $error_limit} {
         set severity Error
-      } elseif {$cap_ratio > $warn_limit} {
+      } elseif {$cap_ratio < $warn_limit} {
         set severity Warn
       } else {
         set severity Normal

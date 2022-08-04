@@ -22,6 +22,7 @@ proc xetcl_is_pc_net {net} {
   set family [xe_get_net_family_name $net]
   if {$family ne "pc"} {return 0}
   set type [xe_get_net_type_name $net]
-  if {($type ne "z") && ($type ne "intpc")} {return 0}
+  #if {($type ne "z") && ($type ne "intpc")} {return 0}
+  if {($type ne "z")} {return 0}
   return 1
 }

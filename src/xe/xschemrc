@@ -360,4 +360,8 @@ lappend tcl_files ${XSCHEM_SHAREDIR}/xe/xe.tcl
 ## Do not set this option if you don't know what you are doing.
 ## Default: not enabled (0)
 # set case_insensitive 1
-blah
+
+###########################################################################
+#### XE Specifics
+###########################################################################
+set top_subckt 1

@@ -13,9 +13,9 @@ set xetcl_beta_ratio_warn_adj   0
 set xetcl_beta_ratio_use_w_as_finfet 0
 # Charge sharing
 global xetcl_charge_sharing_ratio_limit xetcl_charge_sharing_fatal_adj xetcl_charge_sharing_error_adj xetcl_charge_sharing_warn_adj
-set xetcl_charge_sharing_ratio_limit 0.5
-set xetcl_charge_sharing_fatal_adj 5 
-set xetcl_charge_sharing_error_adj 4  
-set xetcl_charge_sharing_warn_adj  2  
+set xetcl_charge_sharing_ratio_limit 0.75
+set xetcl_charge_sharing_fatal_adj 0.3
+set xetcl_charge_sharing_error_adj 0.2
+set xetcl_charge_sharing_warn_adj  0.1
 
 ####################################################
