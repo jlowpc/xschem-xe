@@ -1582,6 +1582,18 @@ proc update_graph_node {node} {
   xschem draw_graph $graph_selected
 }
 
+proc update_div {graph_selected div} {
+  set divis [.graphdialog.top2.$div get]
+  if {[regexp {^[0-9]+$} $divis] && $divis < 1} {
+    set divis 1
+    .graphdialog.top2.$div delete 0 end
+    .graphdialog.top2.$div insert 0 $divis
+  }
+  xschem setprop rect 2 $graph_selected $div $divis
+  xschem draw_graph $graph_selected
+}
+
+
 proc graph_edit_properties {n} {
   global graph_bus graph_sort graph_digital graph_selected colors graph_sel_color
   global graph_unlocked graph_schname
@@ -1600,6 +1612,10 @@ proc graph_edit_properties {n} {
   set graph_schname [xschem get schname]
   set_ne graph_sel_color 4
   set_ne graph_sort 0
+  set graph_logx 0
+  if {[xschem getprop rect 2 $n logx] == 1} {set graph_logx 1}
+  set graph_logy 0
+  if {[xschem getprop rect 2 $n logy] == 1} {set graph_logy 1}
   set graph_digital 0
   if {[xschem getprop rect 2 $n digital] == 1} {set graph_digital 1}
   if {[regexp {unlocked} [xschem getprop rect 2 $n flags]]} {
@@ -1611,6 +1627,7 @@ proc graph_edit_properties {n} {
   frame .graphdialog.top
   # another row of buttons
   frame .graphdialog.top2 
+  frame .graphdialog.top3 
   panedwindow .graphdialog.center -orient horiz
   frame .graphdialog.bottom
   frame .graphdialog.center.left
@@ -1618,6 +1635,7 @@ proc graph_edit_properties {n} {
   .graphdialog.center add .graphdialog.center.left .graphdialog.center.right
   pack .graphdialog.top -side top -fill x 
   pack .graphdialog.top2 -side top -fill x 
+  pack .graphdialog.top3 -side top -fill x 
   pack .graphdialog.center -side top -fill both -expand yes
   pack .graphdialog.bottom -side top -fill x 
 
@@ -1727,15 +1745,13 @@ proc graph_edit_properties {n} {
   label .graphdialog.top2.labdivx -text {  X div.}
   entry .graphdialog.top2.divx -width 2
   bind .graphdialog.top2.divx <KeyRelease> {
-    xschem setprop rect 2 $graph_selected divx [.graphdialog.top2.divx get]
-    xschem draw_graph $graph_selected
+    update_div $graph_selected divx
   }
 
   label .graphdialog.top2.labdivy -text {  Y div.}
   entry .graphdialog.top2.divy -width 2
   bind .graphdialog.top2.divy <KeyRelease> {
-    xschem setprop rect 2 $graph_selected divy [.graphdialog.top2.divy get]
-    xschem draw_graph $graph_selected
+    update_div $graph_selected divy
   }
 
   label .graphdialog.top2.labsubdivx -text {  X subdiv.}
@@ -1837,6 +1853,23 @@ proc graph_edit_properties {n} {
   .graphdialog.top.min insert 0 [xschem getprop rect 2 $graph_selected y1]
   .graphdialog.top.max insert 0 [xschem getprop rect 2 $graph_selected y2]
 
+  # top3 frame
+  checkbutton .graphdialog.top3.logx -padx 2 -text {Log X scale} -variable graph_logx \
+     -command {
+       if { [xschem get schname] eq $graph_schname } {
+         xschem setprop rect 2 $graph_selected logx $graph_logx fast
+         xschem draw_graph $graph_selected
+       }
+     }
+
+  checkbutton .graphdialog.top3.logy -text {Log Y scale} -variable graph_logy \
+     -command {
+       if { [xschem get schname] eq $graph_schname } {
+         xschem setprop rect 2 $graph_selected logy $graph_logy fast
+         xschem draw_graph $graph_selected
+       }
+     }
+  pack .graphdialog.top3.logx .graphdialog.top3.logy -side left
   # binding
   bind .graphdialog.top.search <KeyRelease> {
     fill_graph_listbox
@@ -4538,7 +4571,7 @@ set tctx::global_list {
   edit_prop_pos edit_prop_size editprop_sympath edit_symbol_prop_new_sel enable_dim_bg enable_stretch 
   en_hilight_conn_inst filetmp
   flat_netlist fullscreen gaw_fd gaw_tcp_address globfilter
-  graph_bus graph_digital
+  graph_bus graph_digital graph_logx graph_logy
   graph_sel_color graph_schname graph_selected graph_sel_wave graph_sort
   graph_unlocked
   hide_empty_graphs hide_symbols hsize hspice_netlist 
@@ -5557,6 +5590,8 @@ set_ne to_pdf {ps2pdf}
 
 # selected graph user is editing attributes with graph GUI
 set_ne graph_bus 0
+set_ne graph_logx 0
+set_ne graph_logy 0
 set_ne graph_selected {}
 set_ne graph_schname {}
 # user clicked this wave 
