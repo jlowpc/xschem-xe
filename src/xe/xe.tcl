@@ -74,6 +74,7 @@ proc xetcl_load {} {
     set s [file tail [file rootname [xschem get schname]]]
     set n ${netlist_dir}/${s}
     set N ${n}.$netlist_type
+    # TBD: When XE fatal out, XSchem should not exit as well???? How to fix this
     xe_load $xe_conf_dict(xe_wd) $N $ud $tf "" ""
     # TBD: Need to put this in the background, and a method to let user know that it's done.  All XE's action should be paused until this finishes
   } else { 

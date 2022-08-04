@@ -1,3 +1,16 @@
 1. Linux: set TCLLIBPATH in environment variable where xe_ckc.so is placed. 
    Windows: set PATH in environment variable where xe_ckc.dll is placed.
 2. Add (or uncomment) "lappend tcl_files ${XSCHEM_SHAREDIR}/xe/xe.tcl" in xschemrc to add the XE's TK menu
+
+Skywater on Windows???
+%cp -Lir sky130A ~/shared/LOCAL (Copy Skywater open_pdk sky130A to Windows shared directory)
+
+set PDK_ROOT C:/Projects/LOCAL/sky130A
+set SKYWATER_MODELS ${PDK_ROOT}/libs.tech/ngspice
+set SKYWATER_STDCELLS ${PDK_ROOT}/libs.ref/sky130_fd_sc_hd/spice
+#puts stderr "open_pdks installation: using $PDK_ROOT"
+#puts stderr "SKYWATER_MODELS: $SKYWATER_MODELS"
+#puts stderr "SKYWATER_STDCELLS: $SKYWATER_STDCELLS"
+#puts stderr ";${PDK_ROOT}/libs.tech/xschem"
+# Need to move C:/Projects/xschem-xe/src/xe/test_cases to ${PDK_ROOT}/libs.tech/xschem
+append XSCHEM_LIBRARY_PATH ";${PDK_ROOT}/libs.tech/xschem"
