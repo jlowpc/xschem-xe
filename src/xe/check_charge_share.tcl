@@ -69,8 +69,8 @@ proc xetcl_check_charge_share {{fd {}}} {
         
     set c1_z [xe_get_net_cap1 $net]
     set c0_z [xe_get_net_cap0 $net]
-    set c1_stack [xe_get_net_ccr_cap1 $net]
-    set c0_stack [xe_get_net_ccr_cap0 $net]
+    set c1_stack [xe_get_net_ccr_pd_cap1 $net]
+    set c0_stack [xe_get_net_ccr_pd_cap0 $net]
     set c1_int [expr {$c1_stack - $c1_z}] 
     set c0_int [expr {$c0_stack - $c0_z}] 
     set cap_ratio 0.0
