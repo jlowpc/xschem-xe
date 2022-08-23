@@ -23,7 +23,11 @@
 #include <stdarg.h>
 #include "xschem.h"
 
-
+double mylog10(double x)
+{
+  if(x > 0) return log10(x);
+  else return -30;
+}
 
 int my_strcasecmp(const char *s1, const char *s2)
 {
@@ -294,8 +298,9 @@ char *my_itoa(int i)
 
 char *dtoa(double i)
 {
-  static char s[50];
+  static char s[70];
   size_t n;
+
   n = my_snprintf(s, S(s), "%g", i);
   if(xctx) xctx->tok_size = n;
   return s;
@@ -303,7 +308,7 @@ char *dtoa(double i)
 
 char *dtoa_prec(double i)
 {
-  static char s[50];
+  static char s[70];
   size_t n;
   n = my_snprintf(s, S(s), "%.10e", i);
   if(xctx) xctx->tok_size = n;
@@ -472,12 +477,12 @@ int my_strncpy(char *d, const char *s, size_t n)
 
 char *strtolower(char* s) {
   char *p;
-  for(p=s; *p; p++) *p=(char)tolower(*p);
+  if(s) for(p=s; *p; p++) *p=(char)tolower(*p);
   return s;
 }
 char *strtoupper(char* s) {
   char *p;
-  for(p=s; *p; p++) *p=(char)toupper(*p);
+  if(s) for(p=s; *p; p++) *p=(char)toupper(*p);
   return s;
 }
 
@@ -1256,6 +1261,41 @@ void change_elem_order(void)
     }
     xctx->need_reb_sel_arr = 1;
   }
+}
+
+char *str_replace(const char *s, const char *rep, const char *with)
+{
+  static char *result = NULL;
+  static size_t size=0;
+  size_t result_pos = 0;
+  size_t rep_len;
+  size_t with_len;
+
+  if(s==NULL || rep == NULL || with == NULL || rep[0] == '\0') {
+    my_free(1244, &result);
+    size = 0;
+    return NULL;
+  }
+  rep_len = strlen(rep);
+  with_len = strlen(with);
+  dbg(1, "str_replace(): %s, %s, %s\n", s, rep, with);
+  if( size == 0 ) {
+    size = CADCHUNKALLOC;
+    my_realloc(1245, &result, size);
+  }
+  while(*s) {
+    STR_ALLOC(&result, result_pos + with_len + 1, &size);
+    if(!strncmp(s, rep, rep_len)) {
+      my_strncpy(result + result_pos, with, with_len + 1);
+      result_pos += with_len;
+      s += rep_len;
+    } else {
+      result[result_pos++] = *s++;
+    }
+  }
+  result[result_pos] = '\0';
+  dbg(1, "str_replace(): returning %s\n", result);
+  return result;
 }
 
 /* x=0 use tcl text widget  x=1 use vim editor  x=2 only view data */

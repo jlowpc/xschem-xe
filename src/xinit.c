@@ -648,6 +648,7 @@ static void delete_schematic_data(void)
   /* delete instances, wires, lines, rects, arcs, polys, texts, hash_inst, hash_wire, 
    * inst & wire .node fields, instance name hash */
   remove_symbols();
+  str_replace(NULL, NULL, NULL);
   free_rawfile(0);
   free_xschem_data(); /* delete the xctx struct */
 }
@@ -1116,6 +1117,7 @@ static void create_new_window(int *window_count, const char *fname)
     return; /* no more free slots */
   }
   (*window_count)++;
+  tclvareval("[xschem get top_path].menubar.simulate configure -bg $simulate_bg", NULL);
   tcleval(".menubar.view.menu entryconfigure 21 -state disabled");
   n = -1;
   for(i = 1; i < MAX_NEW_WINDOWS; i++) { /* search 1st free slot */
@@ -1206,6 +1208,7 @@ static void create_new_tab(int *window_count, const char *fname)
     return; /* no more free slots */
   }
   (*window_count)++;
+  tclvareval("[xschem get top_path].menubar.simulate configure -bg $simulate_bg", NULL);
   tcleval(".menubar.view.menu entryconfigure 21 -state disabled");
   n = -1;
   for(i = 1; i < MAX_NEW_WINDOWS; i++) { /* search 1st free slot */

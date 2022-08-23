@@ -1596,7 +1596,7 @@ proc update_div {graph_selected div} {
 
 proc graph_edit_properties {n} {
   global graph_bus graph_sort graph_digital graph_selected colors graph_sel_color
-  global graph_unlocked graph_schname
+  global graph_unlocked graph_schname graph_logx graph_logy
 
   xschem push_undo
   set geom {}
@@ -1854,10 +1854,23 @@ proc graph_edit_properties {n} {
   .graphdialog.top.max insert 0 [xschem getprop rect 2 $graph_selected y2]
 
   # top3 frame
+  set graph_logx [xschem getprop rect 2 $graph_selected logx]
+  set graph_logy [xschem getprop rect 2 $graph_selected logy]
+  if { $graph_logx eq {} } { set graph_logx 0 }
+  if { $graph_logy eq {} } { set graph_logy 0 }
   checkbutton .graphdialog.top3.logx -padx 2 -text {Log X scale} -variable graph_logx \
      -command {
        if { [xschem get schname] eq $graph_schname } {
          xschem setprop rect 2 $graph_selected logx $graph_logx fast
+         if { $graph_logx eq 1} {
+           xschem setprop rect 2 $graph_selected subdivx 8 fast
+           .graphdialog.top2.subdivx delete 0 end
+           .graphdialog.top2.subdivx insert 0 8
+         } else {
+           xschem setprop rect 2 $graph_selected subdivx 4 fast
+           .graphdialog.top2.subdivx delete 0 end
+           .graphdialog.top2.subdivx insert 0 4
+         }
          xschem draw_graph $graph_selected
        }
      }
@@ -1866,6 +1879,15 @@ proc graph_edit_properties {n} {
      -command {
        if { [xschem get schname] eq $graph_schname } {
          xschem setprop rect 2 $graph_selected logy $graph_logy fast
+         if { $graph_logy eq 1} {
+           xschem setprop rect 2 $graph_selected subdivy 8 fast
+           .graphdialog.top2.subdivy delete 0 end
+           .graphdialog.top2.subdivy insert 0 8
+         } else {
+           xschem setprop rect 2 $graph_selected subdivy 4 fast
+           .graphdialog.top2.subdivy delete 0 end
+           .graphdialog.top2.subdivy insert 0 4
+         }
          xschem draw_graph $graph_selected
        }
      }
@@ -4564,7 +4586,7 @@ proc no_open_dialogs {} {
 ## "case_insensitive" case insensitive symbol lookup (on case insensitive filesystems only!)
 
 set tctx::global_list {
-  auto_hilight autotrim_wires bespice_listen_port big_grid_points bus_replacement_char
+  auto_hilight autofocus_mainwindow autotrim_wires bespice_listen_port big_grid_points bus_replacement_char
   cadgrid cadlayers cadsnap cairo_font_name
   change_lw color_ps colors connect_by_kissing constrained_move copy_cell custom_label_prefix custom_token dark_colors
   dark_colorscheme dim_bg dim_value disable_unique_names do_all_inst draw_grid draw_window
@@ -4694,7 +4716,7 @@ proc clear_simulate_button {button_path simvar} {
 }
 
 proc set_bindings {topwin} {
-global env has_x OS
+global env has_x OS autofocus_mainwindow
   ###
   ### Tk event handling
   ###
@@ -4730,8 +4752,13 @@ global env has_x OS
     bind $topwin <ButtonRelease> "xschem callback %W %T %x %y 0 %b 0 %s"
     bind $topwin <KeyPress> "xschem callback %W %T %x %y %N 0 0 %s"
     bind $topwin <KeyRelease> "xschem callback %W %T %x %y %N 0 0 %s"
-    bind $topwin <Motion> "focus $topwin; xschem callback %W %T %x %y 0 0 0 %s"
-    bind $topwin <Enter> "destroy .ctxmenu; focus $topwin; xschem callback %W %T %x %y 0 0 0 0"
+    if {$autofocus_mainwindow} {
+      bind $topwin <Motion> "focus $topwin; xschem callback %W %T %x %y 0 0 0 %s"
+      bind $topwin <Enter> "destroy .ctxmenu; focus $topwin; xschem callback %W %T %x %y 0 0 0 0"
+    } else {
+      bind $topwin <Motion> "xschem callback %W %T %x %y 0 0 0 %s"
+      bind $topwin <Enter> "destroy .ctxmenu; xschem callback %W %T %x %y 0 0 0 0"
+    }
     bind $topwin <Unmap> " wm withdraw .infotext; set show_infowindow 0 "
     bind $topwin  "?" {textwindow "${XSCHEM_SHAREDIR}/xschem.help"}
   
@@ -4775,8 +4802,10 @@ proc pack_widgets { { topwin {} } } {
     }
     toolbar_show $topwin
     pack $topwin.statusbar -after $topwin.drw -anchor sw  -fill x 
-    bind $topwin.statusbar.5 <Leave> "set cadgrid \[$topwin.statusbar.5 get\]; xschem set cadgrid \$cadgrid"
-    bind $topwin.statusbar.3 <Leave> "set cadsnap \[$topwin.statusbar.3 get\]; xschem set cadsnap \$cadsnap"
+    bind $topwin.statusbar.5 <Leave> \
+      "focus $topwin.drw; set cadgrid \[$topwin.statusbar.5 get\]; xschem set cadgrid \$cadgrid"
+    bind $topwin.statusbar.3 <Leave> \
+      "focus $topwin.drw; set cadsnap \[$topwin.statusbar.3 get\]; xschem set cadsnap \$cadsnap"
   }
 }
 
@@ -5503,6 +5532,9 @@ set env(LC_ALL) C
 set_paths
 print_help_and_exit
 
+# focus the schematic window if mouse goes over it, even if a dialog box is displayed,
+# without needing to click. This allows to move/zoom/pan the schematic while editing attributes.
+set_ne autofocus_mainwindow 1
 if {$OS == "Windows"} {
   set_ne XSCHEM_TMP_DIR [xschem get temp_dir]
 } else {

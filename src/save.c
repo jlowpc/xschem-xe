@@ -252,9 +252,9 @@ static void read_binary_block(FILE *fd)
     /* assign to xschem struct, memory aligned per variable, for cache locality */
     if(ac) {
       for(v = 0; v < xctx->graph_nvars; v += 2) { /*AC analysis: calculate magnitude */
-        if( v == 0 )  /* log scale x */
-          xctx->graph_values[v][offset + p] = (float)log10(sqrt( tmp[v] * tmp[v] + tmp[v + 1] * tmp[v + 1]));
-        else /* dB */
+        if( v == 0 )  /* sweep var */
+          xctx->graph_values[v][offset + p] = (float)sqrt( tmp[v] * tmp[v] + tmp[v + 1] * tmp[v + 1]);
+        else /* magnitude */
           /* avoid 0 for dB calculations */
           if(tmp[v] == 0.0 && tmp[v + 1] == 0.0) xctx->graph_values[v][offset + p] = 1e-35f;
           else xctx->graph_values[v][offset + p] = 
@@ -328,21 +328,25 @@ static int read_dataset(FILE *fd)
       }
       done_points = 0;
     }
-    else if(!strncmp(line, "Plotname: Transient Analysis", 28)) {
+    else if(!strncmp(line, "Plotname:", 9) && strstr(line, "Transient Analysis")) {
       if(xctx->graph_sim_type && xctx->graph_sim_type != 1) xctx->graph_sim_type = 0;
       else xctx->graph_sim_type = 1;
     }
-    else if(!strncmp(line, "Plotname: DC transfer characteristic", 36)) {
+    else if(!strncmp(line, "Plotname:", 9) && strstr(line, "DC transfer characteristic")) {
       if(xctx->graph_sim_type && xctx->graph_sim_type != 2) xctx->graph_sim_type = 0;
       else xctx->graph_sim_type = 2;
     }
-    else if(!strncmp(line, "Plotname: Operating Point", 25)) {
+    else if(!strncmp(line, "Plotname:", 9) && strstr(line, "Operating Point")) {
       if(xctx->graph_sim_type && xctx->graph_sim_type != 4) xctx->graph_sim_type = 0;
       else xctx->graph_sim_type = 4;
     }
-    else if(!strncmp(line, "Plotname: AC Analysis", 21)) {
+    else if(!strncmp(line, "Plotname:", 9) && strstr(line, "AC Analysis")) {
       if(xctx->graph_sim_type && xctx->graph_sim_type != 3) xctx->graph_sim_type = 0;
       else xctx->graph_sim_type = 3;
+    }
+    else if(!strncmp(line, "Plotname:", 9) && strstr(line, "constants")) {
+      if(xctx->graph_sim_type && xctx->graph_sim_type != 2) xctx->graph_sim_type = 0;
+      else xctx->graph_sim_type = 2;
     }
     else if(!strncmp(line, "Plotname:", 9)) {
       xctx->graph_sim_type = 0;
@@ -831,8 +835,9 @@ double get_raw_value(int dataset, int idx, int point)
       for(i = 0; i < dataset; i++) {
         ofs += xctx->graph_npoints[i];
       }
-      if(ofs + point < xctx->graph_allpoints) 
+      if(ofs + point < xctx->graph_allpoints) {
         return xctx->graph_values[idx][ofs + point];
+      }
     }
   }
   return 0.0;
@@ -1965,6 +1970,8 @@ void load_schematic(int load_symbols, const char *filename, int reset_undo) /* 2
   if(xctx->hilight_nets && load_symbols) {
     propagate_hilights(1, 1, XINSERT_NOREPLACE);
   }
+  /* warning if two symbols perfectly overlapped */
+  warning_overlapped_symbols();
 }
 
 void clear_undo(void)

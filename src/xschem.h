@@ -710,6 +710,7 @@ typedef struct {
   double txtsizelab, digtxtsizelab, txtsizey, txtsizex;
   int dataset;
   int hilight_wave[2]; /* [0] : graph index, [1] : wave index */
+  int logx, logy;
 } Graph_ctx;
 
 typedef struct {
@@ -1213,7 +1214,7 @@ extern char *read_line(FILE *fp, int dbg_level);
 extern void read_record(int firstchar, FILE *fp, int dbg_level);
 extern void create_sch_from_sym(void);
 extern void get_sch_from_sym(char *filename, xSymbol *sym);
-extern void descend_schematic(int instnumber);
+extern int descend_schematic(int instnumber);
 extern void go_back(int confirm);
 extern void view_unzoom(double z);
 extern void view_zoom(double z);
@@ -1290,6 +1291,7 @@ extern size_t my_strdup2(int id, char **dest, const char *src);
 extern char *my_strtok_r(char *str, const char *delim, const char *quote, char **saveptr);
 extern int my_strncpy(char *d, const char *s, size_t n);
 extern int my_strcasecmp(const char *s1, const char *s2);
+extern double mylog10(double x);
 extern int my_strncasecmp(const char *s1, const char *s2, size_t n);
 extern char* strtolower(char* s);
 extern char* strtoupper(char* s);
@@ -1363,6 +1365,7 @@ extern void display_hilights(char **str);
 extern void redraw_hilights(int clear);
 extern void set_tcl_netlist_type(void);
 extern void prepare_netlist_structs(int for_netlist);
+extern int warning_overlapped_symbols();
 extern void free_simdata(void);
 extern void delete_netlist_structs(void);
 extern void delete_inst_node(int i);
@@ -1372,6 +1375,7 @@ extern void hilight_parent_pins(void);
 extern void hilight_net_pin_mismatches(void);
 extern Node_hashentry **get_node_table_ptr(void);
 extern void change_elem_order(void);
+extern char *str_replace(const char *s, const char *rep, const char *with);
 extern int set_different_token(char **s,const char *new, const char *old, int object, int n);
 extern void print_hilight_net(int show);
 extern void list_hilights(void);

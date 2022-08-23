@@ -321,6 +321,8 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
            "color=\"\"\n"
            "dataset=0\n"
            "unitx=u\n"
+           "logx=0\n"
+           "logy=0\n"
          );
        xctx->need_reb_sel_arr=1;
        rebuild_selected_array();
@@ -616,14 +618,15 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
    
     else if(!strcmp(argv[1],"descend"))
     {
+      int ret=0;
       cmd_found = 1;
       if(argc >=3) {
         int n = atoi(argv[2]);
-        descend_schematic(n);
+        ret = descend_schematic(n);
       } else {
-        descend_schematic(0);
+        ret = descend_schematic(0);
       }
-      Tcl_ResetResult(interp);
+      Tcl_SetResult(interp, dtoa(ret), TCL_VOLATILE);
     }
    
     else if(!strcmp(argv[1],"descend_symbol"))
@@ -1083,8 +1086,8 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
       /* xschem getprop symbol lm358.sym [type] */
       } else if( !strcmp(argv[2],"symbol")) {
         int i, found=0;
-        if(argc!=5 && argc !=4) {
-          Tcl_SetResult(interp, "xschem getprop needs 2 or 3 additional arguments", TCL_STATIC);
+        if(argc!=5 && argc !=4 && argc !=6) {
+          Tcl_SetResult(interp, "xschem getprop symbol needs 1 or 2 or 3 additional arguments", TCL_STATIC);
           return TCL_ERROR;
         }
         for(i=0; i<xctx->symbols; i++) {
@@ -1099,8 +1102,11 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
         }
         if(argc == 4)
           Tcl_SetResult(interp, xctx->sym[i].prop_ptr, TCL_VOLATILE);
-        else
+        else if(argc == 5) 
           Tcl_SetResult(interp, (char *)get_tok_value(xctx->sym[i].prop_ptr, argv[4], 0), TCL_VOLATILE);
+        else if(argc > 5) 
+          Tcl_SetResult(interp, (char *)get_tok_value(xctx->sym[i].prop_ptr, argv[4], atoi(argv[5])), TCL_VOLATILE);
+ 
       } else if (!strcmp(argv[2],"rect")) {
         if(argc <=5) {
           Tcl_SetResult(interp, "xschem getprop rect needs <color> <n> <token>", TCL_STATIC);
@@ -1710,6 +1716,7 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
     if(!strcmp(argv[1],"net_label"))
     {
       cmd_found = 1;
+      unselect_all();
       if(argc>=3) place_net_label(atoi(argv[2]));
     }
    
@@ -1836,6 +1843,12 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
       int ret;
       cmd_found = 1;
       xctx->semaphore++;
+      rebuild_selected_array();
+      if(xctx->lastsel && xctx->sel_array[0].type==ELEMENT) {
+        tclvareval("set INITIALINSTDIR [file dirname {",
+             abs_sym_path(xctx->inst[xctx->sel_array[0].n].name, ""), "}]", NULL);
+      }
+      unselect_all();
       xctx->mx_double_save = xctx->mousex_snap;
       xctx->my_double_save = xctx->mousey_snap;
       if(argc == 4) {
@@ -1844,15 +1857,8 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
         ret = place_symbol(-1,argv[2],xctx->mousex_snap, xctx->mousey_snap, 0, 0, NULL, 4, 1, 1/*to_push_undo*/);
       } else {
         xctx->last_command = 0;
-        rebuild_selected_array();
-        if(xctx->lastsel && xctx->sel_array[0].type==ELEMENT) {
-          char f[PATH_MAX];
-          my_strncpy(f, abs_sym_path(xctx->inst[xctx->sel_array[0].n].name, ""), S(f));
-          tclvareval("set INITIALINSTDIR [file dirname {", f, "}]", NULL);
-        } 
         ret = place_symbol(-1,NULL,xctx->mousex_snap, xctx->mousey_snap, 0, 0, NULL, 4, 1, 1/*to_push_undo*/);
       }
-   
       if(ret) {
         xctx->mousey_snap = xctx->my_double_save;
         xctx->mousex_snap = xctx->mx_double_save;
@@ -1869,6 +1875,7 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
 
       xctx->semaphore++;
       xctx->last_command = 0;
+      unselect_all();
       xctx->mx_double_save = xctx->mousex_snap;
       xctx->my_double_save = xctx->mousey_snap;
       if(place_text(0, xctx->mousex_snap, xctx->mousey_snap)) { /* 1 = draw text 24122002 */

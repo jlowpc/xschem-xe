@@ -12,6 +12,7 @@
 #include "find_cairo.h"
 #include "find_misc.h"
 #include "find_gl.h"
+#include "find_sdl2.h"
 
 void deps_gui_init()
 {
@@ -22,6 +23,7 @@ void deps_gui_init()
 	dep_add("libs/gui/xcb_render/*",        find_xcb_render);
 	dep_add("libs/gui/xgetxcbconnection/*", find_xgetxcbconnection);
 	dep_add("libs/gui/xpm/*",               find_xpm);
+	dep_add("libs/gui/keysymtoucs4/*",      find_keysymtoucs4);
 	dep_add("libs/gui/gtk2/*",              find_gtk2);
 	dep_add("libs/gui/gtk2gl/*",            find_gtk2gl);
 	dep_add("libs/gui/gtk2/key_prefix",     find_gtk2_key_prefix);
@@ -46,4 +48,8 @@ void deps_gui_init()
 	dep_add("libs/gui/glu/*",               find_glu);
 	dep_add("libs/gui/glut/*",              find_glut);
 	dep_add("libs/gui/wgl/*",               find_gui_wgl);
+	dep_add("libs/gui/glfw/*",              find_glfw);
+	dep_add("libs/gui/sdl2/*",              find_sdl2);
+	dep_add("libs/gui/sdl2_gfx/*",          find_sdl2_gfx);
+	dep_add("libs/gui/sdl2_ttf/*",          find_sdl2_ttf);
 }

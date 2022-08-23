@@ -206,7 +206,7 @@ void global_spice_netlist(int global)  /* netlister driver */
  str_hash_free(model_table);
  record_global_node(2, NULL, NULL); /* delete list of global nodes */
  top_sub = 0;
- tclsetvar("spiceprefix", "1");
+ /* tclsetvar("spiceprefix", "1"); */
  bus_char[0] = bus_char[1] = '\0';
  xctx->hiersep[0]='.'; xctx->hiersep[1]='\0';
  str_tmp = tclgetvar("bus_replacement_char");
@@ -273,9 +273,11 @@ void global_spice_netlist(int global)  /* netlister driver */
   }
   my_strdup(380, &type,(xctx->inst[i].ptr+ xctx->sym)->type);
   dbg(1, "global_spice_netlist(): |%s|\n", type);
+  /* 
   if( type && !strcmp(type,"netlist_options") ) {
     continue;
   }
+  */
   if( type && IS_PIN(type)) {
    str_tmp = expandlabel ( (xctx->inst[i].lab ? xctx->inst[i].lab : ""), &multip);
    /*must handle  invalid node names */
@@ -337,6 +339,8 @@ void global_spice_netlist(int global)  /* netlister driver */
    if(debug_var==0) xunlink(netl_filename);
  }
 
+ /* warning if two symbols perfectly overlapped */
+ warning_overlapped_symbols();
  /* preserve current level instance flags before descending hierarchy for netlisting, restore later */
  stored_flags = my_calloc(146, xctx->instances, sizeof(unsigned int));
  for(i=0;i<xctx->instances;i++) stored_flags[i] = xctx->inst[i].color;
@@ -497,7 +501,7 @@ void spice_block_netlist(FILE *fd, int i)
         xctx->sym[i].name,xctx->sym[i].rects[PINLAYER] );
   fprintf(fd, "** sym_path: %s\n", abs_sym_path(xctx->sym[i].name, ""));
   fprintf(fd, "** sch_path: %s\n", filename);
-  fprintf(fd, ".subckt %s ",skip_dir(xctx->sym[i].name));
+  fprintf(fd, ".subckt %s",skip_dir(xctx->sym[i].name));
   print_spice_subckt(fd, i);
 
   my_strdup(387, &extra, get_tok_value(xctx->sym[i].prop_ptr,"extra",0) );
