@@ -1,4 +1,4 @@
-v {xschem version=3.0.0 file_version=1.2 }
+v {xschem version=3.1.0 file_version=1.2 }
 G {}
 K {}
 V {}
@@ -591,6 +591,7 @@ vd34 d34 0 dc 1.8
 save all
 tran 30p 400n
 plot clk z out
+set filetype=binary
 write charge_sharing.raw
 .endc
 **** batch mode sim

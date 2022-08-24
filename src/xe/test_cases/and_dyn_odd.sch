@@ -1,8 +1,9 @@
 v {xschem version=3.1.0 file_version=1.2 }
 G {}
 K {type=subcircuit
-format="@name @pinlist @symname vcc=@vcc vss=@vss"
-template="name=x1 vcc=vcc vss=vss"}
+format="@name @pinlist @@vcc @@vss @symname"
+template="name=x1 vcc=vcc vss=vss"
+extra="vcc vss"}
 V {}
 S {}
 E {}
@@ -35,8 +36,8 @@ C {devices/opin.sym} 650 -140 0 0 {name=p3 lab=q}
 C {devices/ipin.sym} 150 -90 0 0 {name=p4 lab=clkB}
 C {devices/lab_wire.sym} 320 -140 0 0 {name=l2 sig_type=std_logic lab=A}
 C {devices/lab_wire.sym} 540 -140 0 0 {name=l3 sig_type=std_logic lab=B}
-C {yxt/dyn.sym} 590 -70 0 0 {name=x4 vcc=vss vss=vss}
+C {yxt/dyn.sym} 590 -70 0 0 {name=x4 vcc=vcc vss=vss}
 C {sky130_stdcells/buf_1.sym} 370 -140 0 0 {name=x1 VGND=vss VNB=vss VPB=vcc VPWR=vcc prefix=sky130_fd_sc_hd__ }
-C {sky130_stdcells/and2_0.sym} 230 -140 0 0 {name=x3 VGND=VGND VNB=VNB VPB=VPB VPWR=VPWR prefix=sky130_fd_sc_hd__ }
-C {sky130_stdcells/inv_1.sym} 480 -140 0 0 {name=x2 VGND=VGND VNB=VNB VPB=VPB VPWR=VPWR prefix=sky130_fd_sc_hd__ }
+C {sky130_stdcells/and2_0.sym} 230 -140 0 0 {name=x3 VGND=vss VNB=vss VPB=vcc VPWR=vcc prefix=sky130_fd_sc_hd__ }
+C {sky130_stdcells/inv_1.sym} 480 -140 0 0 {name=x2 VGND=vss VNB=vss VPB=vcc VPWR=vcc prefix=sky130_fd_sc_hd__ }
 C {devices/lab_wire.sym} 430 -140 0 0 {name=l4 sig_type=std_logic lab=n1}
