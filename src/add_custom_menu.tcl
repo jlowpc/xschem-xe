@@ -14,4 +14,16 @@ menu .menubar.test.menu -tearoff 0
 
 ## make the menu appear in xschem window
 pack .menubar.test -side left
+## or place it before some other menu entry:
+# pack .menubar.test -before .menubar.file -side left
+
+## To remove the menu without destroying it:
+# pack forget .menubar.test
+
+
+################################################################
+## adding a button in the menubar (not in the toolbar) 
+################################################################
+# button .menubar.test -pady 0 -highlightthickness 0 -text Test -command {puts Test}
+# pack  .menubar.test -side left
 

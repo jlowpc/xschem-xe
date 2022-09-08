@@ -709,7 +709,7 @@ typedef struct {
   int unity_suffix;
   double txtsizelab, digtxtsizelab, txtsizey, txtsizex;
   int dataset;
-  int hilight_wave[2]; /* [0] : graph index, [1] : wave index */
+  int hilight_wave; /* wave index */
   int logx, logy;
 } Graph_ctx;
 
@@ -750,8 +750,8 @@ typedef struct {
   char current_name[PATH_MAX];
   char file_version[100];
   char *sch_path[CADMAXHIER];
-  int sch_path_hash[CADMAXHIER];
-  int sch_inst_number[CADMAXHIER];
+  int sch_path_hash[CADMAXHIER]; /* cached hash of hierarchic schematic path for speed */
+  int sch_inst_number[CADMAXHIER]; /* inst number descended into in case of vector instances X1[5:0] */
   int previous_instance[CADMAXHIER]; /* to remember the instance we came from when going up the hier. */
   Zoom zoom_array[CADMAXHIER];
   double xorigin,yorigin;
@@ -848,6 +848,9 @@ typedef struct {
   int nl_points, nl_maxpoints;
   /* select_rect */
   double nl_xr, nl_yr, nl_xr2, nl_yr2;
+  int nl_sel, nl_sem;
+  /* compare_schematics */
+  char sch_to_compare[PATH_MAX];
   /* pan */
   double xpan,ypan,xpan2,ypan2;
   double p_xx1,p_xx2,p_yy1,p_yy2;
@@ -876,13 +879,14 @@ typedef struct {
   int undo_initialized;
   /* graph context struct */
   Graph_ctx graph_struct;
-  /* read raw files (draw.c) */
+  /* spice raw file specific data */
   char **graph_names;
   SPICE_DATA **graph_values;
   int graph_nvars;
   int *graph_npoints;
   int graph_allpoints; /* all points of all datasets combined */
   int graph_datasets;
+  /* data related to all graphs, so not stored in per-graph graph_struct */
   double graph_cursor1_x;
   double graph_cursor2_x;
   int graph_unlock_x; 
@@ -902,10 +906,11 @@ typedef struct {
   int graph_left;
   int graph_lastsel; /* last graph that was clicked (selected) */
   int graph_sim_type; /* type of sim, 1: Tran, 2: Dc, 3: Ac */
-  Int_hashentry **raw_table;
-  char *raw_schname;
-  /*     */
-  int nl_sel, nl_sem;
+  Int_hashentry **graph_raw_table;
+  /* when descending hierarchy xctx->current_name changes, xctx->graph_raw_schname
+   * holds the name of the top schematic from which the raw file was loaded */
+  char *graph_raw_schname;
+  /*    */
   XSegment *biggridpoint;
   XPoint *gridpoint;
   char plotfile[PATH_MAX];
@@ -916,13 +921,14 @@ typedef struct {
   int draw_single_layer;
   int draw_dots;
   int only_probes;
-  int menu_removed; /* fullscreen pervious setting */
+  int menu_removed; /* fullscreen previous setting */
   double save_lw; /* used to save linewidth when selecting 'only_probes' view */
   int no_draw;
   int draw_pixmap; /* pixmap used as 2nd buffer */
   int netlist_count; /* netlist counter incremented at any cell being netlisted */
   int hide_symbols;
   int netlist_type;
+  char *format; /* "format", "verilog_format", "vhdl_format" or "tedax_format" */
   char *top_path;
   /* top_path is the path prefix of drawing canvas (current_win_path):
    *
@@ -930,9 +936,9 @@ typedef struct {
    *    canvas           top_path
    *  ----------------------------
    *    ".drw"            ""
-   *    ".xx.drw"         ".xx"
+   *    ".x1.drw"         ".x1"
    */
-  char *current_win_path;
+  char *current_win_path; /* .drw or .x1.drw, .... ; always .drw in tabbed interface */
   int *fill_type; /* for every layer: 0: no fill, 1, solid fill, 2: stipple fill */
   int fill_pattern;
   int draw_window; 
@@ -1035,6 +1041,7 @@ extern int calc_custom_data_yrange(int sweep_idx, const char *express, Graph_ctx
 extern int schematic_waves_loaded(void);
 extern int edit_wave_attributes(int what, int i, Graph_ctx *gr);
 extern void draw_graph(int i, int flags, Graph_ctx *gr);
+extern int find_closest_wave(int i, Graph_ctx *gr);
 extern void setup_graph_data(int i, const int flags, int skip, Graph_ctx *gr);
 extern double timer(int start);
 extern void enable_layers(void);
@@ -1112,7 +1119,7 @@ extern int text_bbox_nocairo(const char * str,double xscale, double yscale,
 
 extern unsigned short select_object(double mx,double my, unsigned short sel_mode,
                                     int override_lock); /*  return type 20160503 */
-extern void unselect_all(void);
+extern void unselect_all(int dr);
 extern void select_inside(double x1,double y1, double x2, double y2, int sel);
 extern int Tcl_AppInit(Tcl_Interp *interp);
 extern int callback(const char *winpath, int event, int mx, int my, KeySym key,
@@ -1365,6 +1372,7 @@ extern void display_hilights(char **str);
 extern void redraw_hilights(int clear);
 extern void set_tcl_netlist_type(void);
 extern void prepare_netlist_structs(int for_netlist);
+extern int compare_schematics(const char *filename);
 extern int warning_overlapped_symbols();
 extern void free_simdata(void);
 extern void delete_netlist_structs(void);

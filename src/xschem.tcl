@@ -1162,7 +1162,7 @@ proc simulate {{callback {}}} {
       set N ${n}.${tool}
     }
     if { ![info exists  sim($tool,default)] } {
-      if { $has_x} {alert_ "Warning: simulator for $tool is not configured"}
+      if { [info exists has_x] } {alert_ "Warning: simulator for $tool is not configured"}
       puts "Warning: simulator for $tool is not configured"
       return
     }
@@ -1291,7 +1291,7 @@ proc waves {} {
     }
     set tool ${tool}wave
     if { ![info exists  sim($tool,default)] } {
-      if { $has_x} {alert_ "Warning: viewer for $tool is not configured"}
+      if { [info exists has_x] } {alert_ "Warning: viewer for $tool is not configured"}
       puts "Warning: viewer for $tool is not configured"
       return
     }
@@ -2140,8 +2140,8 @@ proc load_file_dialog_mkdir {dir} {
 }
 proc load_file_dialog_up {dir} {
   global myload_dir1
-  bind .dialog.l.paneright.drw <Expose> {}
-  .dialog.l.paneright.drw configure -background white
+  bind .dialog.l.paneright.draw <Expose> {}
+  .dialog.l.paneright.draw configure -background white
   set d [file dirname $dir]
   if { [file isdirectory $d]} {
     myload_set_home $d
@@ -2186,8 +2186,8 @@ proc load_file_dialog {{msg {}} {ext {}} {global_initdir {INITIALINSTDIR}}
   pack  .dialog.l.paneleft.xscroll -side bottom -fill x
   pack  .dialog.l.paneleft.list -fill both -expand true
   bind .dialog.l.paneleft.list <<ListboxSelect>> { 
-    # bind .dialog.l.paneright.drw <Expose> {}
-    # .dialog.l.paneright.drw configure -background white
+    # bind .dialog.l.paneright.draw <Expose> {}
+    # .dialog.l.paneright.draw configure -background white
     set myload_sel [.dialog.l.paneleft.list curselection]
     if { $myload_sel ne {} } {
       set myload_dir1 [abs_sym_path [.dialog.l.paneleft.list get $myload_sel]]
@@ -2199,13 +2199,13 @@ proc load_file_dialog {{msg {}} {ext {}} {global_initdir {INITIALINSTDIR}}
     }
   }
   frame .dialog.l.paneright
-  frame .dialog.l.paneright.drw -background white -width 200 -height 200
+  frame .dialog.l.paneright.draw -background white -width 200 -height 200
   listbox .dialog.l.paneright.list  -listvariable myload_files2 -width 20 -height 12\
     -yscrollcommand ".dialog.l.paneright.yscroll set" -selectmode browse \
     -xscrollcommand ".dialog.l.paneright.xscroll set" -exportselection 0
   scrollbar .dialog.l.paneright.yscroll -command ".dialog.l.paneright.list yview"
   scrollbar .dialog.l.paneright.xscroll -command ".dialog.l.paneright.list xview" -orient horiz
-  pack .dialog.l.paneright.drw -side bottom -anchor s -fill x 
+  pack .dialog.l.paneright.draw -side bottom -anchor s -fill x 
   pack  .dialog.l.paneright.yscroll -side right -fill y
   pack  .dialog.l.paneright.xscroll -side bottom -fill x
   pack  .dialog.l.paneright.list -side bottom  -fill both -expand true
@@ -2225,8 +2225,8 @@ proc load_file_dialog {{msg {}} {ext {}} {global_initdir {INITIALINSTDIR}}
     destroy .dialog
   }
   button .dialog.buttons.home -width 5 -text {Home} -command {
-    bind .dialog.l.paneright.drw <Expose> {}
-    .dialog.l.paneright.drw configure -background white
+    bind .dialog.l.paneright.draw <Expose> {}
+    .dialog.l.paneright.draw configure -background white
     set myload_files1 $pathlist
     update
     myload_set_colors1
@@ -2295,7 +2295,7 @@ proc load_file_dialog {{msg {}} {ext {}} {global_initdir {INITIALINSTDIR}}
   bind .dialog.l.paneright.list <Double-Button-1> {
     set myload_retval [.dialog.buttons_bot.entry get]
     if {$myload_retval ne {}  && ![file isdirectory "$myload_dir1/[.dialog.l.paneright.list get $myload_sel]"]} {
-      bind .dialog.l.paneright.drw <Expose> {}
+      bind .dialog.l.paneright.draw <Expose> {}
       destroy .dialog
     }
   }
@@ -2322,7 +2322,7 @@ proc load_file_dialog {{msg {}} {ext {}} {global_initdir {INITIALINSTDIR}}
     set myload_yview [.dialog.l.paneright.list yview]
   }
 
-  xschem preview_window create .dialog.l.paneright.drw {}
+  xschem preview_window create .dialog.l.paneright.draw {}
   set myload_dir1 [abs_sym_path [.dialog.l.paneleft.list get $myload_index1]]
   setglob $myload_dir1
   myload_set_colors2
@@ -2356,8 +2356,8 @@ proc load_file_dialog {{msg {}} {ext {}} {global_initdir {INITIALINSTDIR}}
         }
       }
       if { [file isdirectory $myload_d]} {
-        bind .dialog.l.paneright.drw <Expose> {}
-        .dialog.l.paneright.drw configure -background white
+        bind .dialog.l.paneright.draw <Expose> {}
+        .dialog.l.paneright.draw configure -background white
         myload_set_home $myload_d
         setglob $myload_d
         myload_set_colors2
@@ -2371,17 +2371,17 @@ proc load_file_dialog {{msg {}} {ext {}} {global_initdir {INITIALINSTDIR}}
          if { $myload_type ne {0}  } {
 	   ### update
            if { [winfo exists .dialog] } {
-             .dialog.l.paneright.drw configure -background {}
-             xschem preview_window draw .dialog.l.paneright.drw "$myload_dir1/$myload_dir2"
-             bind .dialog.l.paneright.drw <Expose> {
-               xschem preview_window draw .dialog.l.paneright.drw "$myload_dir1/$myload_dir2"
+             .dialog.l.paneright.draw configure -background {}
+             xschem preview_window draw .dialog.l.paneright.draw "$myload_dir1/$myload_dir2"
+             bind .dialog.l.paneright.draw <Expose> {
+               xschem preview_window draw .dialog.l.paneright.draw "$myload_dir1/$myload_dir2"
              }
            }
          } else {
-           bind .dialog.l.paneright.drw <Expose> {}
-           .dialog.l.paneright.drw configure -background white
+           bind .dialog.l.paneright.draw <Expose> {}
+           .dialog.l.paneright.draw configure -background white
          }
-         # puts "xschem preview_window draw .dialog.l.paneright.drw \"$myload_dir1/$myload_dir2\""
+         # puts "xschem preview_window draw .dialog.l.paneright.draw \"$myload_dir1/$myload_dir2\""
       }
     }
   }
@@ -4090,12 +4090,15 @@ proc get_file_path {ff} {
 #
 # Balloon help system, from https://wiki.tcl-lang.org/page/balloon+help
 #
-proc balloon {w help} {
-    bind $w <Any-Enter> "after 1000 [list balloon_show %W [list $help]]"
+proc balloon {w help {pos 1}} {
+    bind $w <Any-Enter> "after 1000 [list balloon_show %W [list $help] $pos]"
     bind $w <Any-Leave> "destroy %W.balloon"
 }
 
-proc balloon_show {w arg} {
+### pos: 
+## 0: set balloon close to mouse
+## 1: set balloon below related widget
+proc balloon_show {w arg pos} {
     if {[eval winfo containing  [winfo pointerxy .]]!=$w} {return}
     set top $w.balloon
     catch {destroy $top}
@@ -4106,8 +4109,13 @@ proc balloon_show {w arg} {
     }   
     pack [message $top.txt -aspect 10000 -bg lightyellow \
         -font fixed -text $arg]
-    set wmx [winfo rootx $w]
-    set wmy [expr {[winfo rooty $w]+[winfo height $w]}]
+    if { $pos } {
+      set wmx [winfo rootx $w]
+      set wmy [expr {[winfo rooty $w]+[winfo height $w]}]
+    } else {
+      set wmx [expr [winfo pointerx $w] + 20]
+      set wmy [winfo pointery $w]
+    }
     wm geometry $top [winfo reqwidth $top.txt]x[winfo reqheight $top.txt]+$wmx+$wmy
     raise $top
 }
@@ -4128,72 +4136,72 @@ proc context_menu { } {
   set y [expr {[winfo pointery .ctxmenu] - 10}]
   if { !$selection} {
     button .ctxmenu.b9 -text {Open most recent} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-      -image CtxmenuRecent -compound left \
+       -highlightthickness 0 -image CtxmenuRecent -compound left \
       -font [subst $font] -command {set retval 9; destroy .ctxmenu} 
   }
   button .ctxmenu.b10 -text {Edit attributes} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-    -image CtxmenuEdit -compound left \
+     -highlightthickness 0 -image CtxmenuEdit -compound left \
     -font [subst $font] -command {set retval 10; destroy .ctxmenu}
   button .ctxmenu.b11 -text {Edit attr in editor} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-    -image CtxmenuEdit -compound left \
+     -highlightthickness 0 -image CtxmenuEdit -compound left \
     -font [subst $font] -command {set retval 11; destroy .ctxmenu}
   if {$selection} {
     button .ctxmenu.b12 -text {Descend schematic} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-      -image CtxmenuDown -compound left \
+       -highlightthickness 0 -image CtxmenuDown -compound left \
       -font [subst $font] -command {set retval 12; destroy .ctxmenu}
     button .ctxmenu.b13 -text {Descend symbol} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-      -image CtxmenuDownSym -compound left \
+       -highlightthickness 0 -image CtxmenuDownSym -compound left \
       -font [subst $font] -command {set retval 13; destroy .ctxmenu}
     button .ctxmenu.b18 -text {Delete selection} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-      -image CtxmenuDelete -compound left \
+       -highlightthickness 0 -image CtxmenuDelete -compound left \
       -font [subst $font] -command {set retval 18; destroy .ctxmenu}
     button .ctxmenu.b7 -text {Cut selection} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-      -image CtxmenuCut -compound left \
+       -highlightthickness 0 -image CtxmenuCut -compound left \
       -font [subst $font] -command {set retval 7; destroy .ctxmenu}
     button .ctxmenu.b15 -text {Copy selection} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-      -image CtxmenuCopy -compound left \
+       -highlightthickness 0 -image CtxmenuCopy -compound left \
       -font [subst $font] -command {set retval 15; destroy .ctxmenu}
     button .ctxmenu.b16 -text {Move selection} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-      -image CtxmenuMove -compound left \
+       -highlightthickness 0 -image CtxmenuMove -compound left \
       -font [subst $font] -command {set retval 16; destroy .ctxmenu}
     button .ctxmenu.b17 -text {Duplicate selection} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-      -image CtxmenuDuplicate -compound left \
+       -highlightthickness 0 -image CtxmenuDuplicate -compound left \
       -font [subst $font] -command {set retval 17; destroy .ctxmenu}
   }
   if {!$selection} {
     button .ctxmenu.b14 -text {Go to upper level} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-      -image CtxmenuUp -compound left \
+       -highlightthickness 0 -image CtxmenuUp -compound left \
       -font [subst $font] -command {set retval 14; destroy .ctxmenu}
     button .ctxmenu.b1 -text {Insert symbol} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-      -image CtxmenuSymbol -compound left \
+       -highlightthickness 0 -image CtxmenuSymbol -compound left \
       -font [subst $font] -command {set retval 1; destroy .ctxmenu}
     button .ctxmenu.b2 -text {Insert wire} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-      -image CtxmenuWire -compound left \
+       -highlightthickness 0 -image CtxmenuWire -compound left \
       -font [subst $font] -command {set retval 2; destroy .ctxmenu}
     button .ctxmenu.b3 -text {Insert line} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-      -image CtxmenuLine -compound left \
+       -highlightthickness 0 -image CtxmenuLine -compound left \
       -font [subst $font] -command {set retval 3; destroy .ctxmenu}
     button .ctxmenu.b4 -text {Insert box} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-      -image CtxmenuBox -compound left \
+       -highlightthickness 0 -image CtxmenuBox -compound left \
       -font [subst $font] -command {set retval 4; destroy .ctxmenu}
     button .ctxmenu.b5 -text {Insert polygon} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-      -image CtxmenuPoly -compound left \
+       -highlightthickness 0 -image CtxmenuPoly -compound left \
       -font [subst $font] -command {set retval 5; destroy .ctxmenu}
     button .ctxmenu.b19 -text {Insert arc} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-      -image CtxmenuArc -compound left \
+       -highlightthickness 0 -image CtxmenuArc -compound left \
       -font [subst $font] -command {set retval 19; destroy .ctxmenu}
     button .ctxmenu.b20 -text {Insert circle} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-      -image CtxmenuCircle -compound left \
+       -highlightthickness 0 -image CtxmenuCircle -compound left \
       -font [subst $font] -command {set retval 20; destroy .ctxmenu}
     button .ctxmenu.b6 -text {Insert text} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-      -image CtxmenuText -compound left \
+       -highlightthickness 0 -image CtxmenuText -compound left \
       -font [subst $font] -command {set retval 6; destroy .ctxmenu}
     button .ctxmenu.b8 -text {Paste selection} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-      -image CtxmenuPaste -compound left \
+       -highlightthickness 0 -image CtxmenuPaste -compound left \
       -font [subst $font] -command {set retval 8; destroy .ctxmenu}
   }
   button .ctxmenu.b21 -text {Abort command} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-    -image CtxmenuAbort -compound left \
+     -highlightthickness 0 -image CtxmenuAbort -compound left \
     -font [subst $font] -command {set retval 21; destroy .ctxmenu}
 
   pack .ctxmenu.b21 -fill x -expand true
@@ -4291,18 +4299,14 @@ proc setup_toolbar {} {
 }
 
 #
-# Toolbar constructor
-#
-proc toolbar_toolbar { {topwin {} } } {
-    frame $topwin.toolbar -relief raised -bd 0 -bg white
-}
-
-#
 # Create a tool button which may be displayed
 #
-proc toolbar_create {name cmd { help "" } {topwin {} } } {
-    button $topwin.toolbar.b$name -image img$name -relief flat -bd 1 -bg white -fg white \
-    -padx 0 -pady 0 -command $cmd
+proc toolbar_add {name cmd { help "" } {topwin {} } } {
+    if {![winfo exists  $topwin.toolbar]} {
+       frame $topwin.toolbar -relief raised -bd 0 -bg white
+    }
+    button $topwin.toolbar.b$name -image img$name -relief flat -bd 0 -bg white -fg white -height 24 \
+    -padx 0 -pady 0  -highlightthickness 0 -command $cmd
     if { $help == "" } { balloon $topwin.toolbar.b$name $name } else { balloon $topwin.toolbar.b$name $help }
 }
 
@@ -4312,7 +4316,13 @@ proc toolbar_create {name cmd { help "" } {topwin {} } } {
 #
 proc toolbar_show { { topwin {} } } {
     global toolbar_horiz toolbar_list toolbar_visible tabbed_interface
-    if { ! $toolbar_visible } { return }
+
+    # puts "toolbar_show: $topwin"
+    set toolbar_visible 1
+    if {![winfo exists  $topwin.toolbar]} {
+       frame $topwin.toolbar -relief raised -bd 0 -bg white
+    }
+    if {[winfo ismapped $topwin.toolbar]} {return}
     if { $toolbar_horiz } { 
         if {$tabbed_interface} {
           pack $topwin.toolbar -fill x -before $topwin.tabs 
@@ -4320,7 +4330,7 @@ proc toolbar_show { { topwin {} } } {
           pack $topwin.toolbar -fill x -before $topwin.drw
         }
     } else {
-        pack $topwin.toolbar -side left -anchor w -fill y -before $topwin.drw
+        pack $topwin.toolbar -side left -fill y -before $topwin.drw
     }
     set pos "top"
     if { $toolbar_horiz } { set pos "left" }
@@ -4349,7 +4359,6 @@ proc toolbar_show { { topwin {} } } {
     foreach b { Waves Simulate Netlist } {
         pack $topwin.toolbar.b$b -side $pos
     }
-    set $toolbar_visible 1
 }
 
 #
@@ -4357,6 +4366,9 @@ proc toolbar_show { { topwin {} } } {
 #
 proc toolbar_hide { { topwin {} } } {
     global toolbar_visible
+    set toolbar_visible 0
+    if {![winfo exists $topwin.toolbar]} {return}
+    if {![winfo ismapped $topwin.toolbar]} {return}
     set tlist [ winfo children $topwin.toolbar ]
     foreach b $tlist {
         pack forget $b
@@ -4365,11 +4377,24 @@ proc toolbar_hide { { topwin {} } } {
         }
     }
     pack forget $topwin.toolbar
-    set $toolbar_visible 0
+    set toolbar_visible 0
+}
+
+proc pack_tabs {} {
+  global toolbar_horiz
+  if {[winfo exists .toolbar] && [winfo ismapped .toolbar] } {
+    if { $toolbar_horiz == 1 } {
+      pack .tabs  -fill x -side top -after .toolbar
+    } else {
+      pack .tabs  -fill x -side top -before .toolbar
+    }
+  } else {
+    pack .tabs  -fill x -side top -before .drw
+  }
 }
 
 proc setup_tabbed_interface {} {
-  global tabbed_interface
+  global tabbed_interface toolbar_horiz
 
   if { $tabbed_interface } {
     if { ![winfo exists .tabs] } {
@@ -4379,18 +4404,18 @@ proc setup_tabbed_interface {} {
       bind .tabs.x0 <ButtonRelease> {swap_tabs %X %Y release}
       button .tabs.add -padx 0 -pady 0  -text { + } -command "xschem new_schematic create"
       pack .tabs.x0 .tabs.add -side left
-      pack .tabs  -fill x -side top -expand false -side top -before .drw
+      pack_tabs
     }
   } else {
     destroy .tabs
   }
   if {$tabbed_interface} {
-    .menubar.file.menu entryconfigure 6 -state disabled
-    .menubar.file.menu entryconfigure 7 -state disabled
+    .menubar.file.menu entryconfigure {Open recent in new window} -state disabled
+    .menubar.file.menu entryconfigure {Open new window} -state disabled
     set_tab_names 
   } else {
-    .menubar.file.menu entryconfigure 6 -state normal
-    .menubar.file.menu entryconfigure 7 -state normal
+    .menubar.file.menu entryconfigure {Open recent in new window} -state normal
+    .menubar.file.menu entryconfigure {Open new window} -state normal
   } 
   # update tabbed window close (X) function
   if {$tabbed_interface} {
@@ -4584,6 +4609,12 @@ proc no_open_dialogs {} {
 ## "measure_id" should be kept unique since we allow only one measure tooltip in graphs
 ## "tabbed_interface"
 ## "case_insensitive" case insensitive symbol lookup (on case insensitive filesystems only!)
+## "dark_colors_save"
+## "light_colors_save" restore default colors
+## "menu_debug_var" there is only a global debug mode
+## "debug_var" there is only a global debug mode
+## "xschem_server_getdata" only one tcp listener per process
+## "bespice_server_getdata" only one tcp listener per process
 
 set tctx::global_list {
   auto_hilight autofocus_mainwindow autotrim_wires bespice_listen_port big_grid_points bus_replacement_char
@@ -4609,12 +4640,13 @@ set tctx::global_list {
   show_pin_net_names simconf_default_geometry simconf_vpos simulate_bg
   spiceprefix split_files svg_colors svg_font_name symbol symbol_width sym_txt tclcmd_txt tclstop
   text_line_default_geometry textwindow_fileid textwindow_filename textwindow_w tmp_bus_char 
-  toolbar_horiz toolbar_visible top_subckt transparent_svg undo_type
+  toolbar_horiz toolbar_list toolbar_visible top_subckt transparent_svg undo_type
   use_label_prefix use_lab_wire user_wants_copy_cell verilog_2001 verilog_bitblast
   viewdata_fileid viewdata_filename viewdata_w vsize xschem_libs xschem_listen_port
 }
 
 ## list of global arrays to save/restore on context switching
+## will be saved as tctx::.drw_dircolor, tctx::.x1.drw_dircolor and so on
 ## EXCEPTIONS, not to be saved/restored:
 ## execute
 set tctx::global_array_list {
@@ -4623,7 +4655,7 @@ set tctx::global_array_list {
 
 proc delete_ctx {context} {
   global has_x
-  if {![info exists $has_x]} {return}
+  if {![info exists has_x]} {return}
   set tctx::tctx $context
   uplevel #0 {
     # puts "delete_ctx $tctx::tctx"
@@ -4643,20 +4675,20 @@ proc restore_ctx {context} {
   set tctx::tctx $context
   array unset ::sim
   uplevel #0 {
-    if { [ array exists $tctx::tctx ] } {
-      # puts "restore_ctx $tctx::tctx"
+    if { [ array exists tctx::$tctx::tctx ] } {
+      # puts "restore_ctx tctx::$tctx::tctx"
       ## Cleanup these vars to avoid side effects from previous ctx
       unset -nocomplain gaw_fd
       foreach tctx::i $tctx::global_list {
-        if { [info exists [subst $tctx::tctx]($tctx::i)] } {
+        if { [info exists [subst tctx::$tctx::tctx]($tctx::i)] } {
           # puts "restoring:  $tctx::i"
-          set $tctx::i [set [subst $tctx::tctx]($tctx::i)]
+          set $tctx::i [set [subst tctx::$tctx::tctx]($tctx::i)]
         }
       }
     }
     foreach tctx::i $tctx::global_array_list {
-      if { [array exists ${tctx::tctx}_$tctx::i] } {
-        array set $tctx::i [array get [subst ${tctx::tctx}_$tctx::i]]
+      if { [array exists tctx::${tctx::tctx}_$tctx::i] } {
+        array set $tctx::i [array get [subst tctx::${tctx::tctx}_$tctx::i]]
       }
     }
   }
@@ -4672,12 +4704,12 @@ proc save_ctx {context} {
     foreach tctx::i $tctx::global_list {
       if { [info exists $tctx::i] } {
         # puts "saving:  $tctx::i"
-        set [subst $tctx::tctx]($tctx::i) [set $tctx::i]
+        set [subst tctx::$tctx::tctx]($tctx::i) [set $tctx::i]
       }
     }
     foreach tctx::i $tctx::global_array_list {
       if { [array exists $tctx::i] } {
-        array set [subst ${tctx::tctx}_$tctx::i] [array get $tctx::i]
+        array set [subst tctx::${tctx::tctx}_$tctx::i] [array get $tctx::i]
       }
     }
   }
@@ -4690,7 +4722,7 @@ proc housekeeping_ctx {} {
   }
   # puts "housekeeping_ctx, path: [xschem get current_win_path]"
 
-  if {![info exists ::[xschem get current_win_path]_simulate]} {
+  if {![info exists tctx::[xschem get current_win_path]_simulate]} {
     [xschem get top_path].menubar.simulate configure -bg $simulate_bg
   } else {
     [xschem get top_path].menubar.simulate configure -bg red
@@ -4699,17 +4731,17 @@ proc housekeeping_ctx {} {
 
 proc simulate_button {button_path} {
   global simulate_bg
-  if { ![info exists ::[xschem get current_win_path]_simulate] } {
-    set ::[xschem get current_win_path]_simulate 1
+  if { ![info exists tctx::[xschem get current_win_path]_simulate] } {
+    set tctx::[xschem get current_win_path]_simulate 1
     $button_path configure -bg red
-    simulate "clear_simulate_button $button_path ::[xschem get current_win_path]_simulate"
+    simulate "clear_simulate_button $button_path tctx::[xschem get current_win_path]_simulate"
   }
 
 }
 
 proc clear_simulate_button {button_path simvar} {
   global simulate_bg
-  if { "::[xschem get current_win_path]_simulate" eq $simvar } {
+  if { "tctx::[xschem get current_win_path]_simulate" eq $simvar } {
     $button_path configure -bg $simulate_bg
   }
   unset $simvar
@@ -4784,7 +4816,8 @@ global env has_x OS autofocus_mainwindow
 ## this could lead to crashes on some (may be slow) systems due to Configure/Expose events being delivered
 ## before xschem being ready to handle them.
 proc pack_widgets { { topwin {} } } {
-  global env has_x OS tabbed_interface
+  global env has_x OS tabbed_interface toolbar_visible toolbar_horiz
+  # puts "pack_widgets: $topwin"
   if {($OS== "Windows" || [string length [lindex [array get env DISPLAY] 1] ] > 0 ) && [info exists has_x]} {
     pack $topwin.statusbar.2 -side left 
     pack $topwin.statusbar.3 -side left 
@@ -4794,18 +4827,19 @@ proc pack_widgets { { topwin {} } } {
     pack $topwin.statusbar.7 -side left 
     pack $topwin.statusbar.8 -side left 
     pack $topwin.statusbar.1 -side left -fill x
-    pack $topwin.menubar -anchor n -side top -fill x
-    pack $topwin.drw -anchor n -side top -fill both -expand true
+    pack $topwin.menubar -side top -fill x
+    pack $topwin.statusbar -side bottom -fill x 
+    pack $topwin.drw -side right -fill both -expand true
     setup_tabbed_interface
-    if {$tabbed_interface} {
-       pack $topwin.tabs  -fill x -side top -expand false -side top
-    }
-    toolbar_show $topwin
-    pack $topwin.statusbar -after $topwin.drw -anchor sw  -fill x 
+    if {$toolbar_visible}  {toolbar_show $topwin}
+
     bind $topwin.statusbar.5 <Leave> \
       "focus $topwin.drw; set cadgrid \[$topwin.statusbar.5 get\]; xschem set cadgrid \$cadgrid"
     bind $topwin.statusbar.3 <Leave> \
       "focus $topwin.drw; set cadsnap \[$topwin.statusbar.3 get\]; xschem set cadsnap \$cadsnap"
+  }
+  if {$topwin ne {}} {
+    $topwin.menubar.view.menu entryconfigure {Tabbed interface} -state disabled
   }
 }
 
@@ -4851,7 +4885,6 @@ proc build_widgets { {topwin {} } } {
     set bbg {-bg gray50 -highlightthickness 0}
   }
   eval frame $topwin.menubar -relief raised -bd 2 $mbg
-  toolbar_toolbar $topwin
   eval menubutton $topwin.menubar.file -text "File" -menu $topwin.menubar.file.menu \
    -padx 3 -pady 0 $mbg
   menu $topwin.menubar.file.menu -tearoff 0
@@ -4894,12 +4927,12 @@ proc build_widgets { {topwin {} } } {
     -command {
       xschem clear SCHEMATIC
     }
-  # toolbar_create FileNew {xschem clear SCHEMATIC} "New Schematic" $topwin
+  # toolbar_add FileNew {xschem clear SCHEMATIC} "New Schematic" $topwin
   $topwin.menubar.file.menu add command -label "New Symbol" -accelerator Ctrl+Shift+N \
     -command {
       xschem clear SYMBOL
     }
-  # toolbar_create FileNewSym {xschem clear SYMBOL} "New Symbol" $topwin
+  # toolbar_add FileNewSym {xschem clear SYMBOL} "New Symbol" $topwin
   $topwin.menubar.file.menu add command -label "New empty Schematic window" -accelerator {Alt+N} \
     -command {
       xschem new_window
@@ -4909,8 +4942,8 @@ proc build_widgets { {topwin {} } } {
       xschem new_symbol_window
     }
   $topwin.menubar.file.menu add command -label "Open" -command "xschem load" -accelerator {Ctrl+O}
-  $topwin.menubar.file.menu add cascade -label "Open Recent" -menu $topwin.menubar.file.menu.recent
-  $topwin.menubar.file.menu add cascade -label {Open Recent in new window} \
+  $topwin.menubar.file.menu add cascade -label "Open recent" -menu $topwin.menubar.file.menu.recent
+  $topwin.menubar.file.menu add cascade -label {Open recent in new window} \
     -menu $topwin.menubar.file.menu.recent_new_window
   menu $topwin.menubar.file.menu.recent_new_window -tearoff 0
   menu $topwin.menubar.file.menu.recent -tearoff 0
@@ -4918,18 +4951,18 @@ proc build_widgets { {topwin {} } } {
   setup_recent_menu 1 $topwin
   $topwin.menubar.file.menu add command -label {Open new window} -command "xschem load_new_window"
   if {$tabbed_interface} {
-    $topwin.menubar.file.menu entryconfigure 6 -state disabled
-    $topwin.menubar.file.menu entryconfigure 7 -state disabled
+    $topwin.menubar.file.menu entryconfigure {Open new window} -state disabled
+    $topwin.menubar.file.menu entryconfigure {Open recent in new window} -state disabled
   }
-  toolbar_create FileOpen "xschem load" "Open File" $topwin
+  toolbar_add FileOpen "xschem load" "Open File" $topwin
   $topwin.menubar.file.menu add command -label "Delete files" -command "xschem delete_files" -accelerator {Shift-D}
 
   $topwin.menubar.file.menu add command -label "Open Most Recent" \
     -command {xschem load [lindex "$recentfile" 0]} -accelerator {Ctrl+Shift+O}
   $topwin.menubar.file.menu add command -label "Save" -command "xschem save" -accelerator {Ctrl+S}
-  toolbar_create FileSave "xschem save" "Save File" $topwin
+  toolbar_add FileSave "xschem save" "Save File" $topwin
   $topwin.menubar.file.menu add command -label "Merge" -command "xschem merge" -accelerator {Shift+B}
-  # toolbar_create FileMerge "xschem merge" "Merge File" $topwin
+  # toolbar_add FileMerge "xschem merge" "Merge File" $topwin
   $topwin.menubar.file.menu add command -label "Reload" -accelerator {Alt+S} \
     -command {
      if { [string compare [tk_messageBox -type okcancel -parent [xschem get topwindow] \
@@ -4937,7 +4970,7 @@ proc build_widgets { {topwin {} } } {
              xschem reload
         }
     }
-  toolbar_create FileReload {
+  toolbar_add FileReload {
      if { [string compare [tk_messageBox -type okcancel -parent [xschem get topwindow] \
              -message {Are you sure you want to reload?}] ok]==0 } {
              xschem reload
@@ -5032,26 +5065,26 @@ proc build_widgets { {topwin {} } } {
        -accelerator {Shift+V} \
        -command "xschem set netlist_type symbol"
   $topwin.menubar.edit.menu add command -label "Undo" -command "xschem undo; xschem redraw" -accelerator U
-  toolbar_create EditUndo "xschem undo; xschem redraw" "Undo" $topwin
+  toolbar_add EditUndo "xschem undo; xschem redraw" "Undo" $topwin
   $topwin.menubar.edit.menu add command -label "Redo" -command "xschem redo; xschem redraw" -accelerator {Shift+U}
-  toolbar_create EditRedo "xschem redo; xschem redraw" "Redo" $topwin
-  toolbar_create EditCut "xschem cut" "Cut" $topwin
+  toolbar_add EditRedo "xschem redo; xschem redraw" "Redo" $topwin
+  toolbar_add EditCut "xschem cut" "Cut" $topwin
   $topwin.menubar.edit.menu add command -label "Copy" -command "xschem copy" -accelerator Ctrl+C
-  toolbar_create EditCopy "xschem copy" "Copy" $topwin
+  toolbar_add EditCopy "xschem copy" "Copy" $topwin
   $topwin.menubar.edit.menu add command -label "Cut" -command "xschem cut"   -accelerator Ctrl+X
   $topwin.menubar.edit.menu add command -label "Paste" -command "xschem paste" -accelerator Ctrl+V
-  toolbar_create EditPaste "xschem paste" "Paste" $topwin
+  toolbar_add EditPaste "xschem paste" "Paste" $topwin
   $topwin.menubar.edit.menu add command -label "Delete" -command "xschem delete" -accelerator Del
-  toolbar_create EditDelete "xschem delete" "Delete" $topwin
+  toolbar_add EditDelete "xschem delete" "Delete" $topwin
   $topwin.menubar.edit.menu add command -label "Select all" -command "xschem select_all" -accelerator Ctrl+A
   $topwin.menubar.edit.menu add command -label "Edit schematic in new window/tab" \
       -command "xschem schematic_in_new_window" -accelerator Alt+E
   $topwin.menubar.edit.menu add command -label "Edit symbol in new window/tab" \
       -command "xschem symbol_in_new_window" -accelerator Alt+I
   $topwin.menubar.edit.menu add command -label "Duplicate objects" -command "xschem copy_objects" -accelerator C
-  toolbar_create EditDuplicate "xschem copy_objects" "Duplicate objects" $topwin
+  toolbar_add EditDuplicate "xschem copy_objects" "Duplicate objects" $topwin
   $topwin.menubar.edit.menu add command -label "Move objects" -command "xschem move_objects" -accelerator M
-  toolbar_create EditMove "xschem move_objects" "Move objects" $topwin
+  toolbar_add EditMove "xschem move_objects" "Move objects" $topwin
   $topwin.menubar.edit.menu add command -label "Flip selected objects" -command "xschem flip" -accelerator {Alt-F}
   $topwin.menubar.edit.menu add command -label "Rotate selected objects" -command "xschem rotate" -accelerator {Alt-R}
   $topwin.menubar.edit.menu add radiobutton -label "Unconstrained move" -variable constrained_move \
@@ -5062,11 +5095,11 @@ proc build_widgets { {topwin {} } } {
      -value 2 -accelerator V -command {xschem set constrained_move 2} 
   $topwin.menubar.edit.menu add checkbutton -label "Add wire when separating pins" -variable connect_by_kissing 
   $topwin.menubar.edit.menu add command -label "Push schematic" -command "xschem descend" -accelerator E
-  toolbar_create EditPushSch "xschem descend" "Push schematic" $topwin
+  toolbar_add EditPushSch "xschem descend" "Push schematic" $topwin
   $topwin.menubar.edit.menu add command -label "Push symbol" -command "xschem descend_symbol" -accelerator I
-  toolbar_create EditPushSym "xschem descend_symbol" "Push symbol" $topwin
+  toolbar_add EditPushSym "xschem descend_symbol" "Push symbol" $topwin
   $topwin.menubar.edit.menu add command -label "Pop" -command "xschem go_back" -accelerator Ctrl+E
-  toolbar_create EditPop "xschem go_back" "Pop" $topwin
+  toolbar_add EditPop "xschem go_back" "Pop" $topwin
   eval button $topwin.menubar.waves -text "Waves"  -activebackground red  -takefocus 0 \
    -padx 2 -pady 0 -command waves $bbg
   eval button $topwin.menubar.simulate -text "Simulate"  -activebackground red  -takefocus 0 \
@@ -5082,18 +5115,19 @@ proc build_widgets { {topwin {} } } {
        } else {wm withdraw .infotext}
      }
   $topwin.menubar.view.menu add command -label "Redraw" -command "xschem redraw" -accelerator Esc
-  toolbar_create ViewRedraw "xschem redraw" "Redraw" $topwin
-  $topwin.menubar.view.menu add checkbutton -label "Fullscreen" -variable fullscreen \
-     -accelerator {Alt+Shift+F} -command "
-        xschem fullscreen $topwin
+  toolbar_add ViewRedraw "xschem redraw" "Redraw" $topwin
+  $topwin.menubar.view.menu add command -label "Fullscreen" \
+     -accelerator "\\" -command "
+        if {\$fullscreen == 1} {set fullscreen 2} ;# avoid hiding menu in true fullscreen
+        xschem fullscreen $topwin.drw
      "
   $topwin.menubar.view.menu add command -label "Zoom Full" -command "xschem zoom_full" -accelerator F
   $topwin.menubar.view.menu add command -label "Zoom In" -command "xschem zoom_in" -accelerator Shift+Z
-  # toolbar_create ViewZoomIn "xschem zoom_in" "Zoom In" $topwin
+  # toolbar_add ViewZoomIn "xschem zoom_in" "Zoom In" $topwin
   $topwin.menubar.view.menu add command -label "Zoom Out" -command "xschem zoom_out" -accelerator Ctrl+Z
-  # toolbar_create ViewZoomOut "xschem zoom_out" "Zoom Out" $topwin
+  # toolbar_add ViewZoomOut "xschem zoom_out" "Zoom Out" $topwin
   $topwin.menubar.view.menu add command -label "Zoom box" -command "xschem zoom_box" -accelerator Z
-  # toolbar_create ViewZoomBox "xschem zoom_box" "Zoom Box" $topwin
+  # toolbar_add ViewZoomBox "xschem zoom_box" "Zoom Box" $topwin
   $topwin.menubar.view.menu add command -label "Set snap value" \
          -command {
          input_line "Enter snap value ( default: [xschem get cadsnap_default] current: [xschem get cadsnap])" \
@@ -5111,7 +5145,7 @@ proc build_widgets { {topwin {} } } {
           xschem build_colors 1
           xschem redraw
        }
-   toolbar_create ViewToggleColors {
+   toolbar_add ViewToggleColors {
           xschem toggle_colorscheme
           xschem build_colors 1
           xschem redraw
@@ -5194,36 +5228,36 @@ proc build_widgets { {topwin {} } } {
       -variable disable_unique_names
   $topwin.menubar.tools.menu add checkbutton -label "Remember last command" -variable persistent_command
   $topwin.menubar.tools.menu add command -label "Insert symbol" -command "xschem place_symbol" -accelerator {Ins, Shift-I}
-  toolbar_create ToolInsertSymbol "xschem place_symbol" "Insert Symbol" $topwin
+  toolbar_add ToolInsertSymbol "xschem place_symbol" "Insert Symbol" $topwin
   $topwin.menubar.tools.menu add command -label "Insert wire label" -command "xschem net_label 1" -accelerator {Alt-L}
   $topwin.menubar.tools.menu add command -label "Insert wire label 2" -command "xschem net_label 0" \
      -accelerator {Alt-Shift-L}
   $topwin.menubar.tools.menu add command -label "Insert text" -command "xschem place_text" -accelerator T
-  toolbar_create ToolInsertText "xschem place_text" "Insert Text" $topwin
+  toolbar_add ToolInsertText "xschem place_text" "Insert Text" $topwin
   $topwin.menubar.tools.menu add command -label "Insert wire" -command "xschem wire" -accelerator W
-  toolbar_create ToolInsertWire "xschem wire" "Insert Wire" $topwin
+  toolbar_add ToolInsertWire "xschem wire" "Insert Wire" $topwin
   $topwin.menubar.tools.menu add command -label "Insert snap wire" -command "xschem snap_wire" -accelerator Shift+W
   $topwin.menubar.tools.menu add command -label "Insert line" -command "xschem line" -accelerator L
-  toolbar_create ToolInsertLine "xschem line" "Insert Line" $topwin
+  toolbar_add ToolInsertLine "xschem line" "Insert Line" $topwin
   $topwin.menubar.tools.menu add command -label "Insert rect" -command "xschem rect" -accelerator R
-  toolbar_create ToolInsertRect "xschem rect" "Insert Rectangle" $topwin
+  toolbar_add ToolInsertRect "xschem rect" "Insert Rectangle" $topwin
   $topwin.menubar.tools.menu add command -label "Insert polygon" -command "xschem polygon" -accelerator Ctrl+W
-  toolbar_create ToolInsertPolygon "xschem polygon" "Insert Polygon" $topwin
+  toolbar_add ToolInsertPolygon "xschem polygon" "Insert Polygon" $topwin
   $topwin.menubar.tools.menu add command -label "Insert arc" -command "xschem arc" -accelerator Shift+C
-  toolbar_create ToolInsertArc "xschem arc" "Insert Arc" $topwin
+  toolbar_add ToolInsertArc "xschem arc" "Insert Arc" $topwin
   $topwin.menubar.tools.menu add command -label "Insert circle" -command "xschem circle" -accelerator Ctrl+Shift+C
-  toolbar_create ToolInsertCircle "xschem circle" "Insert Circle" $topwin
+  toolbar_add ToolInsertCircle "xschem circle" "Insert Circle" $topwin
   $topwin.menubar.tools.menu add command -label "Insert PNG image" -command "xschem add_png"
   $topwin.menubar.tools.menu add command -label "Search" -accelerator Ctrl+F -command  property_search
-  toolbar_create ToolSearch property_search "Search" $topwin
+  toolbar_add ToolSearch property_search "Search" $topwin
   $topwin.menubar.tools.menu add command -label "Align to Grid" -accelerator Alt+U -command  "xschem align"
   $topwin.menubar.tools.menu add command -label "Execute TCL command" -command  "tclcmd"
   $topwin.menubar.tools.menu add command -label "Join/Trim wires" \
      -command "xschem trim_wires" -accelerator {&}
-   toolbar_create ToolJoinTrim "xschem trim_wires" "Join/Trim Wires" $topwin
+   toolbar_add ToolJoinTrim "xschem trim_wires" "Join/Trim Wires" $topwin
   $topwin.menubar.tools.menu add command -label "Break wires at selected instance pins" \
      -command "xschem break_wires" -accelerator {!}
-   toolbar_create ToolBreak "xschem break_wires" "Break wires at selected\ninstance pin intersections" $topwin
+   toolbar_add ToolBreak "xschem break_wires" "Break wires at selected\ninstance pin intersections" $topwin
   $topwin.menubar.tools.menu add checkbutton -label "Auto Join/Trim Wires" -variable autotrim_wires \
      -command {
          if {$autotrim_wires == 1} {
@@ -5236,6 +5270,14 @@ proc build_widgets { {topwin {} } } {
      -command { xschem connected_nets}
   $topwin.menubar.tools.menu add command -label "Select conn. wires, stop at junctions" \
      -accelerator {Ctrl-Righ Butt.} -command { xschem connected_nets 1 }
+
+  $topwin.menubar.hilight.menu add command \
+   -label {Set schematic to compare and compare with} \
+   -command "xschem compare_schematics" 
+  $topwin.menubar.hilight.menu add command \
+   -label {Compare schematics} \
+   -command "xschem compare_schematics {}" \
+   -accelerator {Alt-X}
   $topwin.menubar.hilight.menu add command \
    -label {Highlight net-pin name mismatches on selected instances} \
    -command "xschem net_pin_mismatch" \
@@ -5304,9 +5346,9 @@ proc build_widgets { {topwin {} } } {
   $topwin.menubar.simulation.menu add checkbutton -label "Use 'spiceprefix' attribute" -variable spiceprefix \
          -command {xschem save; xschem reload}
 
-  toolbar_create Netlist { xschem netlist } "Create netlist" $topwin
-  toolbar_create Simulate "simulate_button $topwin.menubar.simulate" "Run simulation" $topwin
-  toolbar_create Waves { waves } "View results" $topwin
+  toolbar_add Netlist { xschem netlist } "Create netlist" $topwin
+  toolbar_add Simulate "simulate_button $topwin.menubar.simulate" "Run simulation" $topwin
+  toolbar_add Waves { waves } "View results" $topwin
 
   pack $topwin.menubar.file -side left
   pack $topwin.menubar.edit -side left
@@ -5498,7 +5540,7 @@ proc setup_tcp_xschem {} {
   global xschem_listen_port xschem_server_getdata
   if { [info exists xschem_listen_port] && ($xschem_listen_port ne {}) } { 
     if {[catch {socket -server xschem_server $xschem_listen_port} err]} {
-      puts "problems listening to TCP port: $xschem_listen_port"
+      puts "setup_tcp_xschem: problems listening to TCP port: $xschem_listen_port"
       puts $err
       return 0
     } else {
@@ -5512,7 +5554,7 @@ proc setup_tcp_bespice {} {
   global bespice_listen_port bespice_server_getdata
   if { [info exists bespice_listen_port] && ($bespice_listen_port ne {}) } { 
     if {[catch {socket -server bespice_server $bespice_listen_port} err]} {
-      puts "problems listening to TCP port: $bespice_listen_port"
+      puts "setup_tcp_bespice: problems listening to TCP port: $bespice_listen_port"
       puts $err
       return 0
     } else {
@@ -5731,8 +5773,6 @@ set_missing_colors_to_black
 # read-only vars to store defaults (so we can switch to default colors) 
 set dark_colors_save $dark_colors
 set light_colors_save $light_colors
-set ps_colors_save $ps_colors
-set svg_colors_save $svg_colors
 
 set_ne colors $dark_colors
 ##### end set colors

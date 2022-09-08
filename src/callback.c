@@ -29,6 +29,7 @@ static int waves_selected(int event, int state, int button)
   static unsigned int excl = STARTZOOM | STARTRECT | STARTLINE | STARTWIRE |
                              STARTPAN | STARTSELECT | STARTMOVE | STARTCOPY;
   if(xctx->ui_state & excl) skip = 1;
+  else if(!xctx->graph_values) skip = 1;
   else if(state & Mod1Mask) skip = 1;
   else if(event == MotionNotify && (state & Button2Mask)) skip = 1;
   else if(event == MotionNotify && (state & Button1Mask) && (state & ShiftMask)) skip = 1;
@@ -110,7 +111,7 @@ static void abort_operation(void)
     set_modify(0); /* aborted merge: no change, so reset modify flag set by delete() */
   }
   xctx->ui_state = 0;
-  unselect_all();
+  unselect_all(1);
   draw();
 }
 
@@ -122,7 +123,7 @@ static void start_place_symbol(double mx, double my)
       tclvareval("set INITIALINSTDIR [file dirname {",
            abs_sym_path(xctx->inst[xctx->sel_array[0].n].name, ""), "}]", NULL);
     } 
-    unselect_all();
+    unselect_all(1);
     xctx->mx_double_save = xctx->mousex_snap;
     xctx->my_double_save = xctx->mousey_snap;
     if(place_symbol(-1,NULL,xctx->mousex_snap, xctx->mousey_snap, 0, 0, NULL, 4, 1, 1/* to_push_undo */) ) {
@@ -188,10 +189,11 @@ static int waves_callback(int event, int mx, int my, KeySym key, int button, int
   Graph_ctx *gr;
   const char *val;
   int i, need_all_redraw = 0, need_redraw = 0, dataset = 0;
-  double xx1, xx2, yy1, yy2, tmp;
+  double xx1, xx2, yy1, yy2;
   double delta_threshold = 0.25;
   double zoom_m = 0.5;
   int save_mouse_at_end = 0, clear_graphpan_at_end = 0;
+  int track_dset = -2; /* used to find dataset of closest wave to mouse if 't' is pressed */
   xRect *r = NULL;
   #if HAS_CAIRO==1
   cairo_save(xctx->cairo_ctx);
@@ -271,6 +273,21 @@ static int waves_callback(int event, int mx, int my, KeySym key, int button, int
           tcleval("graph_show_measure stop");
         }
       }
+      else if((key == 't') ) {
+        if(!gr->digital) {
+            const char *d = get_tok_value(r->prop_ptr, "dataset", 0);
+          if(d[0]) {
+            track_dset = atoi(d);
+          } else {
+            track_dset = -1;
+          }
+          if(track_dset < 0) {
+            track_dset = find_closest_wave(i, gr);
+          } else {
+            track_dset = -1;
+          }
+        }
+      } /* key == 't' */
       break;
     } /* if( POINTINSIDE(...) */
   } /* for(i=0; i <  xctx->rects[GRIDLAYER]; i++) */
@@ -326,7 +343,12 @@ static int waves_callback(int event, int mx, int my, KeySym key, int button, int
     /* parameters for zoom area by mouse drag */
     xx1 = G_X(xctx->mx_double_save);
     xx2 = G_X(xctx->mousex_snap);
-    if(xx2 < xx1) { tmp = xx1; xx1 = xx2; xx2 = tmp; }
+    if(state & ShiftMask) {
+      if(xx1 < xx2) { double tmp; tmp = xx1; xx1 = xx2; xx2 = tmp; }
+    } else {
+      if(xx2 < xx1) { double tmp; tmp = xx1; xx1 = xx2; xx2 = tmp; }
+    }
+
     if(xx1 == xx2) xx2 += 1e-6;
   }
 
@@ -470,6 +492,15 @@ static int waves_callback(int event, int mx, int my, KeySym key, int button, int
           }
         }
       }
+      else if((key == 't') ) {
+        if(track_dset != -2) {
+          const char *unlocked = strstr(get_tok_value(r->prop_ptr, "flags", 0), "unlocked");
+          if(i == xctx->graph_master || !unlocked) {
+            my_strdup(1448, &r->prop_ptr, subst_token(r->prop_ptr, "dataset", my_itoa(track_dset)));
+          }
+          need_redraw = 1;
+        }
+      } /* key == 't' */
       else if(key == XK_Left) {
         double delta;
         if(xctx->graph_left) {
@@ -482,7 +513,7 @@ static int waves_callback(int event, int mx, int my, KeySym key, int button, int
             yy2 = gr->gy2 + var * b / delta;
             yy1 = gr->gy1 - var * a / delta;
             my_strdup(1451, &r->prop_ptr, subst_token(r->prop_ptr, "y1", dtoa(yy1)));
-            my_strdup(1448, &r->prop_ptr, subst_token(r->prop_ptr, "y2", dtoa(yy2)));
+            my_strdup(1517, &r->prop_ptr, subst_token(r->prop_ptr, "y2", dtoa(yy2)));
             need_redraw = 1;
           }
         } else {
@@ -851,6 +882,7 @@ static int waves_callback(int event, int mx, int my, KeySym key, int button, int
 
 /* main window callback */
 /* mx and my are set to the mouse coord. relative to window  */
+/* winpath: set to .drw or sub windows .x1.drw, .x2.drw, ...  */
 int callback(const char *winpath, int event, int mx, int my, KeySym key,
                  int button, int aux, int state)
 {
@@ -954,7 +986,7 @@ int callback(const char *winpath, int event, int mx, int my, KeySym key,
     if( stat(xctx->sel_or_clip, &buf)  && (xctx->ui_state & STARTCOPY) )
     {
       copy_objects(ABORT); /* also unlinks sel_or_flip file */
-      unselect_all();
+      unselect_all(1);
     }
     /* xschem window *receiving* selected objects */
     /* no selected objects and selection file exists */
@@ -985,6 +1017,7 @@ int callback(const char *winpath, int event, int mx, int my, KeySym key,
     dbg(1, "callback(): Expose\n");
     break;
   case ConfigureNotify:
+    dbg(1,"callback(): ConfigureNotify event\n");
     resetwin(1, 1, 0, 0, 0);
     draw();
     break;
@@ -1047,10 +1080,10 @@ int callback(const char *winpath, int event, int mx, int my, KeySym key,
         if(abs(mx-xctx->mx_save) > 8 ||
            abs(my-xctx->my_save) > 8 ) { /* set reasonable threshold before unsel */
           if(xctx->onetime) {
-            unselect_all(); /* 20171026 avoid multiple calls of unselect_all() */
+            unselect_all(1); /* 20171026 avoid multiple calls of unselect_all() */
             xctx->onetime=0;
           }
-          xctx->ui_state|=STARTSELECT; /* set it again cause unselect_all() clears it... */
+          xctx->ui_state|=STARTSELECT; /* set it again cause unselect_all(1) clears it... */
         }
       }
     }
@@ -1357,7 +1390,7 @@ int callback(const char *winpath, int event, int mx, int my, KeySym key,
    }
    if(key=='p' && state == Mod1Mask)                           /* add symbol pin */
    {
-    unselect_all();
+    unselect_all(1);
     storeobject(-1, xctx->mousex_snap-2.5, xctx->mousey_snap-2.5, xctx->mousex_snap+2.5, xctx->mousey_snap+2.5,
                 xRECT, PINLAYER, SELECTED, "name=XXX\ndir=inout");
     xctx->need_reb_sel_arr=1;
@@ -1464,11 +1497,13 @@ int callback(const char *winpath, int event, int mx, int my, KeySym key,
    }
    if(key=='q' && state == ControlMask) /* exit */
    {
+     int remaining, save_sem;
      if(xctx->semaphore >= 2) break;
      if(!strcmp(xctx->current_win_path, ".drw")) {
-       int remaining;
+       save_sem = xctx->semaphore;
        /* tcleval("new_window destroy_all"); */ /* close child schematics */
        remaining = new_schematic("destroy_all", NULL, NULL);
+       xctx->semaphore = save_sem;
        /* if(tclresult()[0] == '1') { */
        if(!remaining) {
          if(xctx->modified) {
@@ -1480,12 +1515,18 @@ int callback(const char *winpath, int event, int mx, int my, KeySym key,
        }
      } else {
        /* xschem new_schematic destroy asks user confirmation if schematic changed */
+       save_sem = xctx->semaphore;
        new_schematic("destroy", xctx->current_win_path, NULL);
+       xctx->semaphore = save_sem;
      }
      break;
    }
    if(key=='t' && state == 0)                        /* place text */
    {
+     if(waves_selected(event, state, button)) {
+       waves_callback(event, mx, my, key, button, aux, state);
+       break;
+     }
      if(xctx->semaphore >= 2) break;
      xctx->last_command = 0;
      xctx->mx_double_save = xctx->mousex_snap;
@@ -1605,6 +1646,10 @@ int callback(const char *winpath, int event, int mx, int my, KeySym key,
     }
     break;
    }
+   if(key=='x' && state == Mod1Mask) /* compare schematics(must set first) */
+   {
+     compare_schematics("");
+   }
    if(key=='x' && state == ControlMask) /* cut selection into clipboard */
    {
     if(xctx->semaphore >= 2) break;
@@ -1715,7 +1760,7 @@ int callback(const char *winpath, int event, int mx, int my, KeySym key,
              "-message {Are you sure you want to reload from disk?}");
      if(strcmp(tclresult(),"ok")==0) {
         char filename[PATH_MAX];
-        unselect_all();
+        unselect_all(1);
         remove_symbols();
         my_strncpy(filename, abs_sym_path(xctx->sch[xctx->currsch], ""), S(filename));
         load_schematic(1, filename, 1);
@@ -2051,7 +2096,7 @@ int callback(const char *winpath, int event, int mx, int my, KeySym key,
    {
     yyparse_error = 0;
     if(xctx->semaphore >= 2) break;
-    unselect_all();
+    unselect_all(1);
     if(set_netlist_dir(0, NULL)) {
       dbg(1, "callback(): -------------\n");
       if(xctx->netlist_type == CAD_SPICE_NETLIST)
@@ -2074,7 +2119,7 @@ int callback(const char *winpath, int event, int mx, int my, KeySym key,
    {
     yyparse_error = 0;
     if(xctx->semaphore >= 2) break;
-    unselect_all();
+    unselect_all(1);
     if( set_netlist_dir(0, NULL) ) {
       dbg(1, "callback(): -------------\n");
       if(xctx->netlist_type == CAD_SPICE_NETLIST)
@@ -2585,7 +2630,7 @@ int callback(const char *winpath, int event, int mx, int my, KeySym key,
        xctx->mx_double_save=xctx->mousex_snap;
        xctx->my_double_save=xctx->mousey_snap;
        if( !(state & ShiftMask) && !(state & Mod1Mask) ) {
-         unselect_all();
+         unselect_all(1);
 #ifndef __unix__
          MyXCopyArea(display, xctx->save_pixmap, xctx->window, xctx->gctiled, xctx->xrect[0].x, xctx->xrect[0].y,
            xctx->xrect[0].width, xctx->xrect[0].height, xctx->xrect[0].x, xctx->xrect[0].y);

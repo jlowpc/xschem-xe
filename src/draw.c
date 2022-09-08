@@ -1635,9 +1635,9 @@ static double get_unit(const char *val)
 int schematic_waves_loaded(void)
 {
   int i;
-  if(xctx->graph_values && xctx->raw_schname) {
+  if(xctx->graph_values && xctx->graph_raw_schname) {
     for(i = xctx->currsch; i >= 0; i--) {
-      if( !strcmp(xctx->raw_schname, xctx->sch[i]) ) return 1;
+      if( !strcmp(xctx->graph_raw_schname, xctx->sch[i]) ) return 1;
     } 
   }
   return 0;
@@ -1721,11 +1721,11 @@ static SPICE_DATA **get_bus_idx_array(const char *ntok, int *n_bits)
 static void set_thick_waves(int what, int wcnt, int wave_col, Graph_ctx *gr)
 {
   if(what) {
-      if(gr->hilight_wave[0] == gr->i && gr->hilight_wave[1] == wcnt)
+      if(gr->hilight_wave == wcnt)
          XSetLineAttributes (display, xctx->gc[wave_col],
             3 * INT_WIDTH(xctx->lw) ,LineSolid, CapRound , JoinRound);
   } else {
-      if(gr->hilight_wave[0] == gr->i && gr->hilight_wave[1] == wcnt)
+      if(gr->hilight_wave == wcnt)
          XSetLineAttributes (display, xctx->gc[wave_col],
             INT_WIDTH(xctx->lw) ,LineSolid, CapRound , JoinRound);
   }
@@ -2001,6 +2001,11 @@ void setup_graph_data(int i, const int flags, int skip, Graph_ctx *gr)
   gr->rw = gr->rx2 - gr->rx1;
   gr->rh = gr->ry2 - gr->ry1;
 
+  /* wave to display in bold, -1=none */
+  val=get_tok_value(r->prop_ptr,"hilight_wave",0);
+  if(val[0]) gr->hilight_wave = atoi(val);
+  else gr->hilight_wave = -1;
+
   /* get x/y range, grid info etc */
   val = get_tok_value(r->prop_ptr,"unitx",0);
   gr->unitx_suffix = val[0];
@@ -2212,7 +2217,7 @@ static void draw_graph_variables(int wcnt, int wave_color, int n_nodes, int swee
 
     if(yt <= gr->ypos2 && yt >= gr->ypos1) {
       #if HAS_CAIRO == 1
-      if(gr->hilight_wave[0] == gr->i && gr->hilight_wave[1] == wcnt) {
+      if(gr->hilight_wave == wcnt) {
         cairo_select_font_face(xctx->cairo_ctx, "Sans-Serif", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
         cairo_select_font_face(xctx->cairo_save_ctx, "Sans-Serif", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
       }
@@ -2220,7 +2225,7 @@ static void draw_graph_variables(int wcnt, int wave_color, int n_nodes, int swee
       draw_string(wave_color, NOW, tmpstr, 2, 0, 0, 0,
         xt, DW_Y(yt), gr->digtxtsizelab, gr->digtxtsizelab);
       #if HAS_CAIRO == 1
-      if(gr->hilight_wave[0] == gr->i && gr->hilight_wave[1] == wcnt) {
+      if(gr->hilight_wave == wcnt) {
         cairo_select_font_face(xctx->cairo_ctx, "Sans-Serif", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
         cairo_select_font_face(xctx->cairo_save_ctx, "Sans-Serif", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
       }
@@ -2228,7 +2233,7 @@ static void draw_graph_variables(int wcnt, int wave_color, int n_nodes, int swee
     }
   } else {
     #if HAS_CAIRO == 1
-    if(gr->hilight_wave[0] == gr->i && gr->hilight_wave[1] == wcnt) {
+    if(gr->hilight_wave == wcnt) {
       cairo_select_font_face(xctx->cairo_ctx, "Sans-Serif", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
       cairo_select_font_face(xctx->cairo_save_ctx, "Sans-Serif", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
     }
@@ -2236,7 +2241,7 @@ static void draw_graph_variables(int wcnt, int wave_color, int n_nodes, int swee
     draw_string(wave_color, NOW, tmpstr, 0, 0, 0, 0,
         gr->rx1 + 2 + gr->rw / n_nodes * wcnt, gr->ry1, gr->txtsizelab, gr->txtsizelab);
     #if HAS_CAIRO == 1
-    if(gr->hilight_wave[0] == gr->i && gr->hilight_wave[1] == wcnt) {
+    if(gr->hilight_wave == wcnt) {
       cairo_select_font_face(xctx->cairo_ctx, "Sans-Serif", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
       cairo_select_font_face(xctx->cairo_save_ctx, "Sans-Serif", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
     }
@@ -2387,19 +2392,18 @@ int edit_wave_attributes(int what, int i, Graph_ctx *gr)
           char s[30];
           ret = 1;
           if(what == 1) {
+            int save = gr->hilight_wave;
             my_snprintf(s, S(s), "%d %d", i, wcnt);
-            gr->hilight_wave[0] = i;
-            gr->hilight_wave[1] = wcnt;
+            gr->hilight_wave = wcnt;
             tclvareval("graph_edit_wave ", s, NULL);
-            gr->hilight_wave[0] = -1;
-            gr->hilight_wave[1] = -1;
+            gr->hilight_wave = save;
           } else {
-             if(gr->hilight_wave[0] == i && gr->hilight_wave[1] == wcnt) {
-               gr->hilight_wave[0] = -1;
-               gr->hilight_wave[1] = -1;
+             if(gr->hilight_wave == wcnt) {
+               gr->hilight_wave = -1;
+               my_strdup2(1522, &r->prop_ptr, subst_token(r->prop_ptr, "hilight_wave", my_itoa(gr->hilight_wave)));
              } else {
-               gr->hilight_wave[0] = i;
-               gr->hilight_wave[1] = wcnt;
+               gr->hilight_wave = wcnt;
+               my_strdup2(1525, &r->prop_ptr, subst_token(r->prop_ptr, "hilight_wave", my_itoa(gr->hilight_wave)));
              }
           }
         }
@@ -2413,19 +2417,18 @@ int edit_wave_attributes(int what, int i, Graph_ctx *gr)
         char s[50];
         ret = 1;
         if(what == 1) {
+          int save = gr->hilight_wave;
           my_snprintf(s, S(s), "%d %d", i, wcnt);
-          gr->hilight_wave[0] = i;
-          gr->hilight_wave[1] = wcnt;
+          gr->hilight_wave = wcnt;
           tclvareval("graph_edit_wave ", s, NULL);
-          gr->hilight_wave[0] = -1;
-          gr->hilight_wave[1] = -1;
+          gr->hilight_wave = save;
         } else {
-          if(gr->hilight_wave[0] == i && gr->hilight_wave[1] == wcnt) {
-            gr->hilight_wave[0] = -1;
-            gr->hilight_wave[1] = -1;
+          if(gr->hilight_wave == wcnt) {
+            gr->hilight_wave = -1;
+            my_strdup2(1538, &r->prop_ptr, subst_token(r->prop_ptr, "hilight_wave", my_itoa(gr->hilight_wave)));
           } else {
-            gr->hilight_wave[0] = i;
-            gr->hilight_wave[1] = wcnt;
+            gr->hilight_wave = wcnt;
+            my_strdup2(1539, &r->prop_ptr, subst_token(r->prop_ptr, "hilight_wave", my_itoa(gr->hilight_wave)));
           }
         }
       }
@@ -2503,6 +2506,134 @@ int calc_custom_data_yrange(int sweep_idx, const char *express, Graph_ctx *gr)
   return idx;
 }
 
+int find_closest_wave(int i, Graph_ctx *gr)
+{
+  double xval, yval;
+  char *node = NULL, *sweep = NULL;
+  int sweep_idx = 0;
+  char *saven, *saves, *nptr, *sptr;
+  const char *ntok, *stok;
+  int wcnt = 0, idx, expression;
+  char *express = NULL;
+  xRect *r = &xctx->rect[GRIDLAYER][i];
+  int closest_dataset = -1;
+  double min=-1.0;
+  
+  if(gr->digital) return -1;
+
+  yval = G_Y(xctx->mousey);
+  xval = G_X(xctx->mousex);
+  if(gr->logx) xval = pow(10, xval);
+  if(gr->logy) yval = pow(10, yval);
+  dbg(0, "x=%g y=%g\n", xval, yval);
+  /* get data to plot */
+  my_strdup2(474, &node, get_tok_value(r->prop_ptr,"node",0));
+  my_strdup2(1012, &sweep, get_tok_value(r->prop_ptr,"sweep",0)); 
+  nptr = node;
+  sptr = sweep;
+  /* process each node given in "node" attribute, get also associated sweep var if any*/
+  while( (ntok = my_strtok_r(nptr, "\n\t ", "\"", &saven)) ) {
+    if(strstr(ntok, ",")) {
+      if(find_nth(ntok, ";,", 2)[0]) continue; /* bus signal: skip */
+    }
+    stok = my_strtok_r(sptr, "\t\n ", "\"", &saves);
+    nptr = sptr = NULL;
+    dbg(1, "ntok=%s\n", ntok);
+    if(stok && stok[0]) {
+      sweep_idx = get_raw_index(stok);
+      if( sweep_idx == -1) {
+        sweep_idx = 0;
+      }
+    }
+    /* if ntok following possible 'alias;' definition contains spaces --> custom data plot */
+    idx = -1;
+    expression = 0;
+    if(xctx->graph_values) {
+      if(strstr(ntok, ";")) {
+        my_strdup2(1191, &express, find_nth(ntok, ";", 2));
+      } else {
+        my_strdup2(1192, &express, ntok);
+      }
+      if(strstr(express, " ")) {
+        expression = 1;
+      }
+    }
+    if(expression) idx = plot_raw_custom_data(sweep_idx, 0, xctx->graph_allpoints-1, express);
+    else idx = get_raw_index(express);
+    if( idx != -1 ) {
+      int p, dset, ofs;
+      int first, last;
+      double xx, yy ; /* the p-th point */
+      double start;
+      double end;
+      int sweepvar_wrap = 0; /* incremented on new dataset or sweep variable wrap */
+      ofs = 0;
+      start = (gr->gx1 <= gr->gx2) ? gr->gx1 : gr->gx2;
+      end = (gr->gx1 <= gr->gx2) ? gr->gx2 : gr->gx1;
+      /* loop through all datasets found in raw file */
+      for(dset = 0 ; dset < xctx->graph_datasets; dset++) {
+        double prev_x, prev_prev_x;
+        int cnt=0, wrap;
+        register SPICE_DATA *gvx = xctx->graph_values[sweep_idx];
+        register SPICE_DATA *gvy = xctx->graph_values[idx];
+        first = -1;
+        /* Process "npoints" simulation items 
+         * p loop split repeated 2 timed (for x and y points) to preserve cache locality */
+        prev_prev_x = prev_x = 0;
+        last = ofs; 
+        for(p = ofs ; p < ofs + xctx->graph_npoints[dset]; p++) {
+          if(gr->logx) xx = mylog10(gvx[p]);
+          else  xx = gvx[p];
+          if(gr->logy) yy = mylog10(gvy[p]);
+          else  yy = gvy[p];
+          wrap = (sweep_idx == 0 && cnt > 1 && XSIGN(xx - prev_x) != XSIGN(prev_x - prev_prev_x));
+          if(first != -1) {
+            if(xx > end || xx < start || wrap) {
+              dbg(1, "find_closest_wave(): last=%d\n", last);
+              first = -1;
+            }
+          }
+          if(wrap) {
+             cnt = 0;
+             sweepvar_wrap++;
+          }
+          if(xx >= start && xx <= end) {
+            if(first == -1) first = p;
+            if( XSIGN(xval - xx) != XSIGN(xval - prev_x)) {
+
+               if(min < 0.0) {
+                  min = fabs(yval - yy);
+                  closest_dataset = sweepvar_wrap;
+               } else {
+                 double tmp = fabs(yval - yy);
+                 if(tmp < min) {
+                   min = tmp;
+                   closest_dataset = sweepvar_wrap;
+                 }
+               }
+               dbg(1, "find_closest_wave(): xval=%g yval=%g xx=%g yy=%g sweepvar_wrap=%d ntok=%s stok=%s\n",
+                   xval, yval, xx, yy, sweepvar_wrap, ntok, stok? stok : "<NULL>");
+            }
+            last = p;
+            cnt++;
+          } /* if(xx >= start && xx <= end) */
+          prev_prev_x = prev_x;
+          prev_x = xx;
+        } /* for(p = ofs ; p < ofs + xctx->graph_npoints[dset]; p++) */
+        /* offset pointing to next dataset */
+        ofs += xctx->graph_npoints[dset];
+        sweepvar_wrap++;
+      } /* for(dset...) */
+
+    } /*  if( (idx = get_raw_index(ntok)) != -1 ) */
+    wcnt++;
+  } /* while( (ntok = my_strtok_r(nptr, "\n\t ", "", &saven)) ) */
+  dbg(0, "closest dataset=%d\n", closest_dataset);
+  if(express) my_free(1487, &express);
+  my_free(478, &node);
+  my_free(1262, &sweep);
+  return closest_dataset;
+}
 
 
 /* flags:
@@ -2578,9 +2709,9 @@ void draw_graph(int i, const int flags, Graph_ctx *gr)
       expression = 0;
       if(xctx->graph_values && !bus_msb) {
         if(strstr(ntok, ";")) {
-          my_strdup2(1191, &express, find_nth(ntok, ";", 2));
+          my_strdup2(460, &express, find_nth(ntok, ";", 2));
         } else {
-          my_strdup2(1192, &express, ntok);
+          my_strdup2(473, &express, ntok);
         }
         if(strstr(express, " ")) {
           expression = 1;
@@ -2693,11 +2824,11 @@ void draw_graph(int i, const int flags, Graph_ctx *gr)
 
         my_free(1403, &point);
         if(idx_arr) my_free(1455, &idx_arr);
-      } /*  if( (idx = get_raw_index(bus_msb ? bus_msb : ntok)) != -1 ) */
+      } /* if( expression || (idx = get_raw_index(bus_msb ? bus_msb : express)) != -1 ) */
       wcnt++;
       if(bus_msb) my_free(1453, &bus_msb);
     } /* while( (ntok = my_strtok_r(nptr, "\n\t ", "", &saven)) ) */
-    if(express) my_free(1487, &express);
+    if(express) my_free(1520, &express);
     my_free(1391, &node);
     my_free(1392, &color);
     my_free(1408, &sweep);

@@ -383,16 +383,16 @@ static int read_dataset(FILE *fd)
       sscanf(line, "%d %s", &i, varname); /* read index and name of saved waveform */
       if(xctx->graph_sim_type == 3) { /* AC */
         my_strcat(415, &xctx->graph_names[i << 1], varname);
-        int_hash_lookup(xctx->raw_table, xctx->graph_names[i << 1], (i << 1), XINSERT_NOREPLACE);
+        int_hash_lookup(xctx->graph_raw_table, xctx->graph_names[i << 1], (i << 1), XINSERT_NOREPLACE);
         if(strstr(varname, "v(") == varname || strstr(varname, "i(") == varname ||
            strstr(varname, "V(") == varname || strstr(varname, "I(") == varname)
           my_mstrcat(664, &xctx->graph_names[(i << 1) + 1], "ph(", varname + 2, NULL);
         else
           my_mstrcat(540, &xctx->graph_names[(i << 1) + 1], "ph(", varname, ")", NULL);
-        int_hash_lookup(xctx->raw_table, xctx->graph_names[(i << 1) + 1], (i << 1) + 1, XINSERT_NOREPLACE);
+        int_hash_lookup(xctx->graph_raw_table, xctx->graph_names[(i << 1) + 1], (i << 1) + 1, XINSERT_NOREPLACE);
       } else {
         my_strcat(541, &xctx->graph_names[i], varname);
-        int_hash_lookup(xctx->raw_table, xctx->graph_names[i], i, XINSERT_NOREPLACE);
+        int_hash_lookup(xctx->graph_raw_table, xctx->graph_names[i], i, XINSERT_NOREPLACE);
       }
       /* use hash table to store index number of variables */
       dbg(1, "read_dataset(): get node list -> names[%d] = %s\n", i, xctx->graph_names[i]);
@@ -429,10 +429,10 @@ void free_rawfile(int dr)
   }
   if(xctx->graph_npoints) my_free(1413, &xctx->graph_npoints);
   xctx->graph_allpoints = 0;
-  if(xctx->raw_schname) my_free(1393, &xctx->raw_schname);
+  if(xctx->graph_raw_schname) my_free(1393, &xctx->graph_raw_schname);
   xctx->graph_datasets = 0;
   xctx->graph_nvars = 0;
-  int_hash_free(xctx->raw_table);
+  int_hash_free(xctx->graph_raw_table);
   if(deleted && dr) draw();
 }
 
@@ -502,7 +502,7 @@ int read_rawfile(const char *f)
     if((res = read_dataset(fd)) == 1) {
       int i;
       dbg(0, "Raw file data read\n");
-      my_strdup2(1394, &xctx->raw_schname, xctx->sch[xctx->currsch]);
+      my_strdup2(1394, &xctx->graph_raw_schname, xctx->sch[xctx->currsch]);
       xctx->graph_allpoints = 0;
       for(i = 0; i < xctx->graph_datasets; i++) {
         xctx->graph_allpoints +=  xctx->graph_npoints[i];
@@ -525,14 +525,14 @@ int get_raw_index(const char *node)
   Int_hashentry *entry;
   dbg(1, "get_raw_index(): node=%s, node=%s\n", node, node);
   if(xctx->graph_values) {
-    entry = int_hash_lookup(xctx->raw_table, node, 0, XLOOKUP);
+    entry = int_hash_lookup(xctx->graph_raw_table, node, 0, XLOOKUP);
     if(!entry) {
       my_snprintf(vnode, S(vnode), "v(%s)", node);
-      entry = int_hash_lookup(xctx->raw_table, vnode, 0, XLOOKUP);
+      entry = int_hash_lookup(xctx->graph_raw_table, vnode, 0, XLOOKUP);
       if(!entry) {
         my_strncpy(lnode, vnode, S(lnode));
         strtolower(lnode);
-        entry = int_hash_lookup(xctx->raw_table, lnode, 0, XLOOKUP);
+        entry = int_hash_lookup(xctx->graph_raw_table, lnode, 0, XLOOKUP);
       }
     }
     if(entry) return entry->value;
@@ -1121,7 +1121,8 @@ static void save_inst(FILE *fd, int select_only)
   }
   fprintf(fd, " %.16g %.16g %hd %hd ",ptr[i].x0, ptr[i].y0, ptr[i].rot, ptr[i].flip );
   save_ascii_string(ptr[i].prop_ptr,fd, 1);
-  if( !embedded_saved[ptr[i].ptr] && !strcmp(get_tok_value(ptr[i].prop_ptr, "embed", 0), "true") ) {
+  if( embedded_saved && !embedded_saved[ptr[i].ptr] &&
+      !strcmp(get_tok_value(ptr[i].prop_ptr, "embed", 0), "true") ) {
       /* && !(xctx->sym[ptr[i].ptr].flags & EMBEDDED)) {  */
     embedded_saved[ptr[i].ptr] = 1;
     fprintf(fd, "[\n");
@@ -1247,8 +1248,8 @@ static void write_xschem_file(FILE *fd)
   my_strdup2(1183, &xctx->version_string, subst_token(xctx->version_string, "version", NULL));
   my_strdup2(1184, &xctx->version_string, subst_token(xctx->version_string, "file_version", NULL));
   ptr = xctx->version_string;
-  while(*ptr == ' ' || *ptr == '\t') ptr++; /* strip leading spaces */
-  fprintf(fd, "v {xschem version=%s file_version=%s %s}\n", XSCHEM_VERSION, XSCHEM_FILE_VERSION, ptr);
+  while(*ptr == ' ' || *ptr == '\t' || *ptr == '\n') ptr++; /* strip leading spaces */
+  fprintf(fd, "v {xschem version=%s file_version=%s\n%s}\n", XSCHEM_VERSION, XSCHEM_FILE_VERSION, ptr);
 
 
   if(xctx->schvhdlprop && !xctx->schsymbolprop) {
@@ -1829,7 +1830,7 @@ int save_schematic(const char *schname) /* 20171020 added return value */
     tcleval("alert_ {file opening for write failed!} {}");
     return 0;
   }
-  unselect_all();
+  unselect_all(1);
   write_xschem_file(fd);
   fclose(fd);
   /* update time stamp */
@@ -1922,6 +1923,7 @@ void load_schematic(int load_symbols, const char *filename, int reset_undo) /* 2
       my_snprintf(msg, S(msg), "update; alert_ {Unable to open file: %s}", filename ? filename: "(null)");
       tcleval(msg);
       clear_drawing();
+      if(reset_undo) set_modify(0);
     } else {
       clear_drawing();
       dbg(1, "load_schematic(): reading file: %s\n", name);
@@ -2125,7 +2127,7 @@ void pop_undo(int redo, int set_modify_status)
     xctx->cur_undo_ptr--; /* will be restored after building file name */
   }
   clear_drawing();
-  unselect_all();
+  unselect_all(1);
 
   #if HAS_POPEN==1
   my_snprintf(diff_name, S(diff_name), "gzip -d -c %s/undo%d", xctx->undo_dirname, xctx->cur_undo_ptr%MAX_UNDO);
@@ -3280,13 +3282,13 @@ void descend_symbol(void)
     }
     save_embedded_symbol(xctx->inst[xctx->sel_array[0].n].ptr+xctx->sym, fd);
     fclose(fd);
-    unselect_all();
+    unselect_all(1);
     remove_symbols(); /* must follow save (if) embedded */
     /* load_symbol(name_embedded); */
     load_schematic(1, name_embedded, 1);
   } else {
     /* load_symbol(abs_sym_path(name, "")); */
-    unselect_all();
+    unselect_all(1);
     remove_symbols(); /* must follow save (if) embedded */
     load_schematic(1, abs_sym_path(name, ""), 1);
   }
