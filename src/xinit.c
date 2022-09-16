@@ -630,9 +630,11 @@ static void alloc_xschem_data(const char *top_path, const char *win_path)
   my_strdup2(1462, &xctx->current_win_path, win_path);
   xctx->fill_type=my_calloc(640, cadlayers, sizeof(int));
   xctx->case_insensitive = 0;
+  xctx->show_hidden_texts = 0;
   xctx->x_strcmp = strcmp;
   xctx->fill_pattern = 1;
   xctx->draw_window = 0;
+  xctx->do_copy_area = 1;
   xctx->time_last_modify = 0;
 }
 
@@ -735,8 +737,10 @@ int compare_schematics(const char *f)
   xctx->xrect[0].height = save_xctx->xrect[0].height;
   xctx->save_pixmap = save_xctx->save_pixmap;
   xctx->gctiled = save_xctx->gctiled;
+#if HAS_CAIRO==1
   xctx->cairo_ctx = save_xctx->cairo_ctx;
   xctx->cairo_save_ctx = save_xctx->cairo_save_ctx;
+#endif
 
   /* set identical viewport */
   xctx->zoom = save_xctx->zoom;
@@ -1060,18 +1064,20 @@ void toggle_fullscreen(const char *topwin)
     xctx->menu_removed=0;
   }
   if(fs == 1) {
-    window_state(display , parent_id,fullscr);
+    xctx->pending_fullzoom=1;
+    window_state(display , parent_id,fullscr); /* full screen with menus and toolbars */
   } else if(fs == 2) {
-    window_state(display , parent_id,normal);
+    xctx->pending_fullzoom=2;
+    window_state(display , parent_id,normal); /* full screen, only drawing area */
     window_state(display , parent_id,fullscr);
   } else {
-    window_state(display , parent_id,normal);
+    xctx->pending_fullzoom=1;
+    window_state(display , parent_id,normal); /* normal view */
     /* when switching back from fullscreen multiple ConfigureNotify events are generated. 
      * pending_fullzoom does not work on the last corect ConfigureNotify event,
      * so wee zoom_full() again */
-    zoom_full(1, 0, 1, 0.97); /* draw */
   }
-  xctx->pending_fullzoom=1;
+  zoom_full(1, 0, 1, 0.97); /* draw */
 }
 
 
@@ -1856,10 +1862,10 @@ void resetwin(int create_pixmap, int clear_pixmap, int force, int w, int h)
         }
       }
     }
-    if(xctx->pending_fullzoom) {
+    if(xctx->pending_fullzoom > 0) {
       dbg(1, "resetwin(): pending_fulzoom: doing zoom_full()\n");
-      zoom_full(0, 0, 1, 0.97);
-      xctx->pending_fullzoom=0;
+      zoom_full(1, 0, 1, 0.97);
+      xctx->pending_fullzoom--;
     }
     dbg(1, "resetwin(): Window reset\n");
   } /* end if(has_x) */
@@ -2366,6 +2372,10 @@ int Tcl_AppInit(Tcl_Interp *inter)
    xctx->x_strcmp = my_strcasecmp;
  }
 
+ if(tclgetboolvar("show_hidden_texts")) {
+   xctx->show_hidden_texts = 1;
+ }
+
  /*                                */
  /*  START PROCESSING USER OPTIONS */
  /*                                */
@@ -2533,7 +2543,7 @@ int Tcl_AppInit(Tcl_Interp *inter)
  if(!detach && !cli_opt_no_readline) {
    tcleval( "if {![catch {package require tclreadline}]} "
      "{::tclreadline::readline builtincompleter 0;"
-     /*  "::tclreadline::readline customcompleter completer;" */
+      "::tclreadline::readline customcompleter completer;"
       "::tclreadline::Loop }" 
    );
  }

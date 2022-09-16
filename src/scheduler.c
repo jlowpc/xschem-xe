@@ -826,7 +826,33 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
         Tcl_SetResult(interp, xctx->sch_path[x], TCL_VOLATILE);
       }
     }
+    else if(argc >= 4 && !strcmp(argv[1],"get") && !strcmp(argv[2],"netlist_name") &&
+            !strcmp(argv[3], "fallback")) {
+      char f[PATH_MAX];
+      cmd_found = 1;
 
+      if(xctx->netlist_type == CAD_SPICE_NETLIST) {
+        my_snprintf(f, S(f), "%s.spice", skip_dir(xctx->current_name));
+      }
+      else if(xctx->netlist_type == CAD_VHDL_NETLIST) {
+        my_snprintf(f, S(f), "%s.vhdl", skip_dir(xctx->current_name));
+      }
+      else if(xctx->netlist_type == CAD_VERILOG_NETLIST) {
+        my_snprintf(f, S(f), "%s.v", skip_dir(xctx->current_name));
+      }
+      else if(xctx->netlist_type == CAD_TEDAX_NETLIST) {
+        my_snprintf(f, S(f), "%s.tdx", skip_dir(xctx->current_name));
+      }
+      else {
+        my_snprintf(f, S(f), "%s.unknown", skip_dir(xctx->current_name));
+      }
+
+      if(xctx->netlist_name[0] == '\0') {
+        Tcl_SetResult(interp, f, TCL_VOLATILE);
+      } else {
+        Tcl_SetResult(interp, xctx->netlist_name, TCL_VOLATILE);
+      }
+    }
     else if(!strcmp(argv[1],"get") && argc==3)
     {
      cmd_found = 1;
@@ -1144,7 +1170,7 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
         } else {
           int c = atoi(argv[3]);
           int n = atoi(argv[4]);
-          Tcl_SetResult(interp, (char *)get_tok_value(xctx->rect[c][n].prop_ptr, argv[5], 0), TCL_VOLATILE);
+          Tcl_SetResult(interp, (char *)get_tok_value(xctx->rect[c][n].prop_ptr, argv[5], 2), TCL_VOLATILE);
         }
       }
     }
@@ -1964,15 +1990,16 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
         if(argc == 6) {
           w = atoi(argv[4]);
           h = atoi(argv[5]);
+          if(w == 0) w = xctx->xrect[0].width;
+          if(h == 0) h = xctx->xrect[0].height;
           save_restore_zoom(1);
-          set_viewport_size(w, h, 0.8);
+          set_viewport_size(w, h, 1.0);
           zoom_full(0, 0, 2, 0.97);
           resetwin(1, 1, 1, w, h);
           print_image();
           save_restore_zoom(0);
           resetwin(1, 1, 1, 0, 0);
           change_linewidth(-1.);
-          draw();
         } else if( argc == 10) {
           w = atoi(argv[4]);
           h = atoi(argv[5]);
@@ -1980,15 +2007,16 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
           y1 = atof(argv[7]);
           x2 = atof(argv[8]);
           y2 = atof(argv[9]);
+          if(w == 0) w = (int) fabs(x2 - x1);
+          if(h == 0) h = (int) fabs(y2 - y1);
           save_restore_zoom(1);
-          set_viewport_size(w, h, 0.8);
+          set_viewport_size(w, h, 1.0); 
           zoom_box(x1, y1, x2, y2, 1.0);
           resetwin(1, 1, 1, w, h);
           print_image();
           save_restore_zoom(0);
           resetwin(1, 1, 1, 0, 0);
           change_linewidth(-1.);
-          draw();
         } else {
           print_image();
         }
@@ -2000,7 +2028,7 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
           w = atoi(argv[4]);
           h = atoi(argv[5]);
           save_restore_zoom(1);
-          set_viewport_size(w, h, 0.8);
+          set_viewport_size(w, h, 1.0);
           zoom_full(0, 0, 2, 0.97);
           svg_draw();
           save_restore_zoom(0);
@@ -2012,7 +2040,7 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
           x2 = atof(argv[8]);
           y2 = atof(argv[9]);
           save_restore_zoom(1);
-          set_viewport_size(w, h, 0.8);
+          set_viewport_size(w, h, 1.0);
           zoom_box(x1, y1, x2, y2, 1.0);
           svg_draw();
           save_restore_zoom(0);
@@ -2070,7 +2098,7 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
       cmd_found = 1;
       Tcl_ResetResult(interp);
       if(argc > 2 && !strcmp(argv[2], "loaded")) {
-        Tcl_AppendResult(interp, schematic_waves_loaded() ? "1" : "0", NULL);
+        Tcl_SetResult(interp, schematic_waves_loaded() ? "1" : "0", TCL_STATIC);
       } else if(xctx->graph_values) {
         /* xschem rawfile_query value v(ldcp) 123 */
         if(argc > 4 && !strcmp(argv[2], "value")) {
@@ -2091,7 +2119,7 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
             }
             if(idx >= 0) {
               double val = get_raw_value(dataset, idx, point);
-              Tcl_AppendResult(interp, dtoa(val), NULL);
+              Tcl_SetResult(interp, dtoa(val), TCL_VOLATILE);
             }
           }
         } else if(argc > 3 && !strcmp(argv[2], "index")) {
@@ -2100,31 +2128,34 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
           int idx;
           entry = int_hash_lookup(xctx->graph_raw_table, argv[3], 0, XLOOKUP);
           idx = entry ? entry->value : -1;
-          Tcl_AppendResult(interp, my_itoa(idx), NULL);
+          Tcl_SetResult(interp, my_itoa(idx), TCL_VOLATILE);
         } else if(argc > 3 && !strcmp(argv[2], "values")) {
           /* xschem raw_query values ldcp [dataset] */
           int idx;
+          char n[70];
           int p, dataset = 0;
           idx = get_raw_index(argv[3]);
           if(argc > 4) dataset = atoi(argv[4]);
           if(idx >= 0) {
             int np =  xctx->graph_npoints[dataset];
+            Tcl_ResetResult(interp);
             for(p = 0; p < np; p++) {
-              Tcl_AppendResult(interp, dtoa_prec(get_raw_value(dataset, idx, p)), " ", NULL);
+              sprintf(n, "%.10e", get_raw_value(dataset, idx, p));
+              Tcl_AppendResult(interp, n, " ", NULL);
             }
           }
         } else if(argc > 2 && !strcmp(argv[2], "datasets")) {
-          Tcl_AppendResult(interp, my_itoa(xctx->graph_datasets), NULL); 
+          Tcl_SetResult(interp, my_itoa(xctx->graph_datasets), TCL_VOLATILE); 
         } else if(argc > 2 && !strcmp(argv[2], "points")) {
           int dset = -1;
           if(argc > 3) dset = atoi(argv[3]);
-          if(dset == -1) Tcl_AppendResult(interp, my_itoa(xctx->graph_allpoints), NULL);
+          if(dset == -1) Tcl_SetResult(interp, my_itoa(xctx->graph_allpoints), TCL_VOLATILE);
           else {
             if(dset >= 0 && dset <  xctx->graph_datasets) 
-                Tcl_AppendResult(interp, my_itoa(xctx->graph_npoints[dset]), NULL);
+                Tcl_SetResult(interp, my_itoa(xctx->graph_npoints[dset]), TCL_VOLATILE);
           }
         } else if(argc > 2 && !strcmp(argv[2], "vars")) {
-          Tcl_AppendResult(interp, my_itoa(xctx->graph_nvars), NULL);
+          Tcl_SetResult(interp, my_itoa(xctx->graph_nvars), TCL_VOLATILE);
         } else if(argc > 2 && !strcmp(argv[2], "list")) {
           for(i = 0 ; i < xctx->graph_nvars; i++) {
             if(i > 0) Tcl_AppendResult(interp, "\n", NULL);
@@ -2572,6 +2603,10 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
             dbg(1, "scheduler(): set semaphore to %s\n", argv[3]);
             xctx->semaphore=atoi(argv[3]);
       }
+      else if(!strcmp(argv[2],"show_hidden_texts")) {
+            dbg(1, "scheduler(): set show_hidden_texts to %s\n", argv[3]);
+            xctx->show_hidden_texts=atoi(argv[3]);
+      }
       else if(!strcmp(argv[2],"sym_txt")) {
             xctx->sym_txt=atoi(argv[3]);
       }
@@ -2745,7 +2780,6 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
       cmd_found = 1;
       if( set_netlist_dir(0, NULL) ) {
         tcleval("simulate");
-        Tcl_ResetResult(interp);
       }
     }
    
@@ -3046,7 +3080,7 @@ double tclgetdoublevar(const char *s)
     dbg(0, "%s\n", tclresult());
     return 0.0;
   }
-  return atof(p);
+  return atof_spice(p);
 }
 
 int tclgetintvar(const char *s)

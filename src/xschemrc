@@ -123,7 +123,6 @@
 # set netlist_type spice
 
 #### Some netlisting options (these are the defaults)
-# set hspice_netlist 1
 # set verilog_2001 1
 
 #### to use a fixed line with set change_lw to 0 and set some value to line_width
@@ -306,12 +305,6 @@
 # set show_infowindow 0
 
 ###########################################################################
-#### CONFIGURE COMPUTER FARM JOB REDIRECTORS FOR SIMULATIONS
-###########################################################################
-#### RTDA NC
-# set computerfarm {nc run -Il}
-#### LSF BSUB
-# set computerfarm {bsub -Is}
 
 ###########################################################################
 #### TCP CONNECTION WITH GAW
@@ -365,3 +358,10 @@
 ## Do not set this option if you don't know what you are doing.
 ## Default: not enabled (0)
 # set case_insensitive 1
+
+###########################################################################
+#### SHOW HIDDEN TEXTS
+###########################################################################
+## This option shows text objects even if they have attribute 'hide=true' set
+## default: 0 (not set) 
+# set show_hidden_texts 1

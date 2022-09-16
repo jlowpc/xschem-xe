@@ -41,8 +41,10 @@ proc ngspice::read_ngspice_raw {arr fp} {
       set n_points [lindex $line end]
     }
     if {$variables} {
-      set var([lindex $line 1]) {}
-      set idx([lindex $line 0]) [lindex $line 1]
+      set nodename [string tolower [lindex $line 1]]
+      regsub -all {:} $nodename {.} nodename
+      set var($nodename) {}
+      set idx([lindex $line 0]) $nodename
     }
     if {[regexp {^Variables:} $line]} {
       set variables 1
@@ -163,9 +165,13 @@ proc ngspice::resetdata {} {
   array unset ::ngspice::ngspice_data
 }
 
-proc ngspice::annotate {} {
+proc ngspice::annotate {{f {}}} {
   upvar ::ngspice::ngspice_data arr
-  set rawfile "$::netlist_dir/[file rootname [file tail [xschem get schname 0]]].raw"
+  if { $f eq {}} {
+    set rawfile "$::netlist_dir/[file rootname [file tail [xschem get schname 0]]].raw"
+  } else {
+    set rawfile $f
+  }
   if { ![file exists $rawfile] } {
     puts "no raw file found: $rawfile"
     return

@@ -81,7 +81,7 @@ void print_image()
   #if HAS_CAIRO == 0
   char cmd[PATH_MAX+100];
   #endif
-  int save_draw_grid;
+  int save_draw_grid, save_draw_window;
   static char lastdir[PATH_MAX] = "";
   const char *r;
 
@@ -107,7 +107,10 @@ void print_image()
   #endif
   save_draw_grid = tclgetboolvar("draw_grid");
   tclsetvar("draw_grid", "0");
+  save_draw_window = xctx->draw_window;
+  xctx->draw_window=0;
   xctx->draw_pixmap=1;
+  xctx->do_copy_area=0;
   draw();
   
 
@@ -115,29 +118,31 @@ void print_image()
                       * XPM and handles Xrender extensions for transparent embedded images */
   {
     cairo_surface_t *png_sfc;
-#ifdef __unix__
+    #ifdef __unix__
     png_sfc = cairo_xlib_surface_create(display, xctx->save_pixmap, visual,
                xctx->xrect[0].width, xctx->xrect[0].height);
-#else
+    #else
     HWND hwnd = Tk_GetHWND(xctx->window);
     HDC dc = GetDC(hwnd);
     png_sfc = cairo_win32_surface_create(dc);
-#endif
+    #endif
 
     if(xctx->plotfile[0])
       cairo_surface_write_to_png(png_sfc, xctx->plotfile);
     else
       cairo_surface_write_to_png(png_sfc, "plot.png");
+
+    cairo_surface_destroy(png_sfc);
   }
   #else /* no cairo */
-#ifdef __unix__
+  #ifdef __unix__
   XpmWriteFileFromPixmap(display, "plot.xpm", xctx->save_pixmap,0, NULL ); /* .gz ???? */
   dbg(1, "print_image(): Window image saved\n");
   if(xctx->plotfile[0]) {
     my_snprintf(cmd, S(cmd), "convert_to_png plot.xpm {%s}", xctx->plotfile);
     tcleval(cmd);
   } else tcleval( "convert_to_png plot.xpm plot.png");
-#else
+  #else
   char *psfile = NULL;
   create_ps(&psfile, 7);
   if (xctx->plotfile[0]) {
@@ -145,11 +150,13 @@ void print_image()
     tcleval(cmd);
   }
   else tcleval("convert_to_png {%s} plot.png", psfile);
-#endif
+  #endif
   #endif
   my_strncpy(xctx->plotfile,"", S(xctx->plotfile));
   tclsetboolvar("draw_grid", save_draw_grid);
   xctx->draw_pixmap=1;
+  xctx->draw_window=save_draw_window;
+  xctx->do_copy_area=1;
 }
 
 #if HAS_CAIRO==1
@@ -169,7 +176,7 @@ static void set_cairo_color(int layer)
 int set_text_custom_font(xText *txt) /* 20171122 for correct text_bbox calculation */
 {
   const char *textfont;
-
+  if (xctx->cairo_ctx==NULL) return 0;
   textfont = txt->font;
   if((textfont && textfont[0]) || (txt->flags & (TEXT_BOLD | TEXT_OBLIQUE | TEXT_ITALIC))) {
     cairo_font_slant_t slant;
@@ -421,7 +428,6 @@ void draw_symbol(int what,int c, int n,int layer,short tmp_flip, short rot,
   #if HAS_CAIRO==1
   const char *textfont;
   #endif
-  int show_hidden_texts = tclgetboolvar("show_hidden_texts");
 
   if(xctx->inst[n].ptr == -1) return;
   if( (layer != PINLAYER && !xctx->enable_layer[layer]) ) return;
@@ -550,7 +556,7 @@ void draw_symbol(int what,int c, int n,int layer,short tmp_flip, short rot,
     {
       text = symptr->text[j];
       if(text.xscale*FONTWIDTH*xctx->mooz<1) continue;
-      if(!show_hidden_texts && (symptr->text[j].flags & HIDE_TEXT)) continue;
+      if(!xctx->show_hidden_texts && (text.flags & HIDE_TEXT)) continue;
       if( hide && text.txt_ptr && strcmp(text.txt_ptr, "@symname") && strcmp(text.txt_ptr, "@name") ) continue;
       txtptr= translate(n, text.txt_ptr);
       ROTATION(rot, flip, 0.0,0.0,text.x0,text.y0,x1,y1);
@@ -709,6 +715,7 @@ void draw_temp_symbol(int what, GC gc, int n,int layer,short tmp_flip, short rot
   for(j=0;j< symptr->texts;j++)
   {
    text = symptr->text[j];
+   if(!xctx->show_hidden_texts && (text.flags & HIDE_TEXT)) continue;
    if(text.xscale*FONTWIDTH*xctx->mooz<1) continue;
    txtptr= translate(n, text.txt_ptr);
    ROTATION(rot, flip, 0.0,0.0,text.x0,text.y0,x1,y1);
@@ -1697,18 +1704,22 @@ static SPICE_DATA **get_bus_idx_array(const char *ntok, int *n_bits)
   char *saven, *nptr, *ntok_copy = NULL;
   const char *bit_name;
   *n_bits = count_items(ntok, ";,", "") - 1;
+  /* dbg(0, "get_bus_idx_array(): ntok=%s\n", ntok); */
+  /* dbg(0, "get_bus_idx_array(): *n_bits=%d\n", *n_bits); */
   idx_arr = my_malloc(1454, (*n_bits) * sizeof(SPICE_DATA *));
   p = 0;
   my_strdup2(1402, &ntok_copy, ntok);
   nptr = ntok_copy;
   my_strtok_r(nptr, ";,", "", &saven); /*strip off bus name (1st field) */
-  while( (bit_name = my_strtok_r(NULL, ",", "", &saven)) ) {
+  while( (bit_name = my_strtok_r(NULL, ";,", "", &saven)) ) {
     int idx;
+    if(p >= *n_bits) break; /* security check to avoid out of bound writing */
     if( (idx = get_raw_index(bit_name)) != -1) {
       idx_arr[p] = xctx->graph_values[idx];
     } else {
       idx_arr[p] = NULL;
     }
+    /* dbg(0, "get_bus_idx_array(): bit_name=%s, p=%d\n", bit_name, p); */
     p++;
   }
   my_free(1404, &ntok_copy);
@@ -1967,9 +1978,9 @@ void setup_graph_data(int i, const int flags, int skip, Graph_ctx *gr)
     gr->gx1 = 0;
     gr->gx2 = 1e-6;
     val = get_tok_value(r->prop_ptr,"x1",0);
-    if(val[0]) gr->gx1 = atof(val);
+    if(val[0]) gr->gx1 = atof_spice(val);
     val = get_tok_value(r->prop_ptr,"x2",0);
-    if(val[0]) gr->gx2 = atof(val);
+    if(val[0]) gr->gx2 = atof_spice(val);
     if(gr->gx1 == gr->gx2) gr->gx2 += 1e-6;
     gr->gw = gr->gx2 - gr->gx1;
   }
@@ -2033,17 +2044,17 @@ void setup_graph_data(int i, const int flags, int skip, Graph_ctx *gr)
   val = get_tok_value(r->prop_ptr,"logy",0);
   if(val[0] == '1') gr->logy = 1;
   val = get_tok_value(r->prop_ptr,"y1",0);
-  if(val[0]) gr->gy1 = atof(val);
+  if(val[0]) gr->gy1 = atof_spice(val);
   val = get_tok_value(r->prop_ptr,"y2",0);
-  if(val[0]) gr->gy2 = atof(val);
+  if(val[0]) gr->gy2 = atof_spice(val);
   if(gr->gy1 == gr->gy2) gr->gy2 += 1.0;
   val = get_tok_value(r->prop_ptr,"digital",0);
   if(val[0]) gr->digital = atoi(val);
   if(gr->digital) {
     val = get_tok_value(r->prop_ptr,"ypos1",0);
-    if(val[0]) gr->ypos1 = atof(val);
+    if(val[0]) gr->ypos1 = atof_spice(val);
     val = get_tok_value(r->prop_ptr,"ypos2",0);
-    if(val[0]) gr->ypos2 = atof(val);
+    if(val[0]) gr->ypos2 = atof_spice(val);
     if(gr->ypos2 == gr->ypos1) gr->ypos2 += 1.0;
   }
   gr->posh = gr->ypos2 - gr->ypos1;
@@ -2182,7 +2193,7 @@ static void draw_graph_variables(int wcnt, int wave_color, int n_nodes, int swee
     if(gr->unitx != 1.0) my_snprintf(tmpstr, S(tmpstr), "%s[%c]", stok ? stok : "" , gr->unitx_suffix);
     else  my_snprintf(tmpstr, S(tmpstr), "%s", stok ? stok : "");
     draw_string(wave_color, NOW, tmpstr, 2, 1, 0, 0,
-       gr->rx1 + 2 + gr->rw / n_nodes * wcnt, gr->ry2-1, gr->txtsizelab, gr->txtsizelab);
+       gr->rx1 + 2 + gr->rw / n_nodes * wcnt, gr->ry2-5, gr->txtsizelab, gr->txtsizelab);
   }
   /* draw node labels in graph */
   if(bus_msb) {
@@ -2523,9 +2534,6 @@ int find_closest_wave(int i, Graph_ctx *gr)
 
   yval = G_Y(xctx->mousey);
   xval = G_X(xctx->mousex);
-  if(gr->logx) xval = pow(10, xval);
-  if(gr->logy) yval = pow(10, yval);
-  dbg(0, "x=%g y=%g\n", xval, yval);
   /* get data to plot */
   my_strdup2(474, &node, get_tok_value(r->prop_ptr,"node",0));
   my_strdup2(1012, &sweep, get_tok_value(r->prop_ptr,"sweep",0)); 
@@ -2576,14 +2584,16 @@ int find_closest_wave(int i, Graph_ctx *gr)
         int cnt=0, wrap;
         register SPICE_DATA *gvx = xctx->graph_values[sweep_idx];
         register SPICE_DATA *gvy = xctx->graph_values[idx];
+        dbg(1, "find_closest_wave(): dset=%d\n", dset);
         first = -1;
         /* Process "npoints" simulation items 
          * p loop split repeated 2 timed (for x and y points) to preserve cache locality */
         prev_prev_x = prev_x = 0;
         last = ofs; 
+        dbg(1, "find_closest_wave(): xval=%g yval=%g\n", xval, yval);
         for(p = ofs ; p < ofs + xctx->graph_npoints[dset]; p++) {
           if(gr->logx) xx = mylog10(gvx[p]);
-          else  xx = gvx[p];
+          else xx = gvx[p];
           if(gr->logy) yy = mylog10(gvy[p]);
           else  yy = gvy[p];
           wrap = (sweep_idx == 0 && cnt > 1 && XSIGN(xx - prev_x) != XSIGN(prev_x - prev_prev_x));
@@ -2940,10 +2950,10 @@ static cairo_status_t png_writer(void *in_closure, const unsigned char *in_data,
 
 
 /* rot and flip for rotated / flipped symbols
- * draw: 1 draw image
+ * dr: 1 draw image
  *       0 only load image and build base64 
  */
-void draw_image(int draw, xRect *r, double *x1, double *y1, double *x2, double *y2, int rot, int flip)
+void draw_image(int dr, xRect *r, double *x1, double *y1, double *x2, double *y2, int rot, int flip)
 {
   #if HAS_CAIRO == 1
   const char *ptr;
@@ -2970,7 +2980,7 @@ void draw_image(int draw, xRect *r, double *x1, double *y1, double *x2, double *
                   xctx->areax1,xctx->areay1,xctx->areax2,xctx->areay2)) return;
   set_rect_extraptr(1, r); /* create r->extraptr pointing to a xEmb_image struct */
   emb_ptr = r->extraptr;
-  if(draw) {
+  if(dr) {
     cairo_save(xctx->cairo_ctx);
     cairo_save(xctx->cairo_save_ctx);
   }
@@ -3071,7 +3081,7 @@ void draw_image(int draw, xRect *r, double *x1, double *y1, double *x2, double *
     scalex = rw/w * xctx->mooz;
     scaley = rh/h * xctx->mooz;
   }
-  if(draw && xctx->draw_pixmap) {
+  if(dr && xctx->draw_pixmap) {
     cairo_translate(xctx->cairo_save_ctx, x, y);
     if(flip && (rot == 0 || rot == 2)) cairo_scale(xctx->cairo_save_ctx, -scalex, scaley);
     else if(flip && (rot == 1 || rot == 3)) cairo_scale(xctx->cairo_save_ctx, scalex, -scaley);
@@ -3084,7 +3094,7 @@ void draw_image(int draw, xRect *r, double *x1, double *y1, double *x2, double *
     cairo_clip(xctx->cairo_save_ctx);
     cairo_paint_with_alpha(xctx->cairo_save_ctx, alpha);
   }
-  if(draw && xctx->draw_window) {
+  if(dr && xctx->draw_window) {
     cairo_translate(xctx->cairo_ctx, x, y);
     if(flip && (rot == 0 || rot == 2)) cairo_scale(xctx->cairo_ctx, -scalex, scaley);
     else if(flip && (rot == 1 || rot == 3)) cairo_scale(xctx->cairo_ctx, scalex, -scaley);
@@ -3097,7 +3107,7 @@ void draw_image(int draw, xRect *r, double *x1, double *y1, double *x2, double *
     cairo_clip(xctx->cairo_ctx);
     cairo_paint_with_alpha(xctx->cairo_ctx, alpha);
   }
-  if(draw) {
+  if(dr) {
     cairo_restore(xctx->cairo_ctx);
     cairo_restore(xctx->cairo_save_ctx);
   }
@@ -3119,6 +3129,74 @@ static void draw_images_all(void)
   #endif
 }
 
+void svg_embedded_graph(FILE *fd, xRect *r, double rx1, double ry1, double rx2, double ry2)
+{
+  #if defined(__unix__) && defined(HAS_CAIRO)
+  char *ptr = NULL;
+  double x1, y1, x2, y2, w, h, rw, rh, scale;
+  char transform[150];
+  png_to_byte_closure_t closure;
+  cairo_surface_t *png_sfc;
+  int save_draw_window, save_draw_grid, rwi, rhi;
+  size_t olength;
+  const double max_size = 2000.0;
+
+  rw = fabs(rx2 -rx1);
+  rh = fabs(ry2 - ry1);
+  scale = 1.0;
+  if(rw > rh && rw > max_size) {
+    scale = max_size / rw;
+  } else if(rh > max_size) {
+    scale = max_size / rh;
+  }
+  rwi = (int) (rw * scale + 1.0);
+  rhi = (int) (rh * scale + 1.0);
+  save_restore_zoom(1);
+  set_viewport_size(rwi, rhi, 1.0);
+  zoom_box(rx1, ry1, rx2, ry2, 1.0);
+  resetwin(1, 1, 1, rwi, rhi);
+  save_draw_grid = tclgetboolvar("draw_grid");
+  tclsetvar("draw_grid", "0");
+  save_draw_window = xctx->draw_window;
+  xctx->draw_window=0;
+  xctx->draw_pixmap=1;
+  xctx->do_copy_area=0;
+  draw();
+  png_sfc = cairo_xlib_surface_create(display, xctx->save_pixmap, visual,
+               xctx->xrect[0].width, xctx->xrect[0].height);
+  closure.buffer = NULL;
+  closure.size = 0;
+  closure.pos = 0;
+  cairo_surface_write_to_png_stream(png_sfc, png_writer, &closure);
+  ptr = base64_encode(closure.buffer, closure.pos, &olength, 1);
+  my_free(1547, &closure.buffer);
+  cairo_surface_destroy(png_sfc);
+  xctx->draw_pixmap=1;
+  xctx->draw_window=save_draw_window;
+  xctx->do_copy_area=1;
+  tclsetboolvar("draw_grid", save_draw_grid);
+  save_restore_zoom(0);
+  resetwin(1, 1, 1, 0, 0);
+  change_linewidth(-1.);
+
+  x1=X_TO_SVG(rx1);
+  y1=Y_TO_SVG(ry1);
+  x2=X_TO_SVG(rx2);
+  y2=Y_TO_SVG(ry2);
+  h = fabs(y2 - y1);
+  w = fabs(x2 - x1);
+
+  my_snprintf(transform, S(transform), "transform=\"translate(%g,%g)\"", x1, y1);
+  if(ptr[0]) {
+    fprintf(fd, "<image x=\"%g\" y=\"%g\" width=\"%g\" height=\"%g\" %s "
+                "xlink:href=\"data:image/png;base64,%s\"/>\n",
+                0.0, 0.0, w, h, transform, ptr);
+  }
+  my_free(1546, &ptr);
+  #endif
+}
+
+
 void draw(void)
 {
  /* inst_ptr  and wire hash iterator 20171224 */
@@ -3129,16 +3207,15 @@ void draw(void)
  int c, i = 0;
  xSymbol *symptr;
  int textlayer;
- int show_hidden_texts = tclgetboolvar("show_hidden_texts");
-
+ 
  #if HAS_CAIRO==1
  const char *textfont;
-#ifndef __unix__
+ #ifndef __unix__
  clear_cairo_surface(xctx->cairo_save_ctx,
    xctx->xrect[0].x, xctx->xrect[0].y, xctx->xrect[0].width, xctx->xrect[0].height);
  clear_cairo_surface(xctx->cairo_ctx,
    xctx->xrect[0].x, xctx->xrect[0].y, xctx->xrect[0].width, xctx->xrect[0].height);
-#endif
+ #endif
  #endif
  if(xctx->no_draw) return;
  rebuild_selected_array();
@@ -3176,10 +3253,11 @@ void draw(void)
           if(xctx->enable_layer[c]) for(i=0;i<xctx->rects[c];i++) {
             xRect *r = &xctx->rect[c][i]; 
             #if HAS_CAIRO==1
-            if(c != GRIDLAYER || !(r->flags & (1 + 1024)) )  {
+            if(c != GRIDLAYER || !(r->flags & (1 + 1024)))
             #else
-            if(c != GRIDLAYER || !(r->flags & 1) )  {
+            if(c != GRIDLAYER || !(r->flags & 1) )
             #endif
+            {
               drawrect(c, ADD, r->x1, r->y1, r->x2, r->y2, r->dash);
               filledrect(c, ADD, r->x1, r->y1, r->x2, r->y2);
             }
@@ -3249,7 +3327,7 @@ void draw(void)
           for(i=0;i<xctx->texts;i++)
           {
             textlayer = xctx->text[i].layer;
-            if(!show_hidden_texts && (xctx->text[i].flags & HIDE_TEXT)) continue;
+            if(!xctx->show_hidden_texts && (xctx->text[i].flags & HIDE_TEXT)) continue;
             if(textlayer < 0 ||  textlayer >= cadlayers) textlayer = TEXTLAYER;
             dbg(1, "draw(): drawing string %d = %s\n",i, xctx->text[i].txt_ptr);
             #if HAS_CAIRO==1
@@ -3291,14 +3369,16 @@ void draw(void)
         }
     } /* !xctx->only_probes, 20110112 */
     draw_hilight_net(xctx->draw_window);
-    if(!xctx->draw_window) {
-      MyXCopyArea(display, xctx->save_pixmap, xctx->window, xctx->gctiled, xctx->xrect[0].x, xctx->xrect[0].y,
-         xctx->xrect[0].width, xctx->xrect[0].height, xctx->xrect[0].x, xctx->xrect[0].y);
+    if(xctx->do_copy_area) { /* this is zero only when doing png hardcopy to avoid video flickering */
+      if(!xctx->draw_window) {
+        MyXCopyArea(display, xctx->save_pixmap, xctx->window, xctx->gctiled, xctx->xrect[0].x, xctx->xrect[0].y,
+           xctx->xrect[0].width, xctx->xrect[0].height, xctx->xrect[0].x, xctx->xrect[0].y);
+      }
+      #if !defined(__unix__) && defined(HAS_CAIRO)
+      else 
+        my_cairo_fill(xctx->cairo_sfc, xctx->xrect[0].x, xctx->xrect[0].y, xctx->xrect[0].width, xctx->xrect[0].height);
+      #endif
     }
-#if !defined(__unix__) && defined(HAS_CAIRO)
-    else 
-      my_cairo_fill(xctx->cairo_sfc, xctx->xrect[0].x, xctx->xrect[0].y, xctx->xrect[0].width, xctx->xrect[0].height);
-#endif
     draw_selection(xctx->gc[SELLAYER], 0); /* 20181009 moved outside of cadlayers loop */
  } /* if(has_x) */
 }
@@ -3316,7 +3396,8 @@ int XSetTile(Display* display, GC gc, Pixmap s_pixmap)
 }
 #endif
 
-void MyXCopyArea(Display* display, Drawable src, Drawable dest, GC gc, int src_x, int src_y, unsigned int width, unsigned int height, int dest_x, int dest_y)
+void MyXCopyArea(Display* display, Drawable src, Drawable dest, GC gc, int src_x, int src_y,
+     unsigned int width, unsigned int height, int dest_x, int dest_y)
 {
   XCopyArea(display, src, dest, gc, src_x, src_y, width, height, dest_x, dest_y);
 #if !defined(__unix__)  && defined(HAS_CAIRO)

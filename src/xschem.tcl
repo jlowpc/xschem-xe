@@ -142,10 +142,6 @@ proc inutile { {filename {}}} {
   wm title .inutile "(IN)UTILE (Stefan Schippers, sschippe)"
   wm iconname .inutile "(IN)UTILE"
   set utile_path $XSCHEM_SHAREDIR/utile
-  set savedir [pwd]
-  cd $netlist_dir
-  set filename [file normalize $filename]
-  cd $savedir
   if { ![string compare $filename  ""]  } then {
    wm withdraw .inutile
    tk_messageBox -type ok -message "Please give a file name as argument"
@@ -236,23 +232,23 @@ proc execute_fileevent {id} {
             set details [dict get $options -errorcode]
             if {[lindex $details 0] eq "CHILDSTATUS"} {
               set status [lindex $details 2]
-              viewdata "Failed: $execute(cmd,$id)\nstderr:\n$err\ndata:\n$execute(data,$id)" ro
+              viewdata "Failed: $execute(cmd,$id)\nstderr:\n$err\ndata:\n$execute(data,$id)"
             } else {
               set status 1
               if {$execute(status,$id) } {
-                viewdata "Completed: $execute(cmd,$id)\nstderr:\n$err\ndata:\n$execute(data,$id)" ro
+                viewdata "Completed: $execute(cmd,$id)\nstderr:\n$err\ndata:\n$execute(data,$id)"
               }
             }
           } else {
             set status 1
             if {$execute(status,$id) } {
-              viewdata "Completed: $execute(cmd,$id)\nstderr:\n$err\ndata:\n$execute(data,$id)" ro
+              viewdata "Completed: $execute(cmd,$id)\nstderr:\n$err\ndata:\n$execute(data,$id)"
             }
           }
         }
         if {$status == 0} {
           if {$execute(status,$id) } {
-            viewdata "Completed: $execute(cmd,$id)\ndata:\n$execute(data,$id)" ro
+            viewdata "Completed: $execute(cmd,$id)\ndata:\n$execute(data,$id)"
           }
         }
       } else {
@@ -360,7 +356,7 @@ proc ev {s} {
   }
 }
 proc netlist {source_file show netlist_file} {
- global XSCHEM_SHAREDIR flat_netlist hspice_netlist netlist_dir
+ global XSCHEM_SHAREDIR flat_netlist netlist_dir
  global verilog_2001 debug_var OS verilog_bitblast
  
  simuldir
@@ -368,11 +364,6 @@ proc netlist {source_file show netlist_file} {
  if {$debug_var <= -1} { puts "netlist: source_file=$source_file, netlist_type=$netlist_type" }
  set dest $netlist_dir/$netlist_file
  if {$netlist_type eq {spice}} {
-   if { $hspice_netlist == 1 } {
-     set simulator {-hspice}
-   } else {
-     set simulator {}
-   }
    if { [sim_is_xyce] } {
      set xyce  {-xyce}
    } else {
@@ -382,9 +373,9 @@ proc netlist {source_file show netlist_file} {
    set brk ${XSCHEM_SHAREDIR}/break.awk
    set flatten ${XSCHEM_SHAREDIR}/flatten.awk
    if {$flat_netlist==0} {
-     eval exec {awk -f $cmd -- $simulator $xyce $source_file | awk -f $brk > $dest}
+     eval exec {awk -f $cmd -- $xyce $source_file | awk -f $brk > $dest}
    } else {
-     eval exec {awk -f $cmd -- $simulator $xyce $source_file | awk -f $flatten | awk -f $brk > $dest}
+     eval exec {awk -f $cmd -- $xyce $source_file | awk -f $flatten | awk -f $brk > $dest}
    }
    if ![string compare $show "show"] {
       textwindow $dest
@@ -546,11 +537,10 @@ proc edit_file {filename} {
 ##
 ## Other global vars:
 ## netlist_dir
-## computerfarm
 ## terminal
 ## netlist_type can be obtained with [xschem get netlist_type]
 proc save_sim_defaults {f} {
-  global sim netlist_dir computerfarm terminal
+  global sim netlist_dir terminal
   
   set a [catch {open $f w} fd]
   if { $a } {
@@ -653,6 +643,21 @@ proc setup_recent_menu { {in_new_window 0} { topwin {} } } {
   }
 }
 
+proc sim_is_ngspice {} {
+  global sim
+
+  set_sim_defaults
+
+  if { [info exists sim(spice,default)] } {
+    set idx $sim(spice,default)
+    if { [regexp {ngspice} $sim(spice,$idx,cmd)] } {
+      return 1
+    }
+  }
+  return 0
+}
+
+
 proc sim_is_xyce {} {
   global sim
 
@@ -723,13 +728,18 @@ proc set_sim_defaults {{reset {}}} {
     set_ne sim(spice,1,fg) 0
     set_ne sim(spice,1,st) 1
     
-    set_ne sim(spice,2,cmd) {Xyce "$N" -r "$n.raw"}
+    set_ne sim(spice,2,cmd) "Xyce \"\$N\"\n# Add -r \"\$n.raw\" if you want all variables saved"
     set sim(spice,2,name) {Xyce batch}
     set_ne sim(spice,2,fg) 0
     set_ne sim(spice,2,st) 1
     
+    set_ne sim(spice,3,cmd) {mpirun /path/to/parallel/Xyce "$N"}
+    set sim(spice,3,name) {Xyce parallel batch}
+    set_ne sim(spice,3,fg) 0
+    set_ne sim(spice,3,st) 1
+    
     # number of configured spice simulators, and default one
-    set_ne sim(spice,n) 3
+    set_ne sim(spice,n) 4
     set_ne sim(spice,default) 0
     
     ### spice wave view
@@ -855,7 +865,7 @@ proc simconf {} {
     for {set i 0} { $i < $sim($tool,n)} {incr i} {
       frame ${scrollframe}.center.$tool.r.$i
       pack ${scrollframe}.center.$tool.r.$i -fill x -expand yes
-      entry ${scrollframe}.center.$tool.r.$i.lab -textvariable sim($tool,$i,name) -width 15 -bg $bg($toggle)
+      entry ${scrollframe}.center.$tool.r.$i.lab -textvariable sim($tool,$i,name) -width 18 -bg $bg($toggle)
       radiobutton ${scrollframe}.center.$tool.r.$i.radio -bg $bg($toggle) \
          -variable sim($tool,default) -value $i
       text ${scrollframe}.center.$tool.r.$i.cmd -width 20 -height 3 -wrap none -bg $bg($toggle)
@@ -1144,7 +1154,7 @@ proc simulate {{callback {}}} {
   ## $S : schematic name full path (/home/schippes/.xschem/xschem_library/opamp.sch)
   ## $d : netlist directory
 
-  global netlist_dir computerfarm terminal sim
+  global netlist_dir terminal sim
   global execute XSCHEM_SHAREDIR has_x OS
 
   simuldir 
@@ -1154,7 +1164,12 @@ proc simulate {{callback {}}} {
     set d ${netlist_dir}
     set tool $netlist_type
     set S [xschem get schname]
-    set s [file tail [file rootname $S]]
+    set custom_netlist_file [xschem get netlist_name]
+    if {$custom_netlist_file ne {}} {
+      set s [file rootname $custom_netlist_file]
+    } else {
+      set s [file tail [file rootname $S]]
+    }
     set n ${netlist_dir}/${s}
     if {$tool eq {verilog}} {
       set N ${n}.v
@@ -1164,7 +1179,7 @@ proc simulate {{callback {}}} {
     if { ![info exists  sim($tool,default)] } {
       if { [info exists has_x] } {alert_ "Warning: simulator for $tool is not configured"}
       puts "Warning: simulator for $tool is not configured"
-      return
+      return -1
     }
     set def $sim($tool,default)
     set fg  $sim($tool,$def,fg)
@@ -1182,11 +1197,17 @@ proc simulate {{callback {}}} {
       }
       #eval exec {cmd /V /C "cd $netlist_dir&&$cmd}
       eval exec $cmd &
+      return -1 ;# no execute ID on windows
     } else {
       set execute(callback) $callback
-      $fg $st sh -c "cd $netlist_dir; $cmd"
+      set id [$fg $st sh -c "cd $netlist_dir; $cmd"]
+      puts "Simulation started: execution ID: $id"
+      return $id
     }
+  } else {
+    return -1
   }
+  
 }
 
 proc gaw_echoline {} {
@@ -1208,8 +1229,12 @@ proc setup_tcp_gaw {} {
  
   if { [info exists gaw_fd] } { return 1; } 
   simuldir
-  set s [file tail [file rootname [xschem get schname 0]]]
-
+  set custom_netlist_file [xschem get netlist_name]
+  if {$custom_netlist_file ne {}} {
+    set s [file rootname $custom_netlist_file]
+  } else {
+    set s [file tail [file rootname [xschem get schname 0]]]
+  }
   if { ![info exists gaw_fd] && [catch {eval socket $gaw_tcp_address} gaw_fd] } {
     puts "Problems opening socket to gaw on address $gaw_tcp_address"
     unset gaw_fd
@@ -1272,7 +1297,7 @@ proc waves {} {
   ## $S : schematic name full path (/home/schippes/.xschem/xschem_library/opamp.sch)
   ## $d : netlist directory
 
-  global netlist_dir computerfarm terminal sim XSCHEM_SHAREDIR has_x 
+  global netlist_dir terminal sim XSCHEM_SHAREDIR has_x 
   global bespice_listen_port env
 
   simuldir
@@ -1282,7 +1307,13 @@ proc waves {} {
     set d ${netlist_dir}
     set tool ${netlist_type}
     set S [xschem get schname]
-    set s [file tail [file rootname $S]]
+
+    set custom_netlist_file [xschem get netlist_name]
+    if {$custom_netlist_file ne {}} {
+      set s [file rootname $custom_netlist_file]
+    } else {
+      set s [file tail [file rootname $S]]
+    }
     set n ${netlist_dir}/${s}
     if {$tool eq {verilog}} {
       set N ${n}.v
@@ -1529,7 +1560,7 @@ proc graph_update_nodelist {} {
   set col  [xschem getprop rect 2 $graph_selected color]
   set col [string trim $col " \n"]
 
-  set regx {(?:"[^"]+")|(?:[^\n \t]+)}
+  set regx {(?:(tcleval\()?"[^"]+"\)?)|(?:(tcleval\()?[^\n \t]+\)?)}
   set txt [.graphdialog.center.right.text1 get 1.0 {end - 1 chars}]
   set tt {}
   set cc {}
@@ -1659,7 +1690,6 @@ proc graph_edit_properties {n} {
 
   # center right frame
   label .graphdialog.center.right.lab1 -text {Signals in graph}
-  checkbutton .graphdialog.center.right.unlocked -text {Unlocked X axis} -variable graph_unlocked
   text .graphdialog.center.right.text1 -wrap none -width 50 -height 10 -bg grey70 -fg black \
      -insertbackground grey40 -exportselection 1 \
      -yscrollcommand {.graphdialog.center.right.yscroll set} \
@@ -1667,7 +1697,7 @@ proc graph_edit_properties {n} {
   scrollbar .graphdialog.center.right.yscroll -command {.graphdialog.center.right.text1 yview}
   scrollbar .graphdialog.center.right.xscroll -orient horiz -command {.graphdialog.center.right.text1 xview}
 
-  grid .graphdialog.center.right.lab1 .graphdialog.center.right.unlocked
+  grid .graphdialog.center.right.lab1 
   grid .graphdialog.center.right.text1 - .graphdialog.center.right.yscroll -sticky nsew
   grid .graphdialog.center.right.xscroll - -sticky nsew
   grid rowconfig .graphdialog.center.right 0 -weight 0
@@ -1685,8 +1715,10 @@ proc graph_edit_properties {n} {
     if { [xschem get schname] eq $graph_schname } {
 
       update_graph_node [string trim [.graphdialog.center.right.text1 get 1.0 {end - 1 chars}] " \n"]
-      xschem setprop rect 2 $graph_selected y1 [.graphdialog.top.min get] fast
-      xschem setprop rect 2 $graph_selected y2 [.graphdialog.top.max get] fast
+      xschem setprop rect 2 $graph_selected x1 [.graphdialog.top3.xmin get] fast
+      xschem setprop rect 2 $graph_selected x2 [.graphdialog.top3.xmax get] fast
+      xschem setprop rect 2 $graph_selected y1 [.graphdialog.top3.min get] fast
+      xschem setprop rect 2 $graph_selected y2 [.graphdialog.top3.max get] fast
 
       if {$graph_unlocked} {
         xschem setprop rect 2 $graph_selected flags {graph,unlocked} fast
@@ -1706,8 +1738,10 @@ proc graph_edit_properties {n} {
     if { [xschem get schname] eq $graph_schname } {
 
       update_graph_node [string trim [.graphdialog.center.right.text1 get 1.0 {end - 1 chars}] " \n"]
-      xschem setprop rect 2 $graph_selected y1 [.graphdialog.top.min get] fast
-      xschem setprop rect 2 $graph_selected y2 [.graphdialog.top.max get] fast
+      xschem setprop rect 2 $graph_selected x1 [.graphdialog.top3.xmin get] fast
+      xschem setprop rect 2 $graph_selected x2 [.graphdialog.top3.xmax get] fast
+      xschem setprop rect 2 $graph_selected y1 [.graphdialog.top3.min get] fast
+      xschem setprop rect 2 $graph_selected y2 [.graphdialog.top3.max get] fast
       if {$graph_unlocked} {
         xschem setprop rect 2 $graph_selected flags {graph,unlocked} fast
       } else {
@@ -1818,6 +1852,7 @@ proc graph_edit_properties {n} {
   checkbutton .graphdialog.top.bus -text Bus -padx 2 -variable graph_bus
   checkbutton .graphdialog.top.incr -text {Incr. sort} -variable graph_sort -indicatoron 1 \
     -command fill_graph_listbox
+  checkbutton .graphdialog.top.unlocked -text {Unlocked X axis} -variable graph_unlocked
   checkbutton .graphdialog.top.dig -text {Digital} -variable graph_digital -indicatoron 1 \
     -command {
        if { [xschem get schname] eq $graph_schname } {
@@ -1826,17 +1861,32 @@ proc graph_edit_properties {n} {
        }
      }
 
-  label .graphdialog.top.labmin -text {  Min Value:}
-  entry .graphdialog.top.min -width 5
-  bind .graphdialog.top.min <KeyRelease> {
-    xschem setprop rect 2 $graph_selected y1 [.graphdialog.top.min get]
+  label .graphdialog.top3.xlabmin -text { X min:}
+  entry .graphdialog.top3.xmin -width 7
+  bind .graphdialog.top3.xmin <KeyRelease> {
+    xschem setprop rect 2 $graph_selected x1 [.graphdialog.top3.xmin get]
     xschem draw_graph $graph_selected
   }
 
-  label .graphdialog.top.labmax -text {  Max Value:}
-  entry .graphdialog.top.max -width 5
-  bind .graphdialog.top.max <KeyRelease> {
-    xschem setprop rect 2 $graph_selected y2 [.graphdialog.top.max get]
+  label .graphdialog.top3.xlabmax -text { X max:}
+  entry .graphdialog.top3.xmax -width 7
+  bind .graphdialog.top3.xmax <KeyRelease> {
+    xschem setprop rect 2 $graph_selected x2 [.graphdialog.top3.xmax get]
+    xschem draw_graph $graph_selected
+  }
+
+
+  label .graphdialog.top3.labmin -text { Y min:}
+  entry .graphdialog.top3.min -width 7
+  bind .graphdialog.top3.min <KeyRelease> {
+    xschem setprop rect 2 $graph_selected y1 [.graphdialog.top3.min get]
+    xschem draw_graph $graph_selected
+  }
+
+  label .graphdialog.top3.labmax -text { Y max:}
+  entry .graphdialog.top3.max -width 7
+  bind .graphdialog.top3.max <KeyRelease> {
+    xschem setprop rect 2 $graph_selected y2 [.graphdialog.top3.max get]
     xschem draw_graph $graph_selected
   }
 
@@ -1849,9 +1899,11 @@ proc graph_edit_properties {n} {
   pack .graphdialog.top.incr -side left
   pack .graphdialog.top.bus -side left
   pack .graphdialog.top.dig -side left
-  pack .graphdialog.top.labmin .graphdialog.top.min .graphdialog.top.labmax .graphdialog.top.max -side left
-  .graphdialog.top.min insert 0 [xschem getprop rect 2 $graph_selected y1]
-  .graphdialog.top.max insert 0 [xschem getprop rect 2 $graph_selected y2]
+  pack .graphdialog.top.unlocked -side left
+  .graphdialog.top3.min insert 0 [xschem getprop rect 2 $graph_selected y1]
+  .graphdialog.top3.max insert 0 [xschem getprop rect 2 $graph_selected y2]
+  .graphdialog.top3.xmin insert 0 [xschem getprop rect 2 $graph_selected x1]
+  .graphdialog.top3.xmax insert 0 [xschem getprop rect 2 $graph_selected x2]
 
   # top3 frame
   set graph_logx [xschem getprop rect 2 $graph_selected logx]
@@ -1892,6 +1944,8 @@ proc graph_edit_properties {n} {
        }
      }
   pack .graphdialog.top3.logx .graphdialog.top3.logy -side left
+  pack .graphdialog.top3.xlabmin .graphdialog.top3.xmin .graphdialog.top3.xlabmax .graphdialog.top3.xmax -side left
+  pack .graphdialog.top3.labmin .graphdialog.top3.min .graphdialog.top3.labmax .graphdialog.top3.max -side left
   # binding
   bind .graphdialog.top.search <KeyRelease> {
     fill_graph_listbox
@@ -1959,40 +2013,20 @@ proc get_shell { curpath } {
  execute 0 sh -c "cd $curpath && $terminal"
 }
 
-proc edit_netlist {schname } {
+proc edit_netlist {netlist } {
  global netlist_dir debug_var
  global editor terminal OS
 
  simuldir
  set netlist_type [xschem get netlist_type]
- set tmpname [file rootname "$schname"]
 
  if { [regexp vim $editor] } { set ftype "-c \":set filetype=$netlist_type\"" } else { set ftype {} }
  if { [select_netlist_dir 0] ne "" } {
-   # puts "edit_netlist: \"$editor $ftype  ${schname}.v\" \"$netlist_dir\" bg"
-   if { $netlist_type=="verilog" } {
-     execute 0  sh -c "cd $netlist_dir && $editor $ftype  \"${tmpname}.v\""
-   } elseif { $netlist_type=="spice" } {
-     if {$OS == "Windows"} {
-       set cmd "$editor \"$netlist_dir/${tmpname}.spice\""
-       eval exec $cmd &
-     } else {
-       execute 0  sh -c "cd $netlist_dir && $editor $ftype \"${tmpname}.spice\""
-     }
-   } elseif { $netlist_type=="tedax" } {
-     if {$OS == "Windows"} {
-       set cmd "$editor \"$netlist_dir/${tmpname}.tdx\""
-       eval exec $cmd &
-     } else {
-       execute 0 sh -c "cd $netlist_dir && $editor $ftype \"${tmpname}.tdx\""
-     }
-   } elseif { $netlist_type=="vhdl" } { 
-     if {$OS == "Windows"} {
-       set cmd "$editor \"$netlist_dir/${tmpname}.vhdl\""
-       eval exec $cmd &
-     } else {
-       execute 0 sh -c "cd $netlist_dir && $editor $ftype \"${tmpname}.vhdl\""
-     }
+   if {$OS == "Windows"} {
+     set cmd "$editor \"$netlist_dir/${netlist}\""
+     eval exec $cmd &
+   } else {
+     execute 0  sh -c "cd $netlist_dir && $editor $ftype  \"${netlist}\""
    }
  }
  return {}
@@ -2029,6 +2063,7 @@ proc is_xschem_file {f} {
   if {$a} {
     puts stderr "Can not open file $f"
   } else {
+    fconfigure $fd -translation binary
     while { [gets $fd line] >=0 } {
       if { [regexp {^[TKGVSE] \{} $line] } { incr score }
       if { [regexp {^[BL] +[0-9]+ +[-0-9.eE]+ +[-0-9.eE]+ +[-0-9.eE]+ +[-0-9.eE]+ +\{} $line] } {incr score}
@@ -2038,7 +2073,7 @@ proc is_xschem_file {f} {
         set ret 1
       }
     } 
-    if { $score > 6 }  { set ret 1} ;# Heuristic decision :-)
+    if { $score > 4 }  { set ret 1} ;# Heuristic decision :-)
     if { $ret } {
       if { $instances} {
         set ret SCHEMATIC
@@ -3081,9 +3116,12 @@ proc tclpropeval2 {s} {
     regsub {^([^xX])} $path {x\1} path
     while { [regsub {\.([^xX])} $path {.x\1} path] } {}
   }
-  if { [sim_is_xyce]} {
-    regsub -all {\.} [string toupper $path] {:} path
-  }
+  
+  ## no more necessary, ':' are converted to '.' when reading raw file */
+  #  if { [sim_is_xyce]} {
+  #    regsub -all {\.} [string toupper $path] {:} path
+  #  }
+
   if { $debug_var<=-1 } { puts "---> path=$path" }
   regsub {^tcleval\(} $s {} s
   regsub {\)([ \n\t]*)$} $s {\1} s
@@ -4627,7 +4665,7 @@ set tctx::global_list {
   graph_bus graph_digital graph_logx graph_logy
   graph_sel_color graph_schname graph_selected graph_sel_wave graph_sort
   graph_unlocked
-  hide_empty_graphs hide_symbols hsize hspice_netlist 
+  hide_empty_graphs hide_symbols hsize
   incr_hilight infowindow_text INITIALINSTDIR INITIALLOADDIR INITIALPROPDIR INITIALTEXTDIR
   input_line_cmd input_line_data launcher_default_program light_colors line_width local_netlist_dir
   measure_text
@@ -4873,7 +4911,7 @@ proc switch_undo {} {
 proc build_widgets { {topwin {} } } {
   global XSCHEM_SHAREDIR tabbed_interface simulate_bg
   global colors recentfile color_ps transparent_svg menu_debug_var enable_stretch
-  global netlist_show flat_netlist split_files hspice_netlist tmp_bus_char 
+  global netlist_show flat_netlist split_files tmp_bus_char 
   global draw_grid big_grid_points sym_txt change_lw incr_hilight symbol_width
   global cadgrid draw_window show_pin_net_names toolbar_visible hide_symbols undo_type
   global disable_unique_names persistent_command autotrim_wires en_hilight_conn_inst
@@ -5014,8 +5052,6 @@ proc build_widgets { {topwin {} } } {
      }
   $topwin.menubar.option.menu add checkbutton -label "Split netlist" -variable split_files \
      -accelerator {} 
-  $topwin.menubar.option.menu add checkbutton -label "hspice / ngspice netlist" -variable hspice_netlist \
-     -accelerator {}
   $topwin.menubar.option.menu add command -label "Replace \[ and \] for buses in SPICE netlist" \
      -command {
        input_line "Enter two characters to replace default bus \[\] delimiters:" "set tmp_bus_char"
@@ -5157,7 +5193,8 @@ proc build_widgets { {topwin {} } } {
           select_layers
           xschem redraw
        }
-  $topwin.menubar.view.menu add checkbutton -label "Show hidden texts"  -variable show_hidden_texts -command {xschem redraw}
+  $topwin.menubar.view.menu add checkbutton -label "Show hidden texts"  -variable show_hidden_texts \
+         -command {xschem set show_hidden_texts $show_hidden_texts; xschem redraw}
   $topwin.menubar.view.menu add command -label "Change current layer color"  -accelerator {} -command {
           change_color
        }
@@ -5319,11 +5356,11 @@ proc build_widgets { {topwin {} } } {
   $topwin.menubar.simulation.menu add command -label {Configure simulators and tools} -command {simconf}
   $topwin.menubar.simulation.menu add command -label {Utile Stimuli Editor (GUI)} -command {
      simuldir
-     inutile stimuli.[file rootname [file tail [xschem get schname]]]
+     inutile [xschem get current_dirname]/stimuli.[file rootname [file tail [xschem get schname]]]
   }
   $topwin.menubar.simulation.menu add command -label {Utile Stimuli Translate} -command {
      simuldir
-     inutile_translate  stimuli.[file rootname [file tail [xschem get schname]]]
+     inutile_translate  [xschem get current_dirname]/stimuli.[file rootname [file tail [xschem get schname]]]
   }
   $topwin.menubar.simulation.menu add command -label {Shell [simulation path]} -command {
      if { [select_netlist_dir 0] ne "" } {
@@ -5331,7 +5368,7 @@ proc build_widgets { {topwin {} } } {
      }
    }
   $topwin.menubar.simulation.menu add command -label {Edit Netlist} \
-     -command {edit_netlist [file tail [xschem get schname]]}
+     -command {edit_netlist [xschem get netlist_name fallback]}
   $topwin.menubar.simulation.menu add command -label {Send highlighted nets to viewer} \
     -command {xschem create_plot_cmd} -accelerator Shift+J
   $topwin.menubar.simulation.menu add checkbutton -label "Hide graphs if no spice data loaded" \
@@ -5619,7 +5656,6 @@ set_ne netlist_dir "$USER_CONF_DIR/simulations"
 set_ne netlist_type spice
 set_ne local_netlist_dir 0 ;# if set use <sch_dir>/simulation for netlist and sims
 set_ne bus_replacement_char {} ;# use {<>} to replace [] with <> in bussed signals
-set_ne hspice_netlist 1
 set_ne top_subckt 0
 set_ne hide_empty_graphs 0 ;# if set to 1 waveform boxes will be hidden if no raw file loaded
 set_ne spiceprefix 1
@@ -5684,9 +5720,6 @@ set_ne case_insensitive 0
 set_ne edit_prop_size 80x12
 set_ne text_line_default_geometry 80x12
 set_ne terminal xterm
-
-# set_ne analog_viewer waveview
-set_ne computerfarm {} ;# 20151007
 
 # xschem tcp port number (listen to port and execute commands from there if set) 
 # set a port number in xschemrc if you want accept remote connections.

@@ -21,8 +21,6 @@
  */
 
 #include "xschem.h"
-#define X_TO_SVG(x) ( (x+xctx->xorigin)* xctx->mooz )
-#define Y_TO_SVG(y) ( (y+xctx->yorigin)* xctx->mooz )
 
 static FILE *fd;
 
@@ -391,7 +389,6 @@ static void svg_drawgrid()
  }
 }
 
-
 static void svg_embedded_image(xRect *r, double rx1, double ry1, double rx2, double ry2, int rot, int flip)
 {
   const char *ptr;
@@ -431,7 +428,6 @@ static void svg_embedded_image(xRect *r, double rx1, double ry1, double rx2, dou
   }
 }
 
-
 static void svg_draw_symbol(int c, int n,int layer,short tmp_flip, short rot,
         double xoffset, double yoffset)
                             /* draws current layer only, should be called within  */
@@ -447,7 +443,6 @@ static void svg_draw_symbol(int c, int n,int layer,short tmp_flip, short rot,
   xPoly polygon;
   xSymbol *symptr;
   char *textfont;
-  int show_hidden_texts = tclgetboolvar("show_hidden_texts");
 
   if(xctx->inst[n].ptr == -1) return;
   if( (layer != PINLAYER && !xctx->enable_layer[layer]) ) return;
@@ -467,10 +462,11 @@ static void svg_draw_symbol(int c, int n,int layer,short tmp_flip, short rot,
       xctx->inst[n].flags|=1;
       return;
     }
-    else xctx->inst[n].flags&=~1;
+    else {
+      xctx->inst[n].flags&=~1;
+    }
   }
   else if(xctx->inst[n].flags&1) {
-    dbg(1, "draw_symbol(): skipping inst %d\n", n);
     return;
   }
   flip = xctx->inst[n].flip;
@@ -521,7 +517,6 @@ static void svg_draw_symbol(int c, int n,int layer,short tmp_flip, short rot,
     ROTATION(rot, flip, 0.0,0.0,rect->x1,rect->y1,x1,y1);
     ROTATION(rot, flip, 0.0,0.0,rect->x2,rect->y2,x2,y2);
 
-
     if(layer == GRIDLAYER && rect->flags & 1024) {
       double xx1 = x0 + x1;
       double yy1 = y0 + y1;
@@ -539,7 +534,7 @@ static void svg_draw_symbol(int c, int n,int layer,short tmp_flip, short rot,
     for(j=0;j< symptr->texts;j++) {
       text = symptr->text[j];
       /* if(text.xscale*FONTWIDTH* xctx->mooz<1) continue; */
-      if(!show_hidden_texts && (symptr->text[j].flags & HIDE_TEXT)) continue;
+      if(!xctx->show_hidden_texts && (symptr->text[j].flags & HIDE_TEXT)) continue;
       if( hide && text.txt_ptr && strcmp(text.txt_ptr, "@symname") && strcmp(text.txt_ptr, "@name") ) continue;
       txtptr= translate(n, text.txt_ptr);
       ROTATION(rot, flip, 0.0,0.0,text.x0,text.y0,x1,y1);
@@ -635,7 +630,6 @@ void svg_draw(void)
   int *unused_layer;
   int color;
   Hilight_hashentry *entry;
-  int show_hidden_texts = tclgetboolvar("show_hidden_texts");
 
   if(!lastdir[0]) my_strncpy(lastdir, pwd_dir, S(lastdir));
   if(has_x && !xctx->plotfile[0]) {
@@ -768,7 +762,7 @@ void svg_draw(void)
     for(i=0;i<xctx->texts;i++)
     {
       textlayer = xctx->text[i].layer;
-      if(!show_hidden_texts && (xctx->text[i].flags & HIDE_TEXT)) continue;
+      if(!xctx->show_hidden_texts && (xctx->text[i].flags & HIDE_TEXT)) continue;
       if(textlayer < 0 ||  textlayer >= cadlayers) textlayer = TEXTLAYER;
       my_snprintf(svg_font_family, S(svg_font_family), tclgetvar("svg_font_name"));
       my_snprintf(svg_font_style, S(svg_font_style), "normal");
@@ -795,6 +789,19 @@ void svg_draw(void)
           xctx->text[i].x0,xctx->text[i].y0,
           xctx->text[i].xscale, xctx->text[i].yscale);
     }
+
+
+    /* do first graphs as these require draw() which clobbers xctx->inst[n].flags bit 0 */
+    for(c=0;c<cadlayers;c++)
+    {
+     for(i=0;i<xctx->rects[c];i++)
+     {
+       if(c == GRIDLAYER && (xctx->rect[c][i].flags & 1) ) { /* graph */
+         xRect *r = &xctx->rect[c][i];
+         svg_embedded_graph(fd, r, r->x1, r->y1, r->x2, r->y2);
+       }
+     }
+    }
     for(c=0;c<cadlayers;c++)
     {
      for(i=0;i<xctx->lines[c];i++)
@@ -802,10 +809,12 @@ void svg_draw(void)
                       xctx->line[c][i].x2, xctx->line[c][i].y2, xctx->line[c][i].dash);
      for(i=0;i<xctx->rects[c];i++)
      {
-       if(c == GRIDLAYER && (xctx->rect[c][i].flags & 1024) ) {
+       if(c == GRIDLAYER && (xctx->rect[c][i].flags & 1) ) { /* graph */
+         /* do nothing, done above */
+       } else if(c == GRIDLAYER && (xctx->rect[c][i].flags & 1024) ) { /* image */
           xRect *r = &xctx->rect[c][i];
           svg_embedded_image(r, r->x1, r->y1, r->x2, r->y2, 0, 0);
-       } else if(c != GRIDLAYER || !(xctx->rect[c][i].flags & 1) )  {
+       } else {
          svg_filledrect(c, xctx->rect[c][i].x1, xctx->rect[c][i].y1,
                            xctx->rect[c][i].x2, xctx->rect[c][i].y2, xctx->rect[c][i].dash);
        }
