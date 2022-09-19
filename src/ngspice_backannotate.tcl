@@ -51,8 +51,8 @@ proc ngspice::read_ngspice_raw {arr fp} {
     }
   }
   if {$variables} {
-    set bindata [read $fp [expr 8 * $n_vars * $n_points]]
     if { $n_points == 1} {
+      set bindata [read $fp [expr 8 * $n_vars * $n_points]]
       binary scan $bindata d[expr $n_vars * $n_points] data
       for {set p 0} {$p < $n_points} { incr p} {
         for {set v 0} {$v < $n_vars} { incr v} {
@@ -115,13 +115,15 @@ proc ngspice::get_current {n} {
   set prefix [string range $n 0 0]
   set path [string range [xschem get sch_path] 1 end]
   set n $path$n
-  if { $path ne {} } {
+  if { ![sim_is_xyce] && $path ne {} } {
     set n $prefix.$n
-   }
-  if { ![regexp $prefix {[ve]}] } {
-    set n @$n
+    if { ![regexp $prefix {[ve]}] } {
+      set n @$n
+    }
   }
+  puts "get_current: $n"
   set n i($n)
+  # if { [regexp {\[} $n] } { set n \{$n\} }
   # puts "ngspice::get_current --> $n"
   set err [catch {set ::ngspice::ngspice_data($n)} res]
   if { $err } {
@@ -152,6 +154,7 @@ proc ngspice::get_node {n} {
   set path [string range [xschem get sch_path] 1 end]
   # puts "ngspice::get_node  --> $n,  path=$path"
   set n [ subst -nocommand $n ]
+  # if { [regexp {\[} $n] } { set n \{$n\} }
   set err [catch {set ::ngspice::ngspice_data($n)} res]
   if { $err } { 
     set res {?}
@@ -165,77 +168,88 @@ proc ngspice::resetdata {} {
   array unset ::ngspice::ngspice_data
 }
 
-proc ngspice::annotate {{f {}}} {
+proc ngspice::annotate {{f {}} {read_file 1}} {
   upvar ::ngspice::ngspice_data arr
-  if { $f eq {}} {
-    set rawfile "$::netlist_dir/[file rootname [file tail [xschem get schname 0]]].raw"
+
+
+  if { $read_file == 1} {
+    if { $f eq {}} {
+      set rawfile "$::netlist_dir/[file rootname [file tail [xschem get schname 0]]].raw"
+    } else {
+      set rawfile $f
+    }
+    if { ![file exists $rawfile] } {
+      puts "no raw file found: $rawfile"
+      return
+    }
+    set fp [open $rawfile r]
+    fconfigure $fp -translation binary
+    set op_point_read 0 
+    ## not needed: done in ngspice::read_ngspice_raw
+    # array unset ::ngspice::ngspice_data
+    while 1 {
+      ngspice::read_ngspice_raw arr $fp
+      if { [info exists arr(n\ points)] } {
+        if { $arr(n\ points) == 1 } {
+          set op_point_read 1; break
+        }
+      } else break;
+    }
+    close $fp
+    puts {Raw file read ...} 
   } else {
-    set rawfile $f
+    set op_point_read 1
   }
-  if { ![file exists $rawfile] } {
-    puts "no raw file found: $rawfile"
-    return
-  }
-  set fp [open $rawfile r]
-  fconfigure $fp -translation binary
-  set op_point_read 0 
-  ## not needed: done in ngspice::read_ngspice_raw
-  # array unset ::ngspice::ngspice_data
-  while 1 {
-    ngspice::read_ngspice_raw arr $fp
-    if { [info exists arr(n\ points)] } {
-      if { $arr(n\ points) == 1 } {
-        set op_point_read 1; break
-      }
-    } else break;
-  }
-  close $fp
-  puts {Raw file read ...} 
+
+
   if { $op_point_read } {
     ### disable screen redraw and undo when looping to speed up performance
     ### but save state on undo stack before doing backannotations.
-    xschem push_undo
-    xschem set no_undo 1
-    xschem set no_draw 1
-    set lastinst [xschem get instances]
-    set path [string range [xschem get sch_path] 1 end]
-    for { set i 0 } { $i < $lastinst } {incr i } {
-      set name [xschem getprop instance $i name]
-      set type [xschem getprop instance $i cell::type]
-      if { $type eq {probe} } {
-        set net $path[xschem instance_net $i p]
-        if {[catch {xschem setprop instance $i voltage [ngspice::get_voltage_probe arr $net] fast} err]} {
-          puts "Warning 1: ${err}, net: $net"
+
+    if {0} {
+      xschem push_undo
+      xschem set no_undo 1
+      xschem set no_draw 1
+      set lastinst [xschem get instances]
+      set path [string range [xschem get sch_path] 1 end]
+      for { set i 0 } { $i < $lastinst } {incr i } {
+        set name [xschem getprop instance $i name]
+        set type [xschem getprop instance $i cell::type]
+        if { $type eq {probe} } {
+          set net $path[xschem instance_net $i p]
+          if {[catch {xschem setprop instance $i voltage [ngspice::get_voltage_probe arr $net] fast} err]} {
+            puts "Warning 1: ${err}, net: $net"
+          }
         }
-      }
-      if { $type eq {current_probe} } {
-        if {[catch {xschem setprop instance $i current [ngspice::get_curr_probe arr $path$name] fast} err]} {
-          puts "Warning 2: $err"
+        if { $type eq {current_probe} } {
+          if {[catch {xschem setprop instance $i current [ngspice::get_curr_probe arr $path$name] fast} err]} {
+            puts "Warning 2: $err"
+          }
         }
-      }
-      if { $type eq {differential_probe} } {
-        set netp $path[xschem instance_net $i p]
-        set netm $path[xschem instance_net $i m]
-        if {[catch {xschem setprop instance $i voltage [ngspice::get_diff_probe arr $netp $netm] fast} err]} {
-          puts "Warning 3: $err"
+        if { $type eq {differential_probe} } {
+          set netp $path[xschem instance_net $i p]
+          set netm $path[xschem instance_net $i m]
+          if {[catch {xschem setprop instance $i voltage [ngspice::get_diff_probe arr $netp $netm] fast} err]} {
+            puts "Warning 3: $err"
+          }
         }
+        # puts "$i $name $type"
       }
-      # puts "$i $name $type"
-    }
-  
-    # re-enable undo and draw
-    xschem set no_undo 0
-    xschem set no_draw 0
+    
+      # re-enable undo and draw
+      xschem set no_undo 0
+      xschem set no_draw 0
+    
+      ### xschem setprop instructions have not altered circuit topology so 
+      ### in this case a connectivity rebuild is not needed.
+      # xschem rebuild_connectivity
+      #
+      #
+    } ;# if {0}
     xschem redraw
-  
-    ### xschem setprop instructions have not altered circuit topology so 
-    ### in this case a connectivity rebuild is not needed.
-    # xschem rebuild_connectivity
-    #
-    #
   } else {
     puts "no operating point found!"
   }
 }
 
-if { [info exists ::has_x] } {bind .drw <Alt-a> {puts {Annotating...}; ngspice::annotate} }
+# if { [info exists ::has_x] } {bind .drw <Alt-a> {puts {Annotating...}; ngspice::annotate} }

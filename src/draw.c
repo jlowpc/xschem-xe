@@ -2480,7 +2480,7 @@ int calc_custom_data_yrange(int sweep_idx, const char *express, Graph_ctx *gr)
         xx = mylog10(gv[p]);
       else
         xx = gv[p];
-      wrap = (sweep_idx == 0 && cnt > 1 && XSIGN(xx - prev_x) != XSIGN(prev_x - prev_prev_x));
+      wrap = ( /* sweep_idx == 0 && */ cnt > 1 && XSIGN(xx - prev_x) != XSIGN(prev_x - prev_prev_x));
       if(first != -1) {                      /* there is something to plot ... */
         if(xx > end || xx < start ||         /* ... and we ran out of graph area ... */
           wrap) {                          /* ... or sweep variable changed direction */
@@ -2596,7 +2596,7 @@ int find_closest_wave(int i, Graph_ctx *gr)
           else xx = gvx[p];
           if(gr->logy) yy = mylog10(gvy[p]);
           else  yy = gvy[p];
-          wrap = (sweep_idx == 0 && cnt > 1 && XSIGN(xx - prev_x) != XSIGN(prev_x - prev_prev_x));
+          wrap = (/* sweep_idx == 0 && */ cnt > 1 && XSIGN(xx - prev_x) != XSIGN(prev_x - prev_prev_x));
           if(first != -1) {
             if(xx > end || xx < start || wrap) {
               dbg(1, "find_closest_wave(): last=%d\n", last);
@@ -2672,11 +2672,13 @@ void draw_graph(int i, const int flags, Graph_ctx *gr)
   
   if(RECT_OUTSIDE( gr->sx1, gr->sy1, gr->sx2, gr->sy2,
       xctx->areax1, xctx->areay1, xctx->areax2, xctx->areay2)) return;
-  /*
-   * dbg(0, "draw_graph(): window: %d %d %d %d\n", xctx->areax1, xctx->areay1, xctx->areax2, xctx->areay2);
-   * dbg(0, "draw_graph(): graph: %g %g %g %g\n", gr->sx1, gr->sy1, gr->sx2, gr->sy2);
-   * dbg(0, "draw_graph(): i = %d, flags = %d\n", i, flags);
-   */
+  
+   #if 0
+   dbg(0, "draw_graph(): window: %d %d %d %d\n", xctx->areax1, xctx->areay1, xctx->areax2, xctx->areay2);
+   dbg(0, "draw_graph(): graph: %g %g %g %g\n", gr->sx1, gr->sy1, gr->sx2, gr->sy2);
+   dbg(0, "draw_graph(): i = %d, flags = %d\n", i, flags);
+   #endif
+ 
   /* draw stuff */
   if(flags & 8) {
 #if !defined(__unix__) && defined(HAS_CAIRO)
@@ -2766,7 +2768,7 @@ void draw_graph(int i, const int flags, Graph_ctx *gr)
           for(p = ofs ; p < ofs + xctx->graph_npoints[dset]; p++) {
             if(gr->logx) xx = mylog10(gv[p]);
             else  xx = gv[p];
-            wrap = (sweep_idx == 0 && cnt > 1 && XSIGN(xx - prev_x) != XSIGN(prev_x - prev_prev_x));
+            wrap = (/* sweep_idx == 0 && */ cnt > 1 && XSIGN(xx - prev_x) != XSIGN(prev_x - prev_prev_x));
             if(first != -1) {                      /* there is something to plot ... */
               if(xx > end || xx < start ||         /* ... and we ran out of graph area ... */
                 wrap) {                          /* ... or sweep variable changed direction */
@@ -2870,13 +2872,11 @@ static void draw_graph_all(int flags)
 {
   int  i, sch_loaded, hide_graphs;
   int bbox_set = 0;
-  const char *tmp;
   int save_bbx1, save_bby1, save_bbx2, save_bby2;
   dbg(1, "draw_graph_all(): flags=%d\n", flags);
   /* save bbox data, since draw_graph_all() is called from draw() which may be called after a bbox(SET) */
   sch_loaded = schematic_waves_loaded();
-  tmp =  tclgetvar("hide_empty_graphs");
-  hide_graphs = (tmp && tmp[0] == '1') ? 1 : 0;
+  hide_graphs =  tclgetboolvar("hide_empty_graphs");
   if(sch_loaded || !hide_graphs) {
     if(xctx->sem) {
       bbox_set = 1;

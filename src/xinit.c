@@ -482,7 +482,6 @@ static void alloc_xschem_data(const char *top_path, const char *win_path)
   xctx->sch_to_compare[0] = '\0';
   xctx->tok_size = 0;
   xctx->netlist_name[0] = '\0';
-  xctx->flat_netlist = 0;
   xctx->plotfile[0] = '\0';
   xctx->netlist_unconn_cnt = 0; /* unique count of unconnected pins while netlisting */
   xctx->current_dirname[0] = '\0';
@@ -1114,7 +1113,12 @@ void preview_window(const char *what, const char *win_path, const char *fname)
   static Xschem_ctx *preview_xctx = NULL; /* save pointer to current schematic context structure */
   static Window pre_window;
   static Tk_Window tkpre_window;
+  static int semaphore=0;
 
+  /* avoid reentrant calls for example if an alert box is displayed while loading file to preview,
+   * and an Expose event calls another preview draw */
+  if(semaphore) return;
+  semaphore++;
   dbg(1, "------\n");
   if(!strcmp(what, "create")) {
     dbg(1, "preview_window() create, save ctx, win_path=%s\n", win_path);
@@ -1160,6 +1164,7 @@ void preview_window(const char *what, const char *win_path, const char *fname)
     save_xctx = NULL;
     set_modify(-1);
   }
+  semaphore--;
 }
 
 /* check if filename is already loaded into a tab or window */
@@ -1432,6 +1437,7 @@ static void create_new_tab(int *window_count, const char *fname)
   build_colors(0.0, 0.0);
   resetwin(1, 0, 1, 0, 0);  /* create pixmap.  resetwin(create_pixmap, clear_pixmap, force, w, h) */
   /* draw empty window so if following load fails due to missing file window appears correctly drawn */
+  tclvareval("housekeeping_ctx", NULL);
   zoom_full(1, 0, 1, 0.97);
   load_schematic(1,fname, 1);
   zoom_full(1, 0, 1, 0.97); /* draw */
@@ -2243,7 +2249,6 @@ int Tcl_AppInit(Tcl_Interp *inter)
  tclsetvar("menu_debug_var",debug_var ? "1" : "0" );
  if(cli_opt_flat_netlist) {
    tclsetvar("flat_netlist","1");
-   xctx->flat_netlist = 1;
  }
  xctx->areaw = CADWIDTH+4*INT_WIDTH(xctx->lw);  /* clip area extends 1 pixel beyond physical xctx->window area */
  xctx->areah = CADHEIGHT+4*INT_WIDTH(xctx->lw); /* to avoid drawing clipped rectangle borders at xctx->window edges */
@@ -2438,7 +2443,7 @@ int Tcl_AppInit(Tcl_Interp *inter)
  xctx->pending_fullzoom=1;
  if(cli_opt_do_netlist) {
    if(debug_var>=1) {
-     if(xctx->flat_netlist)
+     if(tclgetboolvar("flat_netlist"))
        fprintf(errfp, "xschem: flat netlist requested\n");
    }
    if(!cli_opt_filename[0]) {
