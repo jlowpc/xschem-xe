@@ -320,7 +320,7 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
            "subdivx=1\n"
            "node=\"\"\n"
            "color=\"\"\n"
-           "dataset=0\n"
+           "dataset=-1\n"
            "unitx=u\n"
            "logx=0\n"
            "logy=0\n"
@@ -362,6 +362,35 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
        xctx->prep_net_structs=0;
        xctx->prep_hi_structs=0;
        draw();
+    }
+   
+    else if(!strcmp(argv[1],"annotate_op"))
+    {
+      int i;
+      char f[PATH_MAX];
+      cmd_found = 1;
+      if(argc > 2) {
+        my_snprintf(f, S(f), "%s", argv[2]);
+      } else {
+        my_snprintf(f, S(f), "%s/%s.raw",  tclgetvar("netlist_dir"), skip_dir(xctx->sch[xctx->currsch]));
+      }
+      tclsetvar("rawfile_loaded", "0");
+      free_rawfile(1);
+      tcleval("array unset ngspice::ngspice_data");
+      raw_read(f, "op");
+      if(xctx->graph_values) {
+        xctx->graph_annotate_p = 0;
+        for(i = 0; i < xctx->graph_nvars; i++) {
+          char s[100];
+          int p = 0;
+          my_snprintf(s, S(s), "%.4g", xctx->graph_values[i][p]);
+          dbg(1, "%s = %g\n", xctx->graph_names[i], xctx->graph_values[i][p]);
+          tclvareval("array set ngspice::ngspice_data [list {",  xctx->graph_names[i], "} ", s, "]", NULL);
+        }
+        tclvareval("set ngspice::ngspice_data(n\\ vars) ", my_itoa( xctx->graph_nvars), NULL);
+        tclvareval("set ngspice::ngspice_data(n\\ points) 1", NULL);
+        draw();
+      }
     }
    
     else if(!strcmp(argv[1],"arc"))
@@ -2092,7 +2121,7 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
       cmd_found = 1;
       Tcl_ResetResult(interp);
       if(argc > 2 && !strcmp(argv[2], "loaded")) {
-        Tcl_SetResult(interp, schematic_waves_loaded() ? "1" : "0", TCL_STATIC);
+        Tcl_SetResult(interp, (sch_waves_loaded() >= 0) ? "1" : "0", TCL_STATIC);
       } else if(xctx->graph_values) {
         /* xschem rawfile_query value v(ldcp) 123 */
         if(argc > 4 && !strcmp(argv[2], "value")) {
@@ -2162,13 +2191,17 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
     if(!strcmp(argv[1], "raw_read"))
     {
       cmd_found = 1;
-      if(schematic_waves_loaded()) {
+      if(sch_waves_loaded() >= 0) {
         free_rawfile(1);
         tclsetvar("rawfile_loaded", "0");
       } else if(argc > 2) {
         free_rawfile(0);
-        read_rawfile(argv[2]);
-        if(schematic_waves_loaded()) tclsetvar("rawfile_loaded", "1");
+        if(argc > 3) raw_read(argv[2], argv[3]);
+        else raw_read(argv[2], NULL);
+        if(sch_waves_loaded() >= 0) {
+          tclsetvar("rawfile_loaded", "1");
+          draw();
+        }
         else  tclsetvar("rawfile_loaded", "0");
       }
       Tcl_ResetResult(interp);
@@ -2176,12 +2209,16 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
     if(!strcmp(argv[1], "raw_read_from_attr"))
     {
       cmd_found = 1;
-      if(schematic_waves_loaded()) {
+      if(sch_waves_loaded() >= 0) {
         free_rawfile(1);
       } else {
         free_rawfile(0);
-        read_embedded_rawfile();
-        if(schematic_waves_loaded()) tclsetvar("rawfile_loaded", "1");
+        if(argc > 2) raw_read_from_attr(argv[2]);
+        else  raw_read_from_attr(NULL);
+        if(sch_waves_loaded() >= 0) {
+          tclsetvar("rawfile_loaded", "1");
+          draw();
+        }
         else  tclsetvar("rawfile_loaded", "0");
       }
       Tcl_ResetResult(interp);

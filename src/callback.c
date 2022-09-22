@@ -29,7 +29,7 @@ static int waves_selected(int event, KeySym key, int state, int button)
   static unsigned int excl = STARTZOOM | STARTRECT | STARTLINE | STARTWIRE |
                              STARTPAN | STARTSELECT | STARTMOVE | STARTCOPY;
   if(xctx->ui_state & excl) skip = 1;
-  else if(!xctx->graph_values) skip = 1;
+  else if(sch_waves_loaded() < 0 ) skip = 1;
   else if(key !='a' && (state & Mod1Mask)) skip = 1;
   else if(event == MotionNotify && (state & Button2Mask)) skip = 1;
   else if(event == MotionNotify && (state & Button1Mask) && (state & ShiftMask)) skip = 1;
@@ -176,8 +176,8 @@ static void start_wire(double mx, double my)
 static void backannotate_at_cursor_b_pos(xRect *r, Graph_ctx *gr)
 {
 
-  if(xctx->graph_values) {
-    int dset, first, last, dataset = gr->dataset, i, p, ofs;
+  if(sch_waves_loaded() >= 0) { 
+    int dset, first, last, dataset = gr->dataset, i, p, ofs = 0;
     double start, end;
     int sweepvar_wrap = 0, sweep_idx;
     double xx, cursor2; /* xx is the p-th sweep variable value, cursor2 is cursor 'b' x position */
@@ -195,10 +195,12 @@ static void backannotate_at_cursor_b_pos(xRect *r, Graph_ctx *gr)
     dbg(1, "cursor b pos: %g dataset=%d\n",  cursor2, gr->dataset);
     if(dataset < 0) dataset = 0; /* if all datasets are plotted use first for backannotation */
     dbg(1, "dataset=%d\n", dataset);
+    ofs = 0;
     for(dset = 0 ; dset < xctx->graph_datasets; dset++) {
       double prev_x, prev_prev_x;
       int cnt=0, wrap;
       register SPICE_DATA *gv = xctx->graph_values[sweep_idx];
+      int s=0;
       first = -1;
       prev_prev_x = prev_x = 0;
       last = ofs;
@@ -210,14 +212,17 @@ static void backannotate_at_cursor_b_pos(xRect *r, Graph_ctx *gr)
            cnt = 0;
         }
         if(xx >= start && xx <= end) {
-          int s;
           if((dataset == -1 && sweepvar_wrap == 0) || (dataset == sweepvar_wrap)) {
+            dbg(1, "xx=%g cursor2=%g first=%d last=%d start=%g end=%g p=%d wrap=%d sweepvar_wrap=%d ofs=%d\n",
+              xx, cursor2, first, last, start, end, p, wrap, sweepvar_wrap, ofs);
             if(first == -1) first = p;
             if(p == first) {
               if(xx == cursor2) {dset = xctx->graph_datasets; break;}
               s = XSIGN0(xx - cursor2);
+              dbg(1, "s=%d\n", s);
             } else {
               int ss =  XSIGN0(xx -  cursor2);
+              dbg(1, "s=%d, ss=%d\n", s, ss);
               if(ss != s) {dset = xctx->graph_datasets; break;}
             }
             last = p;
@@ -241,7 +246,8 @@ static void backannotate_at_cursor_b_pos(xRect *r, Graph_ctx *gr)
       }
     }
     dbg(1, "xx=%g, p=%d\n", xx, p);
-    tcleval("array unset ::ngspice::ngspice_data");
+    tcleval("array unset ngspice::ngspice_data");
+    xctx->graph_annotate_p = p;
     for(i = 0; i < xctx->graph_nvars; i++) {
       char s[100];
       my_snprintf(s, S(s), "%.4g", xctx->graph_values[i][p]);
@@ -866,7 +872,7 @@ static int waves_callback(int event, int mx, int my, KeySym key, int button, int
                   }
                   bus_msb = strstr(ntok, ",");
                   j = -1;
-                  if(!bus_msb && xctx->graph_values) {
+                  if(!bus_msb) {
                     char *express = NULL;
                     if(strstr(ntok, ";")) {
                       my_strdup2(1505, &express, find_nth(ntok, ";", 2));

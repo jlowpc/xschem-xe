@@ -657,6 +657,9 @@ proc sim_is_ngspice {} {
   return 0
 }
 
+proc sim_is_Xyce {} {
+  return [sim_is_xyce]
+}
 
 proc sim_is_xyce {} {
   global sim
@@ -672,11 +675,22 @@ proc sim_is_xyce {} {
   return 0
 }
 
+# wrapper to "xschem list_tokens" comand to handle non list results
+# usually as a result of malformed input strings
+proc list_tokens {s} {
+  set res [xschem list_tokens $s 0]
+  if {[string is list $res]} {
+    return $res
+  } else {
+    return [split $res]
+  }
+}
+
 # generates a proper list, trimming multiple separators
 proc tolist {s} {
   set s [string trim $s]
   regsub -all {[\t\n ]+} $s { } s
-  if { [string is list $s] } {
+  if {[string is list $s] } {
     return $s
   } else {
     return [split $s]
@@ -3105,12 +3119,20 @@ proc tclpropeval {s instname symname} {
 
 # this hook is called in translate() if whole string is contained in a tcleval(...) construct
 proc tclpropeval2 {s} {
-  global debug_var env path
+  global debug_var env path graph_raw_level
 
   set netlist_type [xschem get netlist_type]
   # puts "tclpropeval2: s=|$s|"
   if {$debug_var <=-1} {puts "tclpropeval2: $s"}
   set path [string range [xschem get sch_path] 1 end]
+  # skip hierarchy components above the level where raw file has been loaded. 
+  # node path names to look up in raw file begin from there.
+  set skip 0
+  while { $skip < $graph_raw_level } {
+    regsub {^[^.]*\.} $path {} path
+    incr skip
+  }
+  
   if { $netlist_type eq {spice} } {
     # this is necessary if spiceprefix is being used in netlists
     regsub {^([^xX])} $path {x\1} path
@@ -3476,7 +3498,7 @@ proc edit_prop {txtlabel} {
   checkbutton .dialog.f2.r1 -text "No change properties" -variable no_change_attrs -state normal
   checkbutton .dialog.f2.r2 -text "Preserve unchanged props" -variable preserve_unchanged_attrs -state normal
   checkbutton .dialog.f2.r3 -text "Copy cell" -variable copy_cell -state normal
-  set tok_list "<ALL> [xschem list_tokens $retval 0]"
+  set tok_list "<ALL> [list_tokens $retval]"
   set selected_tok {<ALL>}
   set old_selected_tok {<ALL>}
   label .dialog.f2.r4 -text {   Edit Attr:}
@@ -3604,7 +3626,7 @@ proc text_line {txtlabel clear {preserve_disabled disabled} } {
   set X [expr {[winfo pointerx .dialog] - 60}]
   set Y [expr {[winfo pointery .dialog] - 35}]
 
-  set tok_list "<ALL> [xschem list_tokens $retval 0]"
+  set tok_list "<ALL> [list_tokens $retval]"
   set selected_tok {<ALL>}
   set old_selected_tok {<ALL>}
   bind .dialog <Configure> {
@@ -4661,7 +4683,7 @@ set tctx::global_list {
   dark_colorscheme dim_bg dim_value disable_unique_names do_all_inst draw_grid draw_window
   edit_prop_pos edit_prop_size editprop_sympath edit_symbol_prop_new_sel enable_dim_bg enable_stretch 
   en_hilight_conn_inst filetmp flat_netlist fullscreen gaw_fd gaw_tcp_address globfilter
-  graph_bus graph_digital graph_logx graph_logy
+  graph_bus graph_digital graph_logx graph_logy graph_raw_level
   graph_sel_color graph_schname graph_selected graph_sel_wave graph_sort
   graph_unlocked hide_empty_graphs hide_symbols hsize
   incr_hilight infowindow_text INITIALINSTDIR INITIALLOADDIR INITIALPROPDIR INITIALTEXTDIR
@@ -5708,6 +5730,7 @@ set_ne graph_logx 0
 set_ne graph_logy 0
 set_ne graph_selected {}
 set_ne graph_schname {}
+set_ne graph_raw_level -1 ;# hierarchy level where raw file has been loaded 
 # user clicked this wave 
 set_ne graph_sel_wave {}
 # flag to force simulation stop (Esc key pressed) 

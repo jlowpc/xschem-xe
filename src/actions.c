@@ -1137,8 +1137,11 @@ void schematic_in_new_window(void)
  rebuild_selected_array();
  if(xctx->lastsel !=1 || xctx->sel_array[0].type!=ELEMENT)
  {
-  /*  new_xschem_process("", 0); */
-  new_xschem_process(xctx->sch[xctx->currsch], 0); /*  20111007 duplicate current schematic if no inst selected */
+  if(tclgetvar("tabbed_interface")[0] == '1') {
+    new_schematic("create", NULL, xctx->sch[xctx->currsch]);
+  } else {
+    new_xschem_process(xctx->sch[xctx->currsch], 0); /*  20111007 duplicate current schematic if no inst selected */
+  }
   return;
  }
  else
@@ -1433,7 +1436,7 @@ void calc_drawing_bbox(xRect *boundbox, int selected)
  {
   const char *tmp = tclgetvar("hide_empty_graphs");
   int hide_graphs =  (tmp && tmp[0] == '1') ? 1 : 0;
-  int waves = schematic_waves_loaded();
+  int waves = (sch_waves_loaded() >= 0);
 
   for(i=0;i<xctx->lines[c];i++)
   {

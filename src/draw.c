@@ -1639,15 +1639,23 @@ static double get_unit(const char *val)
   return 1.0;
 }
 
-int schematic_waves_loaded(void)
+/* return hierarchy level where raw file was loaded (so may include top level 0) or -1 
+ * if there is no matching schematic name up in the hierarchy */
+int sch_waves_loaded(void)
 {
   int i;
-  if(xctx->graph_values && xctx->graph_raw_schname) {
+  if(xctx->graph_raw_level == -1) return -1;
+  else if(xctx->graph_values && xctx->graph_names && xctx->graph_raw_schname) {
+    dbg(1, "sch_waves_loaded(): graph_raw_schname=%s\n", xctx->graph_raw_schname);
     for(i = xctx->currsch; i >= 0; i--) {
-      if( !strcmp(xctx->graph_raw_schname, xctx->sch[i]) ) return 1;
+      dbg(1, "sch_waves_loaded(): %d --> %s\n", i, xctx->sch[i]);
+      if( !strcmp(xctx->graph_raw_schname, xctx->sch[i]) ) {
+        dbg(1, "sch_waves_loaded(): returning %d\n", i);
+        return i;
+      }
     } 
   }
-  return 0;
+  return -1;
 }
 
 static void get_bus_value(int n_bits, int hex_digits, SPICE_DATA **idx_arr, int p, char *busval,
@@ -1967,7 +1975,6 @@ void setup_graph_data(int i, const int flags, int skip, Graph_ctx *gr)
   const char *val;
   xRect *r = &xctx->rect[GRIDLAYER][i];
 
-  gr->i = i;
   /* default values */
   gr->divx = gr->divy = 5;
   gr->subdivx = gr->subdivy = 0;
@@ -2189,7 +2196,7 @@ static void draw_graph_variables(int wcnt, int wave_color, int n_nodes, int swee
   bbox(SET_INSIDE, 0.0, 0.0, 0.0, 0.0);
   /* draw sweep variable(s) on x-axis */
   if(wcnt == 0 || (stok && stok[0])) {
-    if(xctx->graph_values) stok = xctx->graph_names[sweep_idx];
+    if(sch_waves_loaded() >= 0) stok = xctx->graph_names[sweep_idx];
     if(gr->unitx != 1.0) my_snprintf(tmpstr, S(tmpstr), "%s[%c]", stok ? stok : "" , gr->unitx_suffix);
     else  my_snprintf(tmpstr, S(tmpstr), "%s", stok ? stok : "");
     draw_string(wave_color, NOW, tmpstr, 2, 1, 0, 0,
@@ -2334,20 +2341,6 @@ int embed_rawfile(const char *rawfile)
     ptr = base64_from_file(rawfile, &len);
     my_strdup2(1466, &i->prop_ptr, subst_token(i->prop_ptr, "spice_data", ptr));
     my_free(1481, &ptr);
-  }
-  return res;
-}
-
-int read_embedded_rawfile(void)
-{
-  int res = 0;
-
-  if(xctx->lastsel==1 && xctx->sel_array[0].type==ELEMENT) {
-    xInstance *i = &xctx->inst[xctx->sel_array[0].n];
-    const char *b64_spice_data;
-    if(i->prop_ptr && (b64_spice_data = get_tok_value(i->prop_ptr, "spice_data", 0))[0]) {
-      res = read_rawfile_from_attr(b64_spice_data, strlen(b64_spice_data));
-    }
   }
   return res;
 }
@@ -2670,6 +2663,7 @@ void draw_graph(int i, const int flags, Graph_ctx *gr)
   char *express = NULL;
   xRect *r = &xctx->rect[GRIDLAYER][i];
   
+  if(xctx->only_probes) return;
   if(RECT_OUTSIDE( gr->sx1, gr->sy1, gr->sx2, gr->sy2,
       xctx->areax1, xctx->areay1, xctx->areax2, xctx->areay2)) return;
   
@@ -2875,10 +2869,11 @@ static void draw_graph_all(int flags)
   int save_bbx1, save_bby1, save_bbx2, save_bby2;
   dbg(1, "draw_graph_all(): flags=%d\n", flags);
   /* save bbox data, since draw_graph_all() is called from draw() which may be called after a bbox(SET) */
-  sch_loaded = schematic_waves_loaded();
+  sch_loaded = (sch_waves_loaded() >= 0);
+  dbg(1, "draw_graph_all(): sch_loaded=%d\n", sch_loaded);
   hide_graphs =  tclgetboolvar("hide_empty_graphs");
   if(sch_loaded || !hide_graphs) {
-    if(xctx->sem) {
+    if(xctx->bbox_set) {
       bbox_set = 1;
       save_bbx1 = xctx->bbx1;
       save_bby1 = xctx->bby1;
@@ -2911,7 +2906,7 @@ static void draw_graph_all(int flags)
       xctx->bby1 = save_bby1;
       xctx->bbx2 = save_bbx2;
       xctx->bby2 = save_bby2;
-      xctx->sem = 1;
+      xctx->bbox_set = 1;
       bbox(SET, 0.0, 0.0, 0.0, 0.0);
     }
   }
@@ -2968,6 +2963,7 @@ void draw_image(int dr, xRect *r, double *x1, double *y1, double *x2, double *y2
   png_to_byte_closure_t closure;
   xEmb_image *emb_ptr;
 
+  if(xctx->only_probes) return;
   xx1 = *x1; yy1 = *y1; /* image anchor point */
   RECTORDER(*x1, *y1, *x2, *y2);
 

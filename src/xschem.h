@@ -684,7 +684,6 @@ typedef struct
 
 /* context struct for waveform graphs */
 typedef struct {
-  int i;  /* index number of container rectangle */
   int digital;
   double rx1, ry1, rx2, ry2, rw, rh; /* container rectangle */
   double sx1, sy1, sx2, sy2; /* screen coordinates of above */
@@ -869,7 +868,7 @@ typedef struct {
   /* bbox */
   int bbx1, bbx2, bby1, bby2;
   int savew, saveh, savex1, savex2, savey1, savey2;
-  int sem; /* set to 1 if a clipping bbox is set (void bbox() ) */
+  int bbox_set; /* set to 1 if a clipping bbox is set (void bbox() ) */
   XRectangle savexrect;
   /* new_prop_string */
   char prefix;
@@ -892,7 +891,6 @@ typedef struct {
   /* data related to all graphs, so not stored in per-graph graph_struct */
   double graph_cursor1_x;
   double graph_cursor2_x;
-  int graph_unlock_x; 
   /* graph_flags:
    *  1: dnu, reserved, used in draw_graphs()
    *  2: draw x-cursor1
@@ -908,11 +906,13 @@ typedef struct {
   int graph_bottom; 
   int graph_left;
   int graph_lastsel; /* last graph that was clicked (selected) */
-  int graph_sim_type; /* type of sim, 1: Tran, 2: Dc, 3: Ac */
+  const char *graph_sim_type; /* type of sim, "tran", "dc", "ac", "op", ... */
+  int graph_annotate_p; /* point in raw file to use for annotating schematic voltages/currents/etc */
   Int_hashentry **graph_raw_table;
   /* when descending hierarchy xctx->current_name changes, xctx->graph_raw_schname
    * holds the name of the top schematic from which the raw file was loaded */
   char *graph_raw_schname;
+  int graph_raw_level;  /* hierarchy level where raw file has been read MIRRORED IN TCL*/
   /*    */
   XSegment *biggridpoint;
   XPoint *gridpoint;
@@ -1030,8 +1030,8 @@ extern void draw_image(int dr, xRect *r, double *x1, double *y1, double *x2, dou
 extern int filter_data(const char *din, const size_t ilen,
            char **dout, size_t *olen, const char *cmd);
 extern int embed_rawfile(const char *rawfile);
-extern int read_rawfile_from_attr(const char *b64s, size_t length);
-extern int read_embedded_rawfile(void);
+extern int read_rawfile_from_attr(const char *b64s, size_t length, const char *type);
+extern int raw_read_from_attr(const char *type);
 extern char *base64_from_file(const char *f, size_t *length);
 extern int set_rect_flags(xRect *r);
 extern int set_rect_extraptr(int what, xRect *drptr);
@@ -1039,11 +1039,11 @@ extern unsigned char *base64_decode(const char *data, const size_t input_length,
 extern char *base64_encode(const unsigned char *data, const size_t input_length, size_t *output_length, int brk);
 extern int get_raw_index(const char *node);
 extern void free_rawfile(int dr);
-extern int read_rawfile(const char *f);
+extern int raw_read(const char *f, const char *type);
 extern double get_raw_value(int dataset, int idx, int point);
 extern int plot_raw_custom_data(int sweep_idx, int first, int last, const char *ntok);
 extern int calc_custom_data_yrange(int sweep_idx, const char *express, Graph_ctx *gr);
-extern int schematic_waves_loaded(void);
+extern int sch_waves_loaded(void);
 extern int edit_wave_attributes(int what, int i, Graph_ctx *gr);
 extern void draw_graph(int i, int flags, Graph_ctx *gr);
 extern int find_closest_wave(int i, Graph_ctx *gr);
