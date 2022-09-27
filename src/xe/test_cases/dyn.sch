@@ -1,8 +1,9 @@
 v {xschem version=3.1.0 file_version=1.2 }
 G {}
 K {type=subcircuit
-format="@name @pinlist @symname vcc=@vcc vss=@vss"
-template="name=x1 vcc=vcc vss=vss"}
+format="@name @pinlist @@vcc @@vss @symname"
+template="name=x1 vcc=vcc vss=vss"
+extra=vcc vss"}
 V {}
 S {}
 E {}
@@ -34,8 +35,16 @@ N 170 -330 170 -100 {
 lab=clk}
 N 170 -100 200 -100 {
 lab=clk}
+N 240 -330 260 -330 {
+lab=vcc}
+N 240 -100 300 -100 {
+lab=vss}
+N 240 -200 300 -200 {
+lab=vss}
+N 350 -330 370 -330 {
+lab=vcc}
 C {yxt/yxt_title.sym} 160 0 0 0 {name=l1 author="Joanne Low"}
-C {sky130_stdcells/inv_1.sym} 440 -260 0 0 {name=x1 VGND=vcc VNB=vcc VPB=vss VPWR=vss prefix=sky130_fd_sc_hd__ }
+C {sky130_stdcells/inv_1.sym} 440 -260 0 0 {name=x1 VGND=vss VNB=vss VPB=vcc VPWR=vcc prefix=sky130_fd_sc_hd__ }
 C {devices/ipin.sym} 140 -330 0 0 {name=p1 lab=clk}
 C {devices/opin.sym} 610 -260 0 0 {name=p3 lab=q}
 C {sky130_fd_pr/nfet_01v8.sym} 220 -200 0 0 {name=M1
@@ -98,3 +107,7 @@ C {devices/ipin.sym} 140 -200 0 0 {name=p4 lab=d}
 C {devices/lab_pin.sym} 240 -50 0 0 {name=l2 sig_type=std_logic lab=vss}
 C {devices/lab_pin.sym} 240 -380 0 0 {name=l3 sig_type=std_logic lab=vcc}
 C {devices/lab_pin.sym} 370 -380 0 0 {name=l4 sig_type=std_logic lab=vcc}
+C {devices/lab_pin.sym} 300 -100 0 1 {name=l5 sig_type=std_logic lab=vss}
+C {devices/lab_pin.sym} 300 -200 0 1 {name=l6 sig_type=std_logic lab=vss}
+C {devices/lab_pin.sym} 260 -330 0 1 {name=l7 sig_type=std_logic lab=vcc}
+C {devices/lab_pin.sym} 350 -330 0 0 {name=l8 sig_type=std_logic lab=vcc}

@@ -1,4 +1,5 @@
-v {xschem version=3.0.0 file_version=1.2 }
+v {xschem version=3.1.0 file_version=1.2
+}
 G {}
 K {}
 V {}
@@ -18,32 +19,48 @@ L 4 410 -150 570 -150 {}
 L 4 570 -170 570 -150 {}
 L 4 570 -170 690 -170 {}
 L 7 1090 -260 2520 -260 {}
-B 2 260 -1080 720 -920 {flags=graph
+B 2 300 -1060 760 -900 {flags=graph
 y1 = 0
 y2 = 0.93
 divy = 5
-x1=1.12193e-07
-x2=4.32192e-07
+x1=6.17604e-08
+x2=4.71882e-07
 divx=5
 subdivx=4
 unitx=n
 node="cal
 saout"
 color="4 5"
-}
-B 2 260 -1220 720 -1090 {flags=graph
+dataset=-1}
+B 2 300 -1200 760 -1070 {flags=graph
 y1 = 0.647319
 y2 = 0.652563
 divy = 5
-x1=1.12193e-07
-x2=4.32192e-07
+x1=6.17604e-08
+x2=4.71882e-07
 unitx=n
 divx=5
 subdivx=4
 node="plus
 minus"
 color="4 5"
-dataset=3}
+dataset=-1}
+B 2 300 -1300 760 -1200 {flags=graph
+y1 = 0
+y2 = 1
+divy = 5
+x1=6.17604e-08
+x2=4.71882e-07
+unitx=n
+divx=5
+subdivx=4
+node="en
+cal"
+color="4 4"
+dataset=-1
+digital=1
+ypos1=0.0602914
+ypos2=0.292255}
 T {CAL} 140 -180 0 1 0.4 0.4 {}
 T {EN} 140 -130 0 1 0.4 0.4 {}
 T {CALIBRATION
@@ -59,7 +76,7 @@ Gaussian Threshold variation (via delvto parameter) is added to all MOS transist
 T {.param ABSVAR=0.05
 delvto='agauss(0,ABSVAR,3)'} 1390 -120 0 0 0.6 0.6 {layer=8}
 T {Select one or more graphs (and no other objects)
-and use arrow keys to zoom / pan waveforms} 300 -1320 0 0 0.3 0.3 {}
+and use arrow keys to zoom / pan waveforms} 310 -1380 0 0 0.3 0.3 {}
 N 120 -470 120 -450 {lab=TEMPERAT}
 N 160 -1180 190 -1180 {lab=VSS}
 N 160 -1150 160 -1130 {lab=VSS}
@@ -243,7 +260,8 @@ value="* .option SCALE=1e-6
       reset
       set appendwrite
     end
-    save saout cal i(vvcc) en plus minus saoutf outdiff
+    * save saout cal i(vvcc) en plus minus saoutf outdiff
+    save all
     tran 0.1n 900n uic
     write autozero_comp.raw
     let run = run + 1
@@ -377,10 +395,29 @@ tclcommand="xschem netlist; xschem simulate"}
 C {parax_cap.sym} 980 -1090 0 0 {name=c4  value=5f}
 C {parax_cap.sym} 1470 -1090 0 0 {name=c6  value=5f}
 C {parax_cap.sym} 1960 -1090 0 0 {name=c7  value=5f}
-C {launcher.sym} 315 -1365 0 0 {name=h1 
+C {launcher.sym} 315 -1415 0 0 {name=h1 
 descr="Select arrow and 
 Ctrl-Left-Click to load/unload waveforms" 
 tclcommand="
 xschem raw_read $netlist_dir/[file tail [file rootname [xschem get current_name]]].raw
 "
 }
+C {ngspice_probe.sym} 890 -700 0 0 {name=r1}
+C {ngspice_probe.sym} 660 -680 0 0 {name=r1}
+C {ngspice_probe.sym} 380 -680 0 1 {name=r1}
+C {ngspice_probe.sym} 1130 -640 0 0 {name=r1}
+C {ngspice_probe.sym} 850 -640 0 1 {name=r2}
+C {ngspice_probe.sym} 1000 -590 0 0 {name=r1}
+C {ngspice_probe.sym} 1260 -710 0 0 {name=r1}
+C {ngspice_probe.sym} 1600 -710 0 0 {name=r1}
+C {ngspice_probe.sym} 2100 -710 0 0 {name=r1}
+C {ngspice_probe.sym} 1610 -1390 0 0 {name=r1}
+C {ngspice_probe.sym} 1470 -1200 0 0 {name=r1}
+C {ngspice_probe.sym} 980 -1200 0 0 {name=r1}
+C {ngspice_probe.sym} 1040 -860 0 0 {name=r1}
+C {ngspice_probe.sym} 530 -860 0 0 {name=r1}
+C {ngspice_probe.sym} 200 -570 0 0 {name=r1}
+C {ngspice_probe.sym} 120 -570 0 1 {name=r1}
+C {ngspice_probe.sym} 200 -700 0 0 {name=r1}
+C {ngspice_probe.sym} 120 -470 0 0 {name=r1}
+C {ngspice_probe.sym} 1960 -1200 0 0 {name=r1}

@@ -459,7 +459,7 @@ void ask_new_file(void)
         dbg(1, "ask_new_file(): load file: %s\n", f);
         clear_all_hilights();
         xctx->currsch = 0;
-        unselect_all();
+        unselect_all(1);
         remove_symbols();
         load_schematic(1, f,1); /* 20180925.1 */
         tclvareval("update_recent_file {", f, "}", NULL);
@@ -1137,8 +1137,11 @@ void schematic_in_new_window(void)
  rebuild_selected_array();
  if(xctx->lastsel !=1 || xctx->sel_array[0].type!=ELEMENT)
  {
-  /*  new_xschem_process("", 0); */
-  new_xschem_process(xctx->sch[xctx->currsch], 0); /*  20111007 duplicate current schematic if no inst selected */
+  if(tclgetvar("tabbed_interface")[0] == '1') {
+    new_schematic("create", NULL, xctx->sch[xctx->currsch]);
+  } else {
+    new_xschem_process(xctx->sch[xctx->currsch], 0); /*  20111007 duplicate current schematic if no inst selected */
+  }
   return;
  }
  else
@@ -1210,9 +1213,10 @@ void get_sch_from_sym(char *filename, xSymbol *sym)
       my_strncpy(filename, add_ext(abs_sym_path(sym->name, ""), ".sch"), PATH_MAX);
     }
   }
+  dbg(1, "get_sch_from_sym(): sym->name=%s, filename=%s\n", sym->name, filename);
 }
 
-void descend_schematic(int instnumber)
+int descend_schematic(int instnumber)
 {
  const char *str;
  char filename[PATH_MAX];
@@ -1224,7 +1228,7 @@ void descend_schematic(int instnumber)
  if(xctx->lastsel !=1 || xctx->sel_array[0].type!=ELEMENT)
  {
   dbg(1, "descend_schematic(): wrong selection\n");
-  return;
+  return 0;
  }
  else
  {
@@ -1240,10 +1244,10 @@ void descend_schematic(int instnumber)
     my_snprintf(cmd, S(cmd), "save_file_dialog {Save file} .sch.sym INITIALLOADDIR {%s}", filename);
     tcleval(cmd);
     my_strncpy(res, tclresult(), S(res));
-    if(!res[0]) return;
+    if(!res[0]) return 0;
     dbg(1, "descend_schematic(): saving: %s\n",res);
     save_ok = save_schematic(res);
-    if(save_ok==0) return;
+    if(save_ok==0) return 0;
   }
 
   dbg(1, "descend_schematic(): inst type: %s\n", (xctx->inst[xctx->sel_array[0].n].ptr+ xctx->sym)->type);
@@ -1252,7 +1256,7 @@ void descend_schematic(int instnumber)
      (xctx->inst[xctx->sel_array[0].n].ptr+ xctx->sym)->type &&
      strcmp( (xctx->inst[xctx->sel_array[0].n].ptr+ xctx->sym)->type, "subcircuit") &&
      strcmp( (xctx->inst[xctx->sel_array[0].n].ptr+ xctx->sym)->type, "primitive")
-  ) return;
+  ) return 0;
 
   if(xctx->modified)
   {
@@ -1267,7 +1271,7 @@ void descend_schematic(int instnumber)
      *  0 : file not saved due to errors or per user request
      */
     if(ret == 0) clear_all_hilights();
-    if(ret == -1) return; /* user cancel */
+    if(ret == -1) return 0; /* user cancel */
   }
 
   /*  build up current hierarchy path */
@@ -1288,7 +1292,7 @@ void descend_schematic(int instnumber)
   if(inst_mult > 1) { /* on multiple instances ask where to descend, to correctly evaluate
                          the hierarchy path you descend to */
 
-    if(instnumber <= 0 ) {
+    if(instnumber == 0 ) {
       const char *inum;
       tclvareval("input_line ", "{input instance number (leftmost = 1) to descend into:\n"
         "negative numbers select instance starting\nfrom the right (rightmost = -1)}"
@@ -1298,7 +1302,7 @@ void descend_schematic(int instnumber)
       if(!inum[0]) {
         my_free(710, &xctx->sch_path[xctx->currsch+1]);
         xctx->sch_path_hash[xctx->currsch+1] =0;
-        return;
+        return 0;
       }
       inst_number=atoi(inum);
     } else {
@@ -1324,7 +1328,7 @@ void descend_schematic(int instnumber)
   hilight_child_pins();
 
   get_sch_from_sym(filename, xctx->inst[xctx->sel_array[0].n].ptr+ xctx->sym);
-  unselect_all();
+  unselect_all(1);
   remove_symbols();
   load_schematic(1,filename, 1);
 
@@ -1336,6 +1340,7 @@ void descend_schematic(int instnumber)
   dbg(1, "descend_schematic(): before zoom(): prep_hash_inst=%d\n", xctx->prep_hash_inst);
   zoom_full(1, 0, 1, 0.97);
  }
+ return 1;
 }
 
 void go_back(int confirm) /*  20171006 add confirm */
@@ -1362,7 +1367,7 @@ void go_back(int confirm) /*  20171006 add confirm */
     }
   }
   if(save_ok==0) return;
-  unselect_all();
+  unselect_all(1);
   remove_symbols();
   from_embedded_sym=0;
   if(strstr(xctx->sch[xctx->currsch], ".xschem_embedded_")) {
@@ -1431,7 +1436,7 @@ void calc_drawing_bbox(xRect *boundbox, int selected)
  {
   const char *tmp = tclgetvar("hide_empty_graphs");
   int hide_graphs =  (tmp && tmp[0] == '1') ? 1 : 0;
-  int waves = schematic_waves_loaded();
+  int waves = (sch_waves_loaded() >= 0);
 
   for(i=0;i<xctx->lines[c];i++)
   {
@@ -2056,7 +2061,7 @@ void change_layer()
      }
    }
    if(xctx->lastsel) delete_only_rect_line_arc_poly();
-   unselect_all();
+   unselect_all(1);
 }
 
 void new_arc(int what, double sweep)

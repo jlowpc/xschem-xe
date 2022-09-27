@@ -115,6 +115,7 @@ int filter_data(const char* din, const size_t ilen,
 #endif
 
 /* Caller should free returned buffer */
+/* set brk to 1 if you want newlines added */
 char *base64_encode(const unsigned char *data, const size_t input_length, size_t *output_length, int brk) {
   static const char b64_enc[] = {
     'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H',
@@ -230,7 +231,7 @@ static void read_binary_block(FILE *fd)
   int offset = 0;
   int ac = 0;
 
-  if(xctx->graph_sim_type == 3) ac = 1; /* AC analysis, complex numbers twice the size */
+  if(!strcmp(xctx->graph_sim_type, "ac")) ac = 1; /* AC analysis, complex numbers twice the size */
 
   for(p = 0 ; p < xctx->graph_datasets; p++) {
     offset += xctx->graph_npoints[p];
@@ -252,9 +253,9 @@ static void read_binary_block(FILE *fd)
     /* assign to xschem struct, memory aligned per variable, for cache locality */
     if(ac) {
       for(v = 0; v < xctx->graph_nvars; v += 2) { /*AC analysis: calculate magnitude */
-        if( v == 0 )  /* log scale x */
-          xctx->graph_values[v][offset + p] = (float)log10(sqrt( tmp[v] * tmp[v] + tmp[v + 1] * tmp[v + 1]));
-        else /* dB */
+        if( v == 0 )  /* sweep var */
+          xctx->graph_values[v][offset + p] = (float)sqrt( tmp[v] * tmp[v] + tmp[v + 1] * tmp[v + 1]);
+        else /* magnitude */
           /* avoid 0 for dB calculations */
           if(tmp[v] == 0.0 && tmp[v + 1] == 0.0) xctx->graph_values[v][offset + p] = 1e-35f;
           else xctx->graph_values[v][offset + p] = 
@@ -295,111 +296,171 @@ static void read_binary_block(FILE *fd)
  *         157     i(v1)   current
  * Binary:
  */
-static int read_dataset(FILE *fd)
+static int read_dataset(FILE *fd, const char *type)
 { 
   int variables = 0, i, done_points = 0;
   char line[PATH_MAX], varname[PATH_MAX];
   char *ptr;
-  int done_header = 0;
-  int exit_status = 0;
-  xctx->graph_sim_type = 0;
-  
-  while((ptr = fgets(line, sizeof(line), fd)) ) {
-    /* after this line comes the binary blob made of nvars * npoints * sizeof(double) bytes */
-    if(!strcmp(line, "Values:\n") || !strcmp(line, "Values:\r\n")) { /* this is an ASCII raw file. We don't handle this (yet) */
+  int n = 0, done_header = 0, ac = 0;
+  int exit_status = 0, npoints, nvars;
+  int dbglev=1;
+  xctx->graph_sim_type = NULL;
+  dbg(1, "read_dataset(): type=%s\n", type ? type : "<NULL>");
+  while((fgets(line, sizeof(line), fd)) ) {
+    /* this is an ASCII raw file. We don't handle this (yet) */
+    if(!strcmp(line, "Values:\n") || !strcmp(line, "Values:\r\n")) {
       free_rawfile(0);
-      dbg(0, "read_dataset(): ASCII raw files can not be read. "
+      dbg(dbglev, "read_dataset(): ASCII raw files can not be read. "
              "Use binary format in ngspice (set filetype=binary)\n");
       tcleval("alert_ {read_dataset(): ASCII raw files can not be read. "
              "Use binary format in ngspice (set filetype=binary)}");
+      free_rawfile(0);
       return 0;
     }
+    /* after this line comes the binary blob made of nvars * npoints * sizeof(double) bytes */
     if(!strcmp(line, "Binary:\n") || !strcmp(line, "Binary:\r\n")) {
-      int npoints = xctx->graph_npoints[xctx->graph_datasets];
       if(xctx->graph_sim_type) {
         done_header = 1;
+        dbg(dbglev, "read_dataset(): read binary block, nvars=%d npoints=%d\n", nvars, npoints);
         read_binary_block(fd); 
-        dbg(1, "read_dataset(): read binary block, nvars=%d npoints=%d\n", xctx->graph_nvars, npoints);
         xctx->graph_datasets++;
         exit_status = 1;
       } else { 
-        dbg(1, "read_dataset(): skip binary block, nvars=%d npoints=%d\n", xctx->graph_nvars, npoints);
-        fseek(fd, (xctx->graph_nvars) * npoints * sizeof(double), SEEK_CUR); /* skip binary block */
+        dbg(dbglev, "read_dataset(): skip binary block, nvars=%d npoints=%d\n", nvars, npoints);
+        fseek(fd, nvars * npoints * sizeof(double), SEEK_CUR); /* skip binary block */
       }
       done_points = 0;
+      ac = 0;
     }
-    else if(!strncmp(line, "Plotname: Transient Analysis", 28)) {
-      if(xctx->graph_sim_type && xctx->graph_sim_type != 1) xctx->graph_sim_type = 0;
-      else xctx->graph_sim_type = 1;
+    /* if type is given (not NULL) choose the simulation that matches type, else take the first one */
+    /* if xctx->graph_sim_type is set skip all datasets that do not match */
+    else if(!strncmp(line, "Plotname:", 9) && strstr(line, "Transient Analysis")) {
+      if(xctx->graph_sim_type && strcmp(xctx->graph_sim_type, "tran")) xctx->graph_sim_type = NULL;
+      else if(type && !strcmp(type, "tran")) xctx->graph_sim_type = "tran";
+      else if(type && strcmp(type, "tran")) xctx->graph_sim_type = NULL;
+      else xctx->graph_sim_type = "tran";
+      dbg(dbglev, "read_dataset(): tran graph_sim_type=%s\n", xctx->graph_sim_type ? xctx->graph_sim_type : "<NULL>");
     }
-    else if(!strncmp(line, "Plotname: DC transfer characteristic", 36)) {
-      if(xctx->graph_sim_type && xctx->graph_sim_type != 2) xctx->graph_sim_type = 0;
-      else xctx->graph_sim_type = 2;
+    else if(!strncmp(line, "Plotname:", 9) && strstr(line, "DC transfer characteristic")) {
+      if(xctx->graph_sim_type && strcmp(xctx->graph_sim_type, "dc")) xctx->graph_sim_type = NULL;
+      else if(type && !strcmp(type, "dc")) xctx->graph_sim_type = "dc";
+      else if(type && strcmp(type, "dc")) xctx->graph_sim_type = NULL;
+      else xctx->graph_sim_type = "dc";
+      dbg(dbglev, "read_dataset(): dc graph_sim_type=%s\n", xctx->graph_sim_type ? xctx->graph_sim_type : "<NULL>");
     }
-    else if(!strncmp(line, "Plotname: Operating Point", 25)) {
-      if(xctx->graph_sim_type && xctx->graph_sim_type != 4) xctx->graph_sim_type = 0;
-      else xctx->graph_sim_type = 4;
+    else if(!strncmp(line, "Plotname:", 9) && strstr(line, "Operating Point")) {
+      if(xctx->graph_sim_type && strcmp(xctx->graph_sim_type, "op")) xctx->graph_sim_type = NULL;
+      else if(type && !strcmp(type, "op")) xctx->graph_sim_type = "op";
+      else if(type && strcmp(type, "op")) xctx->graph_sim_type = NULL;
+      else xctx->graph_sim_type = "op";
+      dbg(dbglev, "read_dataset(): op graph_sim_type=%s\n", xctx->graph_sim_type ? xctx->graph_sim_type : "<NULL>");
     }
-    else if(!strncmp(line, "Plotname: AC Analysis", 21)) {
-      if(xctx->graph_sim_type && xctx->graph_sim_type != 3) xctx->graph_sim_type = 0;
-      else xctx->graph_sim_type = 3;
+    else if(!strncmp(line, "Plotname:", 9) && strstr(line, "AC Analysis")) {
+      ac = 1;
+      if(xctx->graph_sim_type && strcmp(xctx->graph_sim_type, "ac")) xctx->graph_sim_type = NULL;
+      else if(type && !strcmp(type, "ac")) xctx->graph_sim_type = "ac";
+      else if(type && strcmp(type, "ac")) xctx->graph_sim_type = NULL;
+      else xctx->graph_sim_type = "ac";
+      dbg(dbglev, "read_dataset(): ac graph_sim_type=%s\n", xctx->graph_sim_type ? xctx->graph_sim_type : "<NULL>");
     }
     else if(!strncmp(line, "Plotname:", 9)) {
-      xctx->graph_sim_type = 0;
+      char name[PATH_MAX];
+      xctx->graph_sim_type = NULL;
+      n = sscanf(line, "Plotname: %s", name);
+      if(n==1) {
+        if(xctx->graph_sim_type && strcmp(xctx->graph_sim_type, "custom")) xctx->graph_sim_type = NULL;
+        else if(type && !strcmp(type, name)) xctx->graph_sim_type = "custom";
+      }
     }
     /* points and vars are needed for all sections (also ones we are not interested in)
      * to skip binary blobs */
     else if(!strncmp(line, "No. of Data Rows :", 18)) {
       /* array of number of points of datasets (they are of varialbe length) */
-      my_realloc(1414, &xctx->graph_npoints, (xctx->graph_datasets+1) * sizeof(int));
-      sscanf(line, "No. of Data Rows : %d", &xctx->graph_npoints[xctx->graph_datasets]);
-      /* multi-point OP is equivalent to a DC sweep. Change  xctx->graph_sim_type */
-      if(xctx->graph_npoints[xctx->graph_datasets] > 1 && xctx->graph_sim_type == 4 ) {
-        xctx->graph_sim_type = 2;
-      } else if(xctx->graph_sim_type == 4)  xctx->graph_sim_type = 0;
-     
+      n = sscanf(line, "No. of Data Rows : %d", &npoints);
+      if(n < 1) {
+        dbg(0, "read_dataset(): WAARNING: malformed raw file, aborting\n");
+        free_rawfile(0);
+        return 1;
+      }
+      if(xctx->graph_sim_type) {
+        my_realloc(1414, &xctx->graph_npoints, (xctx->graph_datasets+1) * sizeof(int));
+        xctx->graph_npoints[xctx->graph_datasets] = npoints;
+        /* multi-point OP is equivalent to a DC sweep. Change  xctx->graph_sim_type */
+        if(xctx->graph_npoints[xctx->graph_datasets] > 1 && !strcmp(xctx->graph_sim_type, "op") ) {
+          xctx->graph_sim_type = "dc";
+        }
+      }
       done_points = 1;
     }
     else if(!strncmp(line, "No. Variables:", 14)) {
-      sscanf(line, "No. Variables: %d", &xctx->graph_nvars);
-      if(xctx->graph_sim_type == 3) xctx->graph_nvars <<= 1; /* mag and phase */
-      
+      n = sscanf(line, "No. Variables: %d", &nvars);
+      dbg(dbglev, "read_dataset(): nvars=%d\n", nvars);
+      if(ac) nvars <<= 1;
+      if(n < 1) {
+        dbg(0, "read_dataset(): WAARNING: malformed raw file, aborting\n");
+        free_rawfile(0);
+        return 1;
+      }
+      if(xctx->graph_sim_type) {
+        xctx->graph_nvars = nvars;
+      }
     }
     else if(!done_points && !strncmp(line, "No. Points:", 11)) {
-      my_realloc(1415, &xctx->graph_npoints, (xctx->graph_datasets+1) * sizeof(int));
-      sscanf(line, "No. Points: %d", &xctx->graph_npoints[xctx->graph_datasets]);
-      /* multi-point OP is equivalent to a DC sweep. Change  xctx->graph_sim_type */
-      if(xctx->graph_npoints[xctx->graph_datasets] > 1 && xctx->graph_sim_type == 4 ) {
-        xctx->graph_sim_type = 2;
-      } else if(xctx->graph_sim_type == 4)  xctx->graph_sim_type = 0;
+      n = sscanf(line, "No. Points: %d", &npoints);
+      if(n < 1) {
+        dbg(0, "read_dataset(): WAARNING: malformed raw file, aborting\n");
+        free_rawfile(0);
+        return 1;
+      }
+      if(xctx->graph_sim_type) {
+        my_realloc(1415, &xctx->graph_npoints, (xctx->graph_datasets+1) * sizeof(int));
+        xctx->graph_npoints[xctx->graph_datasets] = npoints;
+        /* multi-point OP is equivalent to a DC sweep. Change  xctx->graph_sim_type */
+        if(xctx->graph_npoints[xctx->graph_datasets] > 1 && !strcmp(xctx->graph_sim_type, "op") ) {
+          xctx->graph_sim_type = "dc";
+        }
+      }
     }
-    if(!done_header && variables) {
+    if(xctx->graph_sim_type && !done_header && variables) {
       /* get the list of lines with index and node name */
       if(!xctx->graph_names) xctx->graph_names = my_calloc(426, xctx->graph_nvars, sizeof(char *));
-      sscanf(line, "%d %s", &i, varname); /* read index and name of saved waveform */
-      if(xctx->graph_sim_type == 3) { /* AC */
+      n = sscanf(line, "%d %s", &i, varname); /* read index and name of saved waveform */
+      if(n < 2) {
+        dbg(0, "read_dataset(): WAARNING: malformed raw file, aborting\n");
+        free_rawfile(0);
+        return 1;
+      }
+      strtolower(varname);
+      /* transform ':' hierarchy separators (Xyce) to '.' */
+      ptr = varname;
+      while(*ptr) {
+        if(*ptr == ':') *ptr = '.';
+        ptr++;
+      }
+      if(xctx->graph_sim_type && !strcmp(xctx->graph_sim_type, "ac")) { /* AC */
         my_strcat(415, &xctx->graph_names[i << 1], varname);
-        int_hash_lookup(xctx->raw_table, xctx->graph_names[i << 1], (i << 1), XINSERT_NOREPLACE);
-        if(strstr(varname, "v(") == varname || strstr(varname, "i(") == varname ||
-           strstr(varname, "V(") == varname || strstr(varname, "I(") == varname)
+        int_hash_lookup(xctx->graph_raw_table, xctx->graph_names[i << 1], (i << 1), XINSERT_NOREPLACE);
+        if(strstr(varname, "v(") == varname || strstr(varname, "i(") == varname)
           my_mstrcat(664, &xctx->graph_names[(i << 1) + 1], "ph(", varname + 2, NULL);
         else
           my_mstrcat(540, &xctx->graph_names[(i << 1) + 1], "ph(", varname, ")", NULL);
-        int_hash_lookup(xctx->raw_table, xctx->graph_names[(i << 1) + 1], (i << 1) + 1, XINSERT_NOREPLACE);
+        int_hash_lookup(xctx->graph_raw_table, xctx->graph_names[(i << 1) + 1], (i << 1) + 1, XINSERT_NOREPLACE);
       } else {
         my_strcat(541, &xctx->graph_names[i], varname);
-        int_hash_lookup(xctx->raw_table, xctx->graph_names[i], i, XINSERT_NOREPLACE);
+        int_hash_lookup(xctx->graph_raw_table, xctx->graph_names[i], i, XINSERT_NOREPLACE);
       }
       /* use hash table to store index number of variables */
-      dbg(1, "read_dataset(): get node list -> names[%d] = %s\n", i, xctx->graph_names[i]);
+      dbg(dbglev, "read_dataset(): get node list -> names[%d] = %s\n", i, xctx->graph_names[i]);
     }
     /* after this line comes the list of indexes and associated nodes */
     if(xctx->graph_sim_type && !strncmp(line, "Variables:", 10)) {
       variables = 1 ;
     }
   }
-  dbg(1, "read_dataset(): datasets=%d, last npoints=%d, nvars=%d\n",
-    xctx->graph_datasets,  xctx->graph_npoints[xctx->graph_datasets-1], xctx->graph_nvars);
+  if(exit_status == 0 && xctx->graph_datasets && xctx->graph_npoints) {
+    dbg(dbglev, "raw file read: datasets=%d, last dataset points=%d, nvars=%d\n",
+        xctx->graph_datasets,  xctx->graph_npoints[xctx->graph_datasets-1], xctx->graph_nvars);
+  }
   return exit_status;
 }
 
@@ -425,10 +486,13 @@ void free_rawfile(int dr)
   }
   if(xctx->graph_npoints) my_free(1413, &xctx->graph_npoints);
   xctx->graph_allpoints = 0;
-  if(xctx->raw_schname) my_free(1393, &xctx->raw_schname);
+  if(xctx->graph_raw_schname) my_free(1393, &xctx->graph_raw_schname);
+  xctx->graph_raw_level = -1;
+  tclsetintvar("graph_raw_level", -1);
   xctx->graph_datasets = 0;
   xctx->graph_nvars = 0;
-  int_hash_free(xctx->raw_table);
+  xctx->graph_annotate_p = -1;
+  int_hash_free(xctx->graph_raw_table);
   if(deleted && dr) draw();
 }
 
@@ -458,7 +522,7 @@ char *base64_from_file(const char *f, size_t *length)
   return b64s;
 }
 
-int read_rawfile_from_attr(const char *b64s, size_t length)
+int raw_read_from_attr(const char *type)
 {
   int res = 0;
   unsigned char *s;
@@ -466,70 +530,89 @@ int read_rawfile_from_attr(const char *b64s, size_t length)
   FILE *fd;
   char *tmp_filename;
 
+
   if(xctx->graph_values || xctx->graph_npoints || xctx->graph_nvars || xctx->graph_datasets) {
-    dbg(0, "read_rawfile(_from_attr(): must clear current raw file before loading new\n");
+    dbg(0, "raw_read(_from_attr(): must clear current raw file before loading new\n");
     return res;
   }
-  if( (fd = open_tmpfile("rawfile_", &tmp_filename)) ) {
-    s = base64_decode(b64s, length, &decoded_length);
-   fwrite(s, decoded_length, 1, fd);
-    fclose(fd);
-    my_free(1479, &s);
-    res = read_rawfile(tmp_filename);
-    unlink(tmp_filename);
-    
-  } else {
-    dbg(0, "read_rawfile_from_attr(): failed to open file %s for reading\n", tmp_filename);
+  if(xctx->lastsel==1 && xctx->sel_array[0].type==ELEMENT) {
+    xInstance *i = &xctx->inst[xctx->sel_array[0].n];
+    const char *b64_spice_data;
+    size_t length;
+    if(i->prop_ptr && (b64_spice_data = get_tok_value(i->prop_ptr, "spice_data", 0))[0]) {
+      length = strlen(b64_spice_data);
+      if( (fd = open_tmpfile("embedded_rawfile_", &tmp_filename)) ) {
+        s = base64_decode(b64_spice_data, length, &decoded_length);
+        fwrite(s, decoded_length, 1, fd);
+        fclose(fd);
+        my_free(1479, &s);
+        res = raw_read(tmp_filename, type);
+        unlink(tmp_filename);
+      } else {
+        dbg(0, "read_rawfile_from_attr(): failed to open file %s for reading\n", tmp_filename);
+      }
+    }
   }
   return res;
 }
 
 /* read a ngspice raw file (with data portion in binary format) */
-int read_rawfile(const char *f)
+int raw_read(const char *f, const char *type)
 {
   int res = 0;
   FILE *fd;
   if(xctx->graph_values || xctx->graph_npoints || xctx->graph_nvars || xctx->graph_datasets) {
-    dbg(0, "read_rawfile(): must clear current raw file before loading new\n");
+    dbg(0, "raw_read(): must clear current raw file before loading new\n");
     return res;
   }
   fd = fopen(f, fopen_read_mode);
   if(fd) {
-    if((res = read_dataset(fd)) == 1) {
+    if((res = read_dataset(fd, type)) == 1) {
       int i;
-      dbg(0, "Raw file data read\n");
-      my_strdup2(1394, &xctx->raw_schname, xctx->sch[xctx->currsch]);
+      my_strdup2(1394, &xctx->graph_raw_schname, xctx->sch[xctx->currsch]);
+      xctx->graph_raw_level = xctx->currsch;
+      tclsetintvar("graph_raw_level",  xctx->currsch);
       xctx->graph_allpoints = 0;
       for(i = 0; i < xctx->graph_datasets; i++) {
         xctx->graph_allpoints +=  xctx->graph_npoints[i];
       }
-      draw();
+      dbg(0, "Raw file data read: %s\n", f);
+      dbg(0, "points=%d, vars=%d, datasets=%d\n", 
+             xctx->graph_allpoints, xctx->graph_nvars, xctx->graph_datasets);
     } else {
-      dbg(0, "read_rawfile(): no useful data found\n");
+      dbg(0, "raw_read(): no useful data found\n");
     }
     fclose(fd);
     return res;
   }
-  dbg(0, "read_rawfile(): failed to open file %s for reading\n", f);
+  dbg(0, "raw_read(): failed to open file %s for reading\n", f);
   return 0;
 }
 
+
+/* given a node XXyy try XXyy , xxyy, XXYY, v(XXyy), v(xxyy), V(XXYY) */
 int get_raw_index(const char *node)
 {
-  char vnode[300];
-  char lnode[300];
+  char inode[512];
+  char vnode[512];
   Int_hashentry *entry;
-  dbg(1, "get_raw_index(): node=%s, node=%s\n", node, node);
-  if(xctx->graph_values) {
-    entry = int_hash_lookup(xctx->raw_table, node, 0, XLOOKUP);
+
+
+  dbg(1, "get_raw_index(): node=%s\n", node);
+  if(sch_waves_loaded() >= 0) {
+    my_strncpy(inode, node, S(inode));
+    strtolower(inode);
+    entry = int_hash_lookup(xctx->graph_raw_table, inode, 0, XLOOKUP);
     if(!entry) {
-      my_snprintf(vnode, S(vnode), "v(%s)", node);
-      entry = int_hash_lookup(xctx->raw_table, vnode, 0, XLOOKUP);
-      if(!entry) {
-        my_strncpy(lnode, vnode, S(lnode));
-        strtolower(lnode);
-        entry = int_hash_lookup(xctx->raw_table, lnode, 0, XLOOKUP);
-      }
+      my_snprintf(vnode, S(vnode), "v(%s)", inode);
+      entry = int_hash_lookup(xctx->graph_raw_table, vnode, 0, XLOOKUP);
+    }
+    if(!entry && strstr(inode, "i(v.x")) {
+      char *ptr = inode;
+      inode[2] = 'i';
+      inode[3] = '(';
+      ptr += 2;
+      entry = int_hash_lookup(xctx->graph_raw_table, ptr, 0, XLOOKUP);
     }
     if(entry) return entry->value;
   }
@@ -592,6 +675,7 @@ static double ravg_store(int what , int i, int p, int last, double integ)
 #define DUP -38
 #define RAVG -39 /* running average */
 #define DB20 -40
+#define DERIV0 -41 /* derivative to first sweep variable, regardless of specified sweep_idx */
 #define NUMBER -60
 
 typedef struct {
@@ -612,6 +696,7 @@ int plot_raw_custom_data(int sweep_idx, int first, int last, const char *expr)
   int stackptr1 = 0, stackptr2 = 0;
   SPICE_DATA *y = xctx->graph_values[xctx->graph_nvars]; /* custom plot data column */
   SPICE_DATA *x = xctx->graph_values[sweep_idx];
+  SPICE_DATA *sweepx = xctx->graph_values[0];
 
   my_strdup2(574, &ntok_copy, expr);
   ntok_ptr = ntok_copy;
@@ -643,6 +728,7 @@ int plot_raw_custom_data(int sweep_idx, int first, int last, const char *expr)
     else if(!strcmp(n, "ravg()")) stack1[stackptr1++].i = RAVG;
     else if(!strcmp(n, "db20()")) stack1[stackptr1++].i = DB20;
     else if(!strcmp(n, "deriv()")) stack1[stackptr1++].i = DERIV;
+    else if(!strcmp(n, "deriv0()")) stack1[stackptr1++].i = DERIV0;
     else if(!strcmp(n, "exch()")) stack1[stackptr1++].i = EXCH;
     else if(!strcmp(n, "dup()")) stack1[stackptr1++].i = DUP;
     else if( (v = strtod(n, &endptr)), !*endptr) {
@@ -675,20 +761,22 @@ int plot_raw_custom_data(int sweep_idx, int first, int last, const char *expr)
       if(stackptr2 > 1) { /* 2 argument operators */
         switch(stack1[i].i) {
           case PLUS:
-            stack2[stackptr2 - 2] =  stack2[stackptr2 - 2] + stack2[stackptr2 - 1];
+            stack2[stackptr2 - 2] = stack2[stackptr2 - 2] + stack2[stackptr2 - 1];
             stackptr2--;
             break;
           case MINUS:
-            stack2[stackptr2 - 2] =  stack2[stackptr2 - 2] - stack2[stackptr2 - 1];
+            stack2[stackptr2 - 2] = stack2[stackptr2 - 2] - stack2[stackptr2 - 1];
             stackptr2--;
             break;
           case MULT:
-            stack2[stackptr2 - 2] =  stack2[stackptr2 - 2] * stack2[stackptr2 - 1];
+            stack2[stackptr2 - 2] = stack2[stackptr2 - 2] * stack2[stackptr2 - 1];
             stackptr2--;
             break;
           case DIVIS:
             if(stack2[stackptr2 - 1]) {
-              stack2[stackptr2 - 2] =  stack2[stackptr2 - 2] / stack2[stackptr2 - 1];
+              stack2[stackptr2 - 2] = stack2[stackptr2 - 2] / stack2[stackptr2 - 1];
+            } else if(stack2[stackptr2 - 2] == 0.0) {
+              stack2[stackptr2 - 2] = 0;
             } else {
               stack2[stackptr2 - 2] =  y[p - 1];
             }
@@ -779,6 +867,21 @@ int plot_raw_custom_data(int sweep_idx, int first, int last, const char *expr)
             }
             stack2[stackptr2 - 1] =  deriv;
             break;
+          case DERIV0:
+            if( p == first ) {
+              deriv = 0;
+              stack1[i].prevy = stack2[stackptr2 - 1];
+              stack1[i].prev = 0;
+            } else {
+              if((sweepx[p] != sweepx[p - 1]))
+                deriv =  (stack2[stackptr2 - 1] - stack1[i].prevy) / (sweepx[p] - sweepx[p - 1]);
+              else
+                deriv = stack1[i].prev;
+              stack1[i].prevy = stack2[stackptr2 - 1] ;
+              stack1[i].prev = deriv;
+            }
+            stack2[stackptr2 - 1] =  deriv;
+            break;
           case SQRT:
             stack2[stackptr2 - 1] =  sqrt(stack2[stackptr2 - 1]);
             break;
@@ -831,8 +934,9 @@ double get_raw_value(int dataset, int idx, int point)
       for(i = 0; i < dataset; i++) {
         ofs += xctx->graph_npoints[i];
       }
-      if(ofs + point < xctx->graph_allpoints) 
+      if(ofs + point < xctx->graph_allpoints) {
         return xctx->graph_values[idx][ofs + point];
+      }
     }
   }
   return 0.0;
@@ -850,6 +954,12 @@ void read_record(int firstchar, FILE *fp, int dbg_level)
 {
   int c;
   char *str = NULL;
+  int unget = 1;
+
+  if(firstchar == -1) {
+     firstchar = fgetc(fp);
+     unget = 0;
+  }
   dbg(dbg_level, "SKIP RECORD\n");
   if(firstchar != '{') {
     dbg(dbg_level, "%c", firstchar);
@@ -858,7 +968,7 @@ void read_record(int firstchar, FILE *fp, int dbg_level)
     if (c=='\r') continue;
     if(c == '\n') {
       dbg(dbg_level, "\n");
-      ungetc(c, fp); /* so following read_line does not skip next line */
+      if(unget) ungetc(c, fp); /* so following read_line does not skip next line */
       break;
     }
     if(c == '{') {
@@ -1116,7 +1226,8 @@ static void save_inst(FILE *fd, int select_only)
   }
   fprintf(fd, " %.16g %.16g %hd %hd ",ptr[i].x0, ptr[i].y0, ptr[i].rot, ptr[i].flip );
   save_ascii_string(ptr[i].prop_ptr,fd, 1);
-  if( !embedded_saved[ptr[i].ptr] && !strcmp(get_tok_value(ptr[i].prop_ptr, "embed", 0), "true") ) {
+  if( embedded_saved && !embedded_saved[ptr[i].ptr] &&
+      !strcmp(get_tok_value(ptr[i].prop_ptr, "embed", 0), "true") ) {
       /* && !(xctx->sym[ptr[i].ptr].flags & EMBEDDED)) {  */
     embedded_saved[ptr[i].ptr] = 1;
     fprintf(fd, "[\n");
@@ -1242,8 +1353,8 @@ static void write_xschem_file(FILE *fd)
   my_strdup2(1183, &xctx->version_string, subst_token(xctx->version_string, "version", NULL));
   my_strdup2(1184, &xctx->version_string, subst_token(xctx->version_string, "file_version", NULL));
   ptr = xctx->version_string;
-  while(*ptr == ' ' || *ptr == '\t') ptr++; /* strip leading spaces */
-  fprintf(fd, "v {xschem version=%s file_version=%s %s}\n", XSCHEM_VERSION, XSCHEM_FILE_VERSION, ptr);
+  while(*ptr == ' ' || *ptr == '\t' || *ptr == '\n') ptr++; /* strip leading spaces */
+  fprintf(fd, "v {xschem version=%s file_version=%s\n%s}\n", XSCHEM_VERSION, XSCHEM_FILE_VERSION, ptr);
 
 
   if(xctx->schvhdlprop && !xctx->schsymbolprop) {
@@ -1824,7 +1935,7 @@ int save_schematic(const char *schname) /* 20171020 added return value */
     tcleval("alert_ {file opening for write failed!} {}");
     return 0;
   }
-  unselect_all();
+  unselect_all(1);
   write_xschem_file(fd);
   fclose(fd);
   /* update time stamp */
@@ -1908,7 +2019,8 @@ void load_schematic(int load_symbols, const char *filename, int reset_undo) /* 2
       if(!stat(name, &buf)) { /* file exists */
         xctx->time_last_modify =  buf.st_mtime;
       } else {
-        xctx->time_last_modify = time(NULL); /* file does not exist, set mtime to current time */
+        /* xctx->time_last_modify = time(NULL); */ /* file does not exist, set mtime to current time */
+        xctx->time_last_modify = 0; /* file does not exist, set mtime to 0 (undefined)*/
       }
     }
     if( (fd=fopen(name,fopen_read_mode))== NULL) {
@@ -1917,6 +2029,7 @@ void load_schematic(int load_symbols, const char *filename, int reset_undo) /* 2
       my_snprintf(msg, S(msg), "update; alert_ {Unable to open file: %s}", filename ? filename: "(null)");
       tcleval(msg);
       clear_drawing();
+      if(reset_undo) set_modify(0);
     } else {
       clear_drawing();
       dbg(1, "load_schematic(): reading file: %s\n", name);
@@ -1943,7 +2056,8 @@ void load_schematic(int load_symbols, const char *filename, int reset_undo) /* 2
     }
     dbg(1, "load_schematic(): %s, returning\n", xctx->sch[xctx->currsch]);
   } else {
-    if(reset_undo) xctx->time_last_modify = time(NULL); /* no file given, set mtime to current time */
+    /* if(reset_undo) xctx->time_last_modify = time(NULL); */ /* no file given, set mtime to current time */
+    if(reset_undo) xctx->time_last_modify = 0; /* no file given, set mtime to 0 (undefined) */
     clear_drawing();
     for(i=0;;i++) {
       if(xctx->netlist_type == CAD_SYMBOL_ATTRS) {
@@ -1965,6 +2079,8 @@ void load_schematic(int load_symbols, const char *filename, int reset_undo) /* 2
   if(xctx->hilight_nets && load_symbols) {
     propagate_hilights(1, 1, XINSERT_NOREPLACE);
   }
+  /* warning if two symbols perfectly overlapped */
+  warning_overlapped_symbols();
 }
 
 void clear_undo(void)
@@ -2118,7 +2234,7 @@ void pop_undo(int redo, int set_modify_status)
     xctx->cur_undo_ptr--; /* will be restored after building file name */
   }
   clear_drawing();
-  unselect_all();
+  unselect_all(1);
 
   #if HAS_POPEN==1
   my_snprintf(diff_name, S(diff_name), "gzip -d -c %s/undo%d", xctx->undo_dirname, xctx->cur_undo_ptr%MAX_UNDO);
@@ -3273,13 +3389,13 @@ void descend_symbol(void)
     }
     save_embedded_symbol(xctx->inst[xctx->sel_array[0].n].ptr+xctx->sym, fd);
     fclose(fd);
-    unselect_all();
+    unselect_all(1);
     remove_symbols(); /* must follow save (if) embedded */
     /* load_symbol(name_embedded); */
     load_schematic(1, name_embedded, 1);
   } else {
     /* load_symbol(abs_sym_path(name, "")); */
-    unselect_all();
+    unselect_all(1);
     remove_symbols(); /* must follow save (if) embedded */
     load_schematic(1, abs_sym_path(name, ""), 1);
   }

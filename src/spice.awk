@@ -28,7 +28,6 @@ BEGIN{
  user_code=0 #20180129
 
  while( (ARGV[1] ~ /^[-]/) || (ARGV[1] ~ /^$/) ) {
-   if(ARGV[1] == "-hspice") hspice = 1
    if(ARGV[1] == "-xyce") { xyce = 1} 
    for(i=2; i<= ARGC;i++) {
      ARGV[i-1] = ARGV[i]
@@ -68,11 +67,10 @@ END{
     ## /place to insert processing awk hooks
     if(xyce == 1) {
       ## transform ".save" lines into ".print tran" *only* for spice_probe elements, not user code
-      if(tolower($0) ~/^[ \t]*\.save[ \t]+.*\?[0-9]+/) {   # .save file=test1.raw format=raw v( ?1 C2  )
+      if(tolower($0) ~/^[ \t]*\.save[ \t]+.*\?-?[0-9]+/) {   # .save file=test1.raw format=raw v( ?1 C2  )
         $1 = ""
-        if(tolower($2) == "tran") $2 = ""
-        $0 = ".print tran" $0
-      }
+        $0 = ".print " $0
+      } 
       gsub(/ [mM] *= *1 *$/,"") # xyce does not like m=# fields (multiplicity) removing m=1 is no an issue anyway
     }
     process()
@@ -185,6 +183,10 @@ function process(        i,j, iprefix, saveinstr, savetype, saveanalysis)
  # dxm6[0] 0 HDD dnwell area='(50u + 73u)*(10u + 32u)' pj='2*(50u +73u)+2*(10u +32u)' 
  #20151027 do this for all fields
  for(i=1; i<=NF;i++) {
+   
+   if($i ~/^##[a-zA-Z_]+/) {
+     sub(/^##/, "", $i)
+   } else 
    if($i ~/^#[a-zA-Z_0-9]+#[a-zA-Z_]+/) {
      iprefix=$i
      sub(/^#/,"",iprefix)
@@ -198,59 +200,56 @@ function process(        i,j, iprefix, saveinstr, savetype, saveanalysis)
      $0 = $0  # reparse input line 
    }
  }
- if(hspice) {
-   ## 20140506 do not transform {} of variation groups
-   ## nmos N {
-   ## ...
-   ## }
-   if($0 ~ /=/) gsub(/[{}]/,"'")
-   gsub(/PARAM:/,"")     # stefan 20110627
+ ## 20140506 do not transform {} of variation groups
+ ## nmos N {
+ ## ...
+ ## }
+ gsub(/PARAM:/,"")     # stefan 20110627
 
-   if($0 ~/^[gG]/) {
-     IGNORECASE=1
-     sub(/ value=/," cur=")
-     IGNORECASE=0
-   }
-   if($0 ~/^[eE]/) {
-     IGNORECASE=1
-     sub(/ value=/," vol=")
-     IGNORECASE=0
-   }
-   if($0 ~/^[rR]/) {
-     IGNORECASE=1
-     sub(/ value=/," r=")
-     IGNORECASE=0
-   }
-   if($0 ~/^[cC]/) {
-     IGNORECASE=1
-     sub(/ value=/," c=")
-     IGNORECASE=0
-   }
-   gsub(/ value=/," ")
-   gsub(/ VALUE=/," ")
-   if($0 ~ /^D/ ) sub(/PERI[ \t]*=/,"PJ=")
+ if($0 ~/^[gG]/) {
+   IGNORECASE=1
+   sub(/ value=/," cur=")
+   IGNORECASE=0
  }
+ if($0 ~/^[eE]/) {
+   IGNORECASE=1
+   sub(/ value=/," vol=")
+   IGNORECASE=0
+ }
+ if($0 ~/^[rR]/) {
+   IGNORECASE=1
+   sub(/ value=/," r=")
+   IGNORECASE=0
+ }
+ if($0 ~/^[cC]/) {
+   IGNORECASE=1
+   sub(/ value=/," c=")
+   IGNORECASE=0
+ }
+ gsub(/ value=/," ")
+ gsub(/ VALUE=/," ")
+ if($0 ~ /^D/ ) sub(/PERI[ \t]*=/,"PJ=")
 
  ## .save tran v(?1 GB ) v(?1 SB )
- if(tolower($1) ~ /^\.(save|print)$/ && $0 ~/\?[0-9]/) {
+ ## ? may be followed by -1 in some cases
+ if(tolower($1) ~ /^\.(save|print)$/ && $0 ~/\?-?[0-9]/) {
    $0 = tolower($0)
    saveinstr = $1
-   if($2 ~/^(dc|ac|tran|op)$/) saveanalysis=$2
-   else saveanalysis=""
-   $1=""
-   if(saveanalysis !="") $2=""
-   $0 = $0 # reparse line for field splitting
-
-   gsub(/ *\?-?[0-9]+ */, "")
-   gsub(/\( */, "(")
-   gsub(/ *\)/, ")")
-   for(i=1; i<=NF; i++) {
-     savetype=$i; sub(/\(.*/,"", savetype)  # v(...)  --> v
-     sub(/^.*\(/,"", $i)
-     sub(/\).*/,"", $i)
-     num = split($i, name, ",")
-     for(j=1; j<= num; j++) {
-       print saveinstr " " saveanalysis " " savetype "(" name[j] ")"
+   if(!xyce) {
+     $1=""
+     $0 = $0 # reparse line for field splitting
+  
+     gsub(/ *\?-?[0-9]+ */, "")   # in some cases ?-1 is printed (unknow multiplicity) 
+     gsub(/\( */, "(")
+     gsub(/ *\)/, ")")
+     for(i=1; i<=NF; i++) {
+       savetype=$i; sub(/\(.*/,"", savetype)  # v(...)  --> v
+       sub(/^.*\(/,"", $i)
+       sub(/\).*/,"", $i)
+       num = split($i, name, ",")
+       for(j=1; j<= num; j++) {
+         print saveinstr " " savetype "(" name[j] ")"
+       }
      }
    }
    

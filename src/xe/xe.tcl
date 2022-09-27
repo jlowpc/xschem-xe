@@ -13,13 +13,13 @@
 package require Tktable
 
 if {$::OS == "Windows"} {
-  load xe_ckc.dll
+  load xe_dmrc.dll
   package require Thread
 } else {
-  load xe_ckc.so
+  load xe_dmrc.so
 }
 
-proc xetcl_clear_global {} {
+proc yxt_clear_global {} {
   global xe_gT xe_gTFull xe_gfilter_item_ht xe_gtablewindow_visibility
   array unset xe_gT 
   array unset xe_gTFull 
@@ -29,16 +29,16 @@ proc xetcl_clear_global {} {
 
 # Global variables
 global XSCHEM_SHAREDIR sim XE_ROOT_DIR
-xetcl_clear_global
+yxt_clear_global
 set xe_cm_wcounter 1
 set XE_ROOT_DIR $XSCHEM_SHAREDIR/XE
 
 # Add XE Menu to Xschem's main Menu
 menubutton .menubar.xe -text "XE"  -menu .menubar.xe.menu
 menu .menubar.xe.menu -tearoff 0
-.menubar.xe.menu add command -label "Configure XE" -command "xetcl_configure_xe_win 0"   
-.menubar.xe.menu add command -label "See Report" -command "xetcl_see_report_win {XE Reports}"
-.menubar.xe.menu add command -label "XE-SC" -command "xetclsc_win"
+.menubar.xe.menu add command -label "Configure XE" -command "yxt_configure_xe_win_select_dir 0"   
+.menubar.xe.menu add command -label "See Report" -command "yxt_see_report_win_context_menu {XE Reports}"
+.menubar.xe.menu add command -label "XE-SC" -command "yxtsc_win_update_change"
 pack .menubar.xe -side left
 
 ###############################################
@@ -55,7 +55,7 @@ set_ne sim(xe,default) 0
 ###############################################
 # if XE's WD/UD/TF are setup, just call xe_load API
 # else call configure_xe_win
-proc xetcl_load {} {
+proc yxt_load {} {
   global xe_conf_dict netlist_dir netlist_type
   if {[info exists xe_conf_dict(xe_wd)]} {
     foreach fn $xe_conf_dict(xe_uds) {
@@ -75,14 +75,14 @@ proc xetcl_load {} {
     set n ${netlist_dir}/${s}
     set N ${n}.$netlist_type
     # TBD: When XE fatal out, XSchem should not exit as well???? How to fix this
-    xe_load $xe_conf_dict(xe_wd) $N $ud $tf "" ""
+    xe::load $xe_conf_dict(xe_wd) $N $ud $tf "" ""
     # TBD: Need to put this in the background, and a method to let user know that it's done.  All XE's action should be paused until this finishes
   } else { 
-    xetcl_configure_xe_win 1
+    yxt_configure_xe_win_select_dir 1
   }
 }
 
-proc xetcl_configure_xe_win_select_dir {window} {
+proc yxt_configure_xe_win_select_dir {window} {
   global xe_conf_dict xe_wd_interim INITIALINSTDIR
   if {[info exists xe_conf_dict(xe_wd)]} {
     set xe_wd_interim [tk_chooseDirectory -initialdir $xe_wd_interim -parent $window -title {Select XE Working DIR} -mustexist false]
@@ -91,7 +91,7 @@ proc xetcl_configure_xe_win_select_dir {window} {
   }
 }
 
-proc xetcl_configure_xe_win_select_files {window title global_filelist} {
+proc yxt_configure_xe_win_select_dir_select_files {window title global_filelist} {
   global xe_wd_interim INITIALINSTDIR
   upvar #0 $global_filelist filelist
   if {[llength $filelist]>0} {
@@ -104,15 +104,15 @@ proc xetcl_configure_xe_win_select_files {window title global_filelist} {
   }
 }
 
-proc xetcl_backslash_to_slash {s} {
+proc yxt_backslash_to_slash {s} {
   regsub -all {\\} $s {/} s
   return $s
 }
 
-proc xetcl_configure_xe_win_save_interim {} {
+proc yxt_configure_xe_win_select_dir_save_interim {} {
   global xe_wd_interim xe_uds_interim xe_tfs_interim
   global xe_conf_dict 
-  set xe_wd_interim [xetcl_backslash_to_slash $xe_wd_interim]
+  set xe_wd_interim [yxt_backslash_to_slash $xe_wd_interim]
   if {![info exists xe_conf_dict(xe_wd)] || $xe_conf_dict(xe_wd) ne $xe_wd_interim} {
     set xe_conf_dict(xe_wd) $xe_wd_interim
     #xschem set_modify
@@ -127,16 +127,16 @@ proc xetcl_configure_xe_win_save_interim {} {
   }
 }
 
-proc xetcl_configure_xe_win_clear {} {
+proc yxt_configure_xe_win_select_dir_clear {} {
   global xe_wd_interim xe_tfs_interim xe_uds_interim
   set xe_wd_interim {}
   set xe_tfs_interim {}
   set xe_uds_interim {}
 }
 
-proc xetcl_save_xe_conf {} {
+proc yxt_save_xe_conf {} {
   global USER_CONF_DIR xe_conf_dict
-  xetcl_configure_xe_win_save_interim
+  yxt_configure_xe_win_select_dir_save_interim
   set design [file tail [file rootname [xschem get schname]]]
   set filename $USER_CONF_DIR/$design.xe_save
   set fd [open $filename w]
@@ -149,7 +149,7 @@ proc xetcl_save_xe_conf {} {
   }
 }
 
-proc xetcl_auto_load_save_file {} {
+proc yxt_auto_load_save_file {} {
   global xe_conf_dict xe_wd_interim xe_uds_interim xe_tfs_interim
   global USER_CONF_DIR has_x
   set design [file tail [file rootname [xschem get schname]]]
@@ -166,12 +166,12 @@ proc xetcl_auto_load_save_file {} {
 
 # TBD: working directory doesn't exist.
 # modified should only be updated if something is changed
-proc xetcl_configure_xe_win {load} {
+proc yxt_configure_xe_win_select_dir {load} {
   global xe_conf_dict xe_wd_interim xe_uds_interim xe_tfs_interim 
   global netlist_type netlist_dir
   global XE_RESULT XE_THREAD
   catch {destroy .xe_conf} 
-  xetcl_auto_load_save_file
+  yxt_auto_load_save_file
   
   toplevel .xe_conf -class dialog
   wm title .xe_conf {XE Configuration}
@@ -182,11 +182,8 @@ proc xetcl_configure_xe_win {load} {
   frame .xe_conf.wd.left
   frame .xe_conf.wd.right
   label .xe_conf.wd.left.label   -text {Working Directory:}
-  button .xe_conf.wd.left.button -text Select -command "xetcl_configure_xe_win_select_dir .xe_conf"
+  button .xe_conf.wd.left.button -text Select -command "yxt_configure_xe_win_select_dir_select_dir .xe_conf"
   entry .xe_conf.wd.right.entry  -textvariable xe_wd_interim
-
-  
-
 
   if {[info exists xe_conf_dict(xe_wd)]} {set xe_wd_interim $xe_conf_dict(xe_wd)}
   pack .xe_conf.wd             -side top -fill x
@@ -201,7 +198,7 @@ proc xetcl_configure_xe_win {load} {
   frame .xe_conf.ud.left
   frame .xe_conf.ud.right
   label .xe_conf.ud.left.label   -text {UD Files:}
-  button .xe_conf.ud.left.button -text Select -command "xetcl_configure_xe_win_select_files .xe_conf \"Select XE-UD Files\" xe_uds_interim"
+  button .xe_conf.ud.left.button -text Select -command "yxt_configure_xe_win_select_dir_select_files .xe_conf \"Select XE-UD Files\" xe_uds_interim"
   listbox .xe_conf.ud.right.list -listvariable xe_uds_interim -height 0 -selectmode extended
   if {[info exists xe_conf_dict(xe_uds)]} {set xe_uds_interim $xe_conf_dict(xe_uds)}
   pack .xe_conf.ud              -side top -fill x
@@ -216,7 +213,7 @@ proc xetcl_configure_xe_win {load} {
   frame .xe_conf.tf.left
   frame .xe_conf.tf.right
   label .xe_conf.tf.left.label  -text {TF Files:}
-  button .xe_conf.tf.left.button -text Select -command "xetcl_configure_xe_win_select_files .xe_conf \"Select XE-TF Files\" xe_tfs_interim"
+  button .xe_conf.tf.left.button -text Select -command "yxt_configure_xe_win_select_dir_select_files .xe_conf \"Select XE-TF Files\" xe_tfs_interim"
   listbox .xe_conf.tf.right.list  -listvariable xe_tfs_interim -height 0 -selectmode extended
   if {[info exists xe_conf_dict(xe_tfs)]} {set xe_tfs_interim $xe_conf_dict(xe_tfs)}
   pack .xe_conf.tf             -side top -fill x
@@ -236,22 +233,22 @@ proc xetcl_configure_xe_win {load} {
     destroy .xe_conf \
   } -padx 20
   button .xe_conf.clear -text Clear -command { \
-    xetcl_configure_xe_win_clear \
+    yxt_configure_xe_win_select_dir_clear \
   } -padx 20
   button .xe_conf.ok -text OK -command { \
-    xetcl_configure_xe_win_save_interim; \
+    yxt_configure_xe_win_select_dir_save_interim; \
     destroy .xe_conf; \
   } -padx 20
   if {$load} {
     button .xe_conf.load -text "Load" -command { \
-      xetcl_configure_xe_win_save_interim; \
+      yxt_configure_xe_win_select_dir_save_interim; \
       destroy .xe_conf; \
-      xetcl_load
+      yxt_load
     }  -padx 20
   } else {
     button .xe_conf.run -text "Run" -command { \
-      xetcl_configure_xe_win_save_interim; \
-      xetcl_configure_xe_win_run_xe; \
+      yxt_configure_xe_win_select_dir_save_interim; \
+      yxt_configure_xe_win_select_dir_run_xe; \
       destroy .xe_conf; \
       vwait XE_RESULT
       thread::release $XE_THREAD
@@ -264,7 +261,7 @@ proc xetcl_configure_xe_win {load} {
     }  -padx 20
   }
   button .xe_conf.save -text Save -command { \
-    xetcl_save_xe_conf 
+    yxt_save_xe_conf 
   } -padx 20
   pack .xe_conf.cancel -side right
   pack .xe_conf.clear -side right
@@ -278,14 +275,14 @@ proc xetcl_configure_xe_win {load} {
   
   bind .xe_conf <Escape> {destroy .xe_conf}
   bind .xe_conf <Return> {
-    xetcl_configure_xe_win_save_interim; \
+    yxt_configure_xe_win_select_dir_save_interim; \
     destroy .xe_conf; \
   }
 
   bind .xe_conf.wd.right.entry <FocusOut> {
     if {![info exists xe_conf_dict(xe_wd)] || $xe_conf_dict(xe_wd) ne $xe_wd_interim} {
       set design [file tail [file rootname [xschem get schname]]]
-      set dirname [xetcl_backslash_to_slash $xe_wd_interim]
+      set dirname [yxt_backslash_to_slash $xe_wd_interim]
       set ud_fn "${dirname}/${design}.xe_ud"
       set tf_fn "${dirname}/${design}.xe_tf"
       if {[info exists xe_uds_interim] && [file exists $ud_fn]} { 
@@ -302,7 +299,7 @@ proc xetcl_configure_xe_win {load} {
   focus  .xe_conf
 }
 
-proc xetclsc_init_path_dict {filename} {
+proc yxt_init_path_dict {filename} {
   global xesc_net_type xesc_path_dict xesc_path_name_list
   foreach type $xesc_net_type {
     set xesc_path_dict($filename,$type) {}
@@ -323,7 +320,7 @@ proc xetclsc_init_path_dict {filename} {
   }
 }
 
-proc xetclsc_win_add_select_net {type global_list} {
+proc yxtsc_win_add_select_net {type global_list} {
   upvar #0 global_list list  
   set nets [xschem selected_wire]
   set path [xschem get sch_path]
@@ -341,7 +338,7 @@ proc xetclsc_win_add_select_net {type global_list} {
 }
 
 # <new> is saved; load should factor that in
-proc xetclsc_save_path_dict {filename} {
+proc yxtsc_save_path_dict {filename} {
   global xesc_path_dict
   set fd [open $filename w]
   set a [catch "open \"$filename\" w" fd]
@@ -353,7 +350,7 @@ proc xetclsc_save_path_dict {filename} {
   }
 }
 
-proc xetclsc_win_update_change {} {
+proc yxtsc_win_update_change {} {
   global xesc_net_type xesc_path_name_selected xesc_path_dict
   foreach type $xesc_net_type {
     .xe_sc.topf.center.$type.r.net delete 1.0 end
@@ -372,8 +369,8 @@ proc xetclsc_win_update_change {} {
 
 # TBD: Should we have a default path that always get picked instead of the first one in list
 #      Maybe rather than remembering the path, push it to the first one when save or changed?
-# Need to match with xetclsc_win
-proc xetclsc_load_path_dict {filename} {
+# Need to match with yxtsc_win_update_change
+proc yxtsc_load_path_dict {filename} {
   global xesc_net_type xesc_path_dict xesc_path_name_list
   global xesc_path_name_selected xesc_path_name_selected_old xesc_path_index
   # Destroy the multiple paths checkboxes as xesc_path_name_list will be cleared
@@ -409,12 +406,12 @@ proc xetclsc_load_path_dict {filename} {
       .xe_sc.middle.multipaths.bottom.$path.c configure -state disabled
     } 
   }
-  xetclsc_win_update_change
+  yxtsc_win_update_change
 }
 
 # TBD: Changing path name on the fly (instead of <new>) doesn't work
-# Any changes should reflect in xetclsc_load_path_dict
-proc xetclsc_win {} {
+# Any changes should reflect in yxtsc_load_path_dict
+proc yxtsc_win_update_change {} {
   global xe_conf_dict xesc_path_dict # xesc_path_dict(name, start={}|end={}|passthru={}|speed_slow=1|0|cap_mult_slow=<float>|termination=cap|vcvs|auto_sensitize=1|0|preserve_rail_name=1|0|tcl_filename=string|write_filename=string|multi={}) 
   global xesc_net_type xesc_path_name_list xesc_path_name_selected xesc_path_name_selected_old xesc_path_index
   global xesc_file_save
@@ -435,7 +432,7 @@ proc xetclsc_win {} {
   set xesc_net_type [list start end passthru]  
   if {![info exists xesc_path_dict]} {
     set xesc_path_name_list <new>
-    xetclsc_init_path_dict <new>
+    yxt_init_path_dict <new>
   } 
   set xesc_path_name_selected [lindex $xesc_path_name_list 0]
   set xesc_path_name_selected_old $xesc_path_name_selected
@@ -461,7 +458,7 @@ proc xetclsc_win {} {
     text .xe_sc.topf.center.$type.r.net -width 20 -height 3 -wrap none -bg $bg($toggle)
     .xe_sc.topf.center.$type.r.net insert 1.0 $xesc_path_dict($xesc_path_name_selected,$type)
     button .xe_sc.topf.center.$type.r.select  -text "Select" -command \
-      "xetclsc_win_add_select_net $type xesc_path_dict($xesc_path_name_selected,$type)" \
+      "yxtsc_win_add_select_net $type xesc_path_dict($xesc_path_name_selected,$type)" \
       -bg $bg($toggle)
     incr toggle
     set toggle [expr {$toggle %2}]
@@ -548,8 +545,8 @@ proc xetclsc_win {} {
     if {$xesc_path_name_selected_old ne $xesc_path_name_selected} {
       if {$xesc_path_name_selected_old eq {<new>}} {
         set is_new 1
-        xetclsc_init_path_dict $xesc_path_name_selected
-        xetclsc_init_path_dict <new>
+        yxt_init_path_dict $xesc_path_name_selected
+        yxt_init_path_dict <new>
       }
       # multi path check box is destroy and re-create as new path (or path renamed) get introduced
       foreach path $xesc_path_name_list {
@@ -575,7 +572,7 @@ proc xetclsc_win {} {
         pack .xe_sc.middle.multipaths.bottom.$path.c -side left 
         if {$path eq $xesc_path_name_selected} {.xe_sc.middle.multipaths.bottom.$path.c configure -state disabled}
       }
-      xetclsc_win_update_change 
+      yxtsc_win_update_change 
     }
   }
   bind .xe_sc.topf.center.top.text <<ComboboxSelected>> {
@@ -587,10 +584,10 @@ proc xetclsc_win {} {
         }
       } else {
         # reset <new> with whatever values posted
-        xetclsc_init_path_dict <new>
+        yxt_init_path_dict <new>
       }
       # <ComboboxSelected> doesn't need multiple paths deleted because no new path was introduced
-      xetclsc_win_update_change
+      yxtsc_win_update_change
     }
     set xesc_path_name_selected_old $xesc_path_name_selected
     set xesc_path_index [.xe_sc.topf.center.top.text current]
@@ -626,7 +623,7 @@ proc xetclsc_win {} {
         if {$xesc_path_name_selected ne {<new>}} {
           .xe_sc.middle.multipaths.bottom.$xesc_path_name_selected.c configure -state disabled
         }
-        xetclsc_win_update_change
+        yxtsc_win_update_change
       }
       focus  .xe_sc
     }
@@ -644,13 +641,13 @@ proc xetclsc_win {} {
     }
     if {$save_fn ne ""} {
       set xesc_file_save $save_fn
-      xetclsc_save_path_dict $xesc_file_save 
+      yxtsc_save_path_dict $xesc_file_save 
     }
   }
   button .xe_sc.bottom.load -text {Load} -command {
     set xesc_file_save [tk_getOpenFile -parent .xe_sc]
     if {$xesc_file_save ne ""} {
-      xetclsc_load_path_dict $xesc_file_save 
+      yxtsc_load_path_dict $xesc_file_save 
     }
   }
   button .xe_sc.bottom.cut -text {Cut} -command {
@@ -660,12 +657,12 @@ proc xetclsc_win {} {
     }
     if {[info exists xe_conf_dict(xe_wd)] && [info exists xesc_path_dict($xesc_path_name_selected,tcl_filename)] && [info exists xesc_path_dict($xesc_path_name_selected,write_filename)] && [info exists xesc_path_dict($xesc_path_name_selected,start)] && [info exists xesc_path_dict($xesc_path_name_selected,end)] && \
       $xe_conf_dict(xe_wd) ne "" && $xesc_path_dict($xesc_path_name_selected,tcl_filename) ne "" && $xesc_path_dict($xesc_path_name_selected,write_filename) ne "" && $xesc_path_dict($xesc_path_name_selected,start) ne "" && $xesc_path_dict($xesc_path_name_selected,end) ne ""} {
-      xetclsc_win_cut
+      yxtsc_win_update_change_cut
       destroy .xe_sc
       # TBD: Error checking (what if it fails, need to inform user), only hilight if user says yes when sc finishes
       set cut_fn $xe_conf_dict(xe_wd)/$xesc_path_name_selected/$xesc_path_dict($xesc_path_name_selected,write_filename)
       if {[file exists $cut_fn]} { 
-        xetclsc_hilight_cut $cut_fn
+        yxtsc_hilight_cut $cut_fn
       }
     } else {
       if {![info exists xe_conf_dict(xe_wd)]} {
@@ -688,7 +685,7 @@ proc xetclsc_win {} {
 # Highlight nets and devices after cut is finished.
 # TBD: It does take a while to highlight; possibly add a request from user instead of auto doing it.
 # TBD: Instance is still not done yet.
-proc xetclsc_hilight_cut {cut_fn} {
+proc yxtsc_hilight_cut {cut_fn} {
   set fd [open $cut_fn r]
   set a [catch "open \"$cut_fn\" r" fd]
   set pick_up_inst 0
@@ -705,7 +702,7 @@ proc xetclsc_hilight_cut {cut_fn} {
       #  set pick_up_inst 0
       #} elseif ($pick_up_inst) {
       #  if { [regexp {^(\S+)} $line \1 device_name] } { 
-      #    probe_inst $device_name
+      #    probe_inst $device_name 0
       #  }
       #}
     }
@@ -713,7 +710,7 @@ proc xetclsc_hilight_cut {cut_fn} {
   close $fd
 }
 
-proc xetclsc_create_cut_script {cut_work_dir} {
+proc yxtsc_create_cut_script {cut_work_dir} {
   global xesc_path_dict xesc_path_name_list xesc_path_name_selected xe_conf_dict
 
   set fn $cut_work_dir/$xesc_path_dict($xesc_path_name_selected,tcl_filename) 
@@ -728,7 +725,7 @@ proc xetclsc_create_cut_script {cut_work_dir} {
   puts $fd "#                                                 "
   puts $fd "###################################################"
   
-  xetclsc_write_one_path $fd $xesc_path_name_selected
+  yxtsc_write_one_path $fd $xesc_path_name_selected
   
   set multi_list {}
   lappend multi_list $xesc_path_name_selected
@@ -737,7 +734,7 @@ proc xetclsc_create_cut_script {cut_work_dir} {
     if {$path eq $xesc_path_name_selected} {continue}
     puts $fd "\n"
     if {[info exists xesc_path_dict($xesc_path_name_selected,sc_multi_$path)] && $xesc_path_dict($xesc_path_name_selected,sc_multi_$path)==1} {
-      xetclsc_write_one_path $fd $path
+      yxtsc_write_one_path $fd $path
       lappend multi_list $path
     }
   }
@@ -756,7 +753,7 @@ proc xetclsc_create_cut_script {cut_work_dir} {
   return $fn
 }
 
-proc xetclsc_write_one_path {fd path_name} {
+proc yxtsc_write_one_path {fd path_name} {
   global xesc_path_dict
   if ($xesc_path_dict($path_name,preserve_rail_name)) {
     puts $fd "xe_set_preserve_rail_name_in_spf"
@@ -813,7 +810,7 @@ proc xetcl_write_net {fd path_name type} {
   }
 }
 
-proc xetclsc_win_cut {{callback {}}} {
+proc yxtsc_win_update_change_cut {{callback {}}} {
   global XSCHEM_SHAREDIR netlist_dir netlist_type xschem_libs XE_RESULT
   global xe_conf_dict xesc_path_name_selected top_subckt
 
@@ -839,20 +836,20 @@ proc xetclsc_win_cut {{callback {}}} {
   if {![file exist $cut_work_dir]} {
        file mkdir $cut_work_dir
   }
-  set script [xetclsc_create_cut_script $cut_work_dir]
+  set script [yxtsc_create_cut_script $cut_work_dir]
   if {[file exists $N]} {
      if {![xe_is_init]} {
-       after 500 {set XE_RESULT [xetcl_load]}
+       after 500 {set XE_RESULT [yxt_load]}
        vwait XE_RESULT
      }
   } else {
     alert_  "Didn't find a netlist to run XE."
   }
-  #TBD: source $script should only happen after xetcl_load finishes, research how to use VWAIT
+  #TBD: source $script should only happen after yxt_load finishes, research how to use VWAIT
   source $script
 }
 
-proc xetcl_configure_xe_win_run_xe {{callback {}}} {
+proc yxt_configure_xe_win_select_dir_run_xe {{callback {}}} {
   global XSCHEM_SHAREDIR netlist_dir netlist_type sim xschem_libs XE_RESULT XE_THREAD
   global xe_conf_dict top_subckt
   set top_subckt 1
@@ -910,7 +907,7 @@ proc xetcl_configure_xe_win_run_xe {{callback {}}} {
         }]
         thread::send $XE_THREAD "cd $xe_conf_dict(xe_wd)" result
         #thread::send -async $XE_THREAD "eval exec $cmd" XE_RESULT
-        thread::send -async $XE_THREAD "[xetcl_run_all_xe $cmd]" XE_RESULT
+        thread::send -async $XE_THREAD "[yxt_run_all_xe $cmd]" XE_RESULT
       }
     } else {
       set id [$fg $st sh -c "cd $xe_conf_dict(xe_wd); $cmd"]
@@ -921,7 +918,7 @@ proc xetcl_configure_xe_win_run_xe {{callback {}}} {
   }
 }
 
-proc xetcl_process_fi_subckt {} {
+proc yxt_process_fi_subckt {} {
   global xe_conf_dict xe_sd_fi_inst
   set s [file tail [file rootname [xschem get schname]]]
   set fn $xe_conf_dict(xe_wd)/$s.xe_fi_subckt
@@ -948,7 +945,7 @@ proc xetcl_process_fi_subckt {} {
   close $fd
 }
 
-proc xetcl_see_report_win {{msg {}}} {
+proc yxt_see_report_win_context_menu {{msg {}}} {
   global xe_conf_dict xe_csv_files1 xe_report_ht
   global xe_gtablewindow_visibility xe_gT xe_gTFull xe_gfilter_item_ht
   if {[winfo exists .xe_report_dialog]} {
@@ -961,10 +958,10 @@ proc xetcl_see_report_win {{msg {}}} {
   }
   if (![info exists xe_conf_dict(xe_wd)]) {
     alert_  "Need to first configure XE to read report"
-    xetcl_configure_xe_win 0
+    yxt_configure_xe_win_select_dir 0
     return
   }
-  xetcl_clear_global
+  yxt_clear_global
   #array unset xe_gT 
   #array unset xe_gTFull 
   #array unset xe_gfilter_item_ht 
@@ -973,7 +970,7 @@ proc xetcl_see_report_win {{msg {}}} {
   set num_col 0
   set current_row 0
   set list_checks {} 
-  xetcl_process_fi_subckt
+  yxt_process_fi_subckt
   toplevel .xe_report_dialog -class dialog
   wm title .xe_report_dialog $msg
   set xe_csv_files1 [lsort [glob -nocomplain -directory $xe_conf_dict(xe_wd) -tails *.{csv,xe_lm_v}]]
@@ -988,6 +985,14 @@ proc xetcl_see_report_win {{msg {}}} {
       set xe_report_ht(xe_ckc_entry_classify_device) $file
     } elseif [regexp {xe_ckc_unclassify_device\.csv} $file] {
       set xe_report_ht(xe_ckc_entry_unclassify_device) $file
+    } elseif [regexp {xe_dmrc_classify_net\.csv} $file] {
+      set xe_report_ht(xe_dmrc_entry_classify_net) $file
+    } elseif [regexp {xe_dmrc_unclassify_net\.csv} $file] {
+      set xe_report_ht(xe_dmrc_entry_unclassify_net) $file
+    } elseif [regexp {xe_dmrc_classify_device\.csv} $file] {
+      set xe_report_ht(xe_dmrc_entry_classify_device) $file
+    } elseif [regexp {xe_dmrc_unclassify_device\.csv} $file] {
+      set xe_report_ht(xe_dmrc_entry_unclassify_device) $file
     } elseif [regexp {xe_lm_classify_net\.csv} $file] {
       set xe_report_ht(xe_lm_entry_classify_net) $file
     } elseif [regexp {xe_lm_unclassify_net\.csv} $file] {
@@ -1071,6 +1076,40 @@ proc xetcl_see_report_win {{msg {}}} {
       }
     }
   }
+
+  if {[info exists xe_report_ht(xe_dmrc_entry_classify_net)]} {
+    set xe_dmrc_entry [.xe_report_dialog.l.paneleft.tree insert {} end -text "XE-DMRC"]
+    set has_classify_net [info exists xe_report_ht(xe_dmrc_entry_classify_net)]
+    set has_unclassify_net [info exists xe_report_ht(xe_dmrc_entry_unclassify_net)]
+    set has_classify_device [info exists xe_report_ht(xe_dmrc_entry_classify_device)]
+    set has_unclassify_device [info exists xe_report_ht(xe_dmrc_entry_unclassify_device)]
+    if {$has_unclassify_net || $has_unclassify_net || $has_classify_device || $has_unclassify_device} {
+      set xe_dmrc_entry_classify [.xe_report_dialog.l.paneleft.tree insert $xe_dmrc_entry end -text "Classification"]  
+    }
+    if {$has_classify_net} {
+      set xe_dmrc_entry_classify_net [.xe_report_dialog.l.paneleft.tree insert $xe_dmrc_entry_classify end -text "Classify Net"]
+      set xe_report_ht($xe_dmrc_entry_classify_net) $xe_report_ht(xe_dmrc_entry_classify_net)
+    }
+    if {$has_unclassify_net} {
+      set xe_dmrc_entry_unclassify_net [.xe_report_dialog.l.paneleft.tree insert $xe_dmrc_entry_classify end -text "Un-Classify Net"]
+      set xe_report_ht($xe_dmrc_entry_unclassify_net) $xe_report_ht(xe_dmrc_entry_unclassify_net)
+    }
+    if {$has_classify_device} {
+      set xe_dmrc_entry_classify_device [.xe_report_dialog.l.paneleft.tree insert $xe_dmrc_entry_classify end -text "Classify Device"]
+      set xe_report_ht($xe_dmrc_entry_classify_device) $xe_report_ht(xe_dmrc_entry_classify_device)
+    }
+    if {$has_unclassify_device} {
+      set xe_dmrc_entry_unclassify_device [.xe_report_dialog.l.paneleft.tree insert $xe_dmrc_entry_classify end -text "Un-Classify Device"]
+      set xe_report_ht($xe_dmrc_entry_unclassify_device) $xe_report_ht(xe_dmrc_entry_unclassify_device)
+    }
+    if {[llength $list_checks] > 0} {
+      set xe_dmrc_entry_checks [.xe_report_dialog.l.paneleft.tree insert $xe_dmrc_entry end -text "DMRC Checks"]
+      foreach check $list_checks {
+        set id [.xe_report_dialog.l.paneleft.tree insert $xe_dmrc_entry_checks end -text $check]
+        set xe_report_ht($id) $check
+      }
+    }
+  }
   
   #set xe_ckc_entry_classify_net [.xe_report_dialog.l.paneleft.tree insert $xe_ckc_entry end -text "Classify Net"]
   #set xe_ckc_entry_unclassify_net [.xe_report_dialog.l.paneleft.tree insert $xe_ckc_entry end -text "Un-Classify Net"]
@@ -1089,10 +1128,10 @@ proc xetcl_see_report_win {{msg {}}} {
   pack  .xe_report_dialog.l.paneright.table -side bottom  -fill both -expand true
   pack .xe_report_dialog.l.paneright.table.xscroll -side bottom -fill x 
   bind .xe_report_dialog.l.paneright.table <Button-3> {
-    xetcl_see_report_win_context_menu %W [%W index @%x,%y] %X %Y 
+    yxt_see_report_win_context_menu %W [%W index @%x,%y] %X %Y 
   }
   bind .xe_report_dialog.l.paneright.table <Button-1> {
-    xetcl_see_report_win_probe %W [%W index @%x,%y] %X %Y
+    yxt_see_report_win_context_menu_probe %W [%W index @%x,%y] %X %Y
   }
   .xe_report_dialog.l.paneright.table configure -state disabled
   
@@ -1144,7 +1183,7 @@ proc xetcl_see_report_win {{msg {}}} {
         pack .xe_report_dialog.l.paneright.table.xscroll -side bottom -fill x 
         set num_col 0
         set current_row 0
-        xetcl_clear_global
+        yxt_clear_global
         #array unset xe_gT 
         #array unset xe_gTFull 
         #array unset xe_gfilter_item_ht 
@@ -1192,7 +1231,7 @@ proc xetcl_see_report_win {{msg {}}} {
   tkwait window .xe_report_dialog
 }
 # ============================================================
-proc xetcl_see_report_win_context_menu {w el mousex mousey} {
+proc yxt_see_report_win_context_menu_context_menu {w el mousex mousey} {
   global xe_cm_wcounter xe_gtablewindow_visibility
   global xe_cm_w
   if {[scan $el %d,%d r c] != 2} return
@@ -1219,12 +1258,12 @@ proc xetcl_see_report_win_context_menu {w el mousex mousey} {
       ::tk::table::Sort $w $top_cell $last_cell  $c -decreasing; \
       $w configure -state disabled"
     $xe_cm_w add separator
-    $xe_cm_w add command -label "Filter"  -command "xetcl_see_report_win_context_menu_filter_dialog $w $c"
+    $xe_cm_w add command -label "Filter"  -command "yxt_see_report_win_context_menu_context_menu_filter_dialog $w $c"
     tk_popup $xe_cm_w $mousex $mousey 
   } 
 }
 
-proc xetcl_see_report_win_probe {w el mousex mousey} {
+proc yxt_see_report_win_context_menu_probe {w el mousex mousey} {
   global pathlist current_dirname
   global xe_cm_wcounter xe_cm_w xe_sd_fi_inst
   if {[scan $el %d,%d r c] != 2} return
@@ -1235,9 +1274,9 @@ proc xetcl_see_report_win_probe {w el mousex mousey} {
       set subckt [$w get $r,1]
       if {[info exists xe_sd_fi_inst($subckt)]} {
         set fi_inst [lindex $xe_sd_fi_inst($subckt) 0]
-        probe_inst $fi_inst
+        probe_inst $fi_inst 0
       } else {
-        probe_inst .
+        probe_inst . 0
       }
     }
     if {![string compare $data_title net]} {
@@ -1250,34 +1289,35 @@ proc xetcl_see_report_win_probe {w el mousex mousey} {
         probe_net $data
       }
     }
-    if {![string compare $data_title fi_net]} {
+    if {[regexp {fi_net.*} $data_title]} {
       probe_net $data
+      probe_inst $data 1
     }
     if {![string compare $data_title device]} {
       set subckt [$w get $r,1]
       if {[info exists xe_sd_fi_inst($subckt)]} {
         set fi_inst [lindex $xe_sd_fi_inst($subckt) 0]
         set fi_net $fi_inst.$data
-        probe_inst $fi_net
+        probe_inst $fi_net 0
       } else {
-        probe_inst $data
+        probe_inst $data 0
       }
     }
     if {![string compare $data_title fi_device]} {
-      probe_inst $data
+      probe_inst $data 0
     }
   }
 }
 
 # TK's checkbutton has issue with text and variable name that has []:.  Escape it for now
-proc xetcl_get_processed_name {name} {
+proc yxt_get_processed_name {name} {
   regsub -all {\[} $name {\\[} name
   regsub -all {\]} $name {\\]} name
   regsub -all {\:} $name {\\:} name
   return $name
 }
 
-proc xetcl_see_report_win_context_menu_filter_dialog {w c} {
+proc yxt_see_report_win_context_menu_context_menu_filter_dialog {w c} {
   # xe_gfilter_item_ht is used because TK doesn't like name with [].  Use a number instead
   global xe_gtablewindow_visibility xe_gT xe_gTFull xe_gfilter_item_ht
   array unset ht
@@ -1295,13 +1335,13 @@ proc xetcl_see_report_win_context_menu_filter_dialog {w c} {
   frame .filter_dialog.l.paneleft
   ##############
 
-  checkbutton .filter_dialog.l.paneleft.all -text "Select ALL" -variable .filter_dialog.l.paneleft.all -command "xetcl_report_win_cm_filter_update_window_visibility $w -1 all .filter_dialog.l.paneleft [list $xe_filter_list]"
+  checkbutton .filter_dialog.l.paneleft.all -text "Select ALL" -variable .filter_dialog.l.paneleft.all -command "yxt_report_win_cm_filter_update_window_visibility $w -1 all .filter_dialog.l.paneleft [list $xe_filter_list]"
   grid .filter_dialog.l.paneleft.all -row 1 -column 2 -sticky nw
   set i 2
   foreach item $xe_filter_list {
     set xe_gfilter_item_ht($item) $i
-    set item [xetcl_get_processed_name $item]
-    checkbutton .filter_dialog.l.paneleft.a$i -text $item  -variable .filter_dialog.l.paneleft.$i -command "xetcl_report_win_cm_filter_update_window_visibility $w $c $item .filter_dialog.l.paneleft.$i [list $xe_filter_list]"
+    set item [yxt_get_processed_name $item]
+    checkbutton .filter_dialog.l.paneleft.a$i -text $item  -variable .filter_dialog.l.paneleft.$i -command "yxt_report_win_cm_filter_update_window_visibility $w $c $item .filter_dialog.l.paneleft.$i [list $xe_filter_list]"
     #-anchor w
     # pack .filter_dialog.l.paneleft.$item -side left
     grid .filter_dialog.l.paneleft.a$i -row $i -column 2 -sticky w
@@ -1313,9 +1353,9 @@ proc xetcl_see_report_win_context_menu_filter_dialog {w c} {
       set name $xe_gTFull($i,$c)
       set ii $xe_gfilter_item_ht($name)
       if {[lindex $xe_gtablewindow_visibility $i]==1} {
-        xetcl_setValue .filter_dialog.l.paneleft.$ii 1
+        yxt_set_value .filter_dialog.l.paneleft.$ii 1
       } else {
-        xetcl_setValue .filter_dialog.l.paneleft.$ii 0
+        yxt_set_value .filter_dialog.l.paneleft.$ii 0
         set has_deselect 1
       }
     }
@@ -1332,7 +1372,7 @@ proc xetcl_see_report_win_context_menu_filter_dialog {w c} {
 
   .filter_dialog.l  add .filter_dialog.l.paneleft -minsize 40  
   frame .filter_dialog.buttons 
-  button .filter_dialog.buttons.ok -text OK -command "xetcl_report_win_cm_filter_update_table $w; destroy .filter_dialog"
+  button .filter_dialog.buttons.ok -text OK -command "yxt_report_win_cm_filter_update_table $w; destroy .filter_dialog"
   button .filter_dialog.buttons.cancel -text Cancel -command {destroy .filter_dialog;}
   label .filter_dialog.buttons.label  -text {Reg Exp:}
   entry .filter_dialog.buttons.entry
@@ -1341,19 +1381,19 @@ proc xetcl_see_report_win_context_menu_filter_dialog {w c} {
   pack .filter_dialog.buttons.entry -side left -fill x -expand true
   pack .filter_dialog.l -expand true -fill both
   pack .filter_dialog.buttons -side top -fill x
-  bind .filter_dialog <Return> "destroy .filter_dialog; xetcl_report_win_cm_filter_update_table $w"
+  bind .filter_dialog <Return> "destroy .filter_dialog; yxt_report_win_cm_filter_update_table $w"
   bind .filter_dialog <Escape> { destroy .filter_dialog}
   focus .filter_dialog
   grab set .filter_dialog
   tkwait window .filter_dialog
 }
 
-proc xetcl_getValue {varname} {
+proc yxt_get_value {varname} {
   upvar #0 $varname var
   return $var
 }
 
-proc xetcl_setValue { var val } {
+proc yxt_set_value { var val } {
   upvar #0 $var v
   if {[ info exists v ]} {
     set v $val
@@ -1361,14 +1401,14 @@ proc xetcl_setValue { var val } {
 }
 
 # for select all, display=".dialog.l.paneleft", and c=-1, name=all
-proc xetcl_report_win_cm_filter_update_window_visibility {w c name display xe_filter_list} {
+proc yxt_report_win_cm_filter_update_window_visibility {w c name display xe_filter_list} {
   # name did not get from updated $item from caller
-  set name [xetcl_get_processed_name $name]
+  set name [yxt_get_processed_name $name]
   global xe_gtablewindow_visibility xe_gTFull .filter_dialog.l.paneleft.all xe_gfilter_item_ht
   set num_col [$w cget -cols]
   set num_row [llength $xe_gtablewindow_visibility]
   if ($c<0)  { 
-    set display_bool [xetcl_getValue .filter_dialog.l.paneleft.all]
+    set display_bool [yxt_get_value .filter_dialog.l.paneleft.all]
     for {set i 1} {$i<$num_row} {incr i} {
       lset xe_gtablewindow_visibility $i $display_bool
     }
@@ -1382,12 +1422,12 @@ proc xetcl_report_win_cm_filter_update_window_visibility {w c name display xe_fi
     }
     return
   }
-  set display_bool [xetcl_getValue $display]
+  set display_bool [yxt_get_value $display]
   set has_deselect 0
   for {set i 1} {$i<$num_row} {incr i} {
     if {[info exists xe_gTFull($i,$c)]} {
       set name2 $xe_gTFull($i,$c)
-      set name2 [xetcl_get_processed_name $name2]
+      set name2 [yxt_get_processed_name $name2]
       if {$name2 eq $name} {
         lset xe_gtablewindow_visibility $i $display_bool
       }
@@ -1401,7 +1441,7 @@ proc xetcl_report_win_cm_filter_update_window_visibility {w c name display xe_fi
   }
 }
 
-proc xetcl_report_win_cm_filter_update_table {w} {
+proc yxt_report_win_cm_filter_update_table {w} {
   global xe_gtablewindow_visibility xe_gT xe_gTFull
   set num_col [$w cget -cols]
   set num_row [llength $xe_gtablewindow_visibility]
@@ -1431,20 +1471,20 @@ proc xetcl_report_win_cm_filter_update_table {w} {
   $w configure -state disabled
 }
 
-proc xetcl_run_all_xe {cmd} {
+proc yxt_run_all_xe {cmd} {
   global XE_ROOT_DIR
-  xetcl_run_xe_lm $cmd
-  xetcl_run_xe_ckc
+  yxt_run_xe_lm $cmd
+  yxt_run_xe_dmrc
 }
 
 
-proc xetcl_run_xe_lm {cmd} {
+proc yxt_run_xe_lm {cmd} {
   set xe_lm_cmd "xe_lm_shell $cmd"
   #puts $xe_lm_cmd
   #eval exec $xe_lm_cmd
 }
 
-proc xetcl_run_xe_ckc {} {
+proc yxt_run_xe_dmrc {} {
   global XE_ROOT_DIR xe_conf_dict
   set wd $xe_conf_dict(xe_wd)
   set design [file tail [file rootname [xschem get schname]]]
@@ -1454,7 +1494,7 @@ proc xetcl_run_xe_ckc {} {
   foreach script $check_scripts {
     source $XE_ROOT_DIR/$script
   }
-  xetcl_load
+  yxt_load
   foreach script $check_scripts {
     regexp {check_(.*)\.tcl} $script matched check_name
     set filename $wd/${design}_${check_name}.csv
@@ -1482,7 +1522,7 @@ proc xetcl_run_xe_ckc {} {
 # Temporary
 ## given a hierarchical instance name x1.xamp go down in the hierarchy and 
 ## highlight the specified instance.
-proc probe_inst {device} {
+proc probe_inst {device hilight_each_level} {
 
   xschem set no_draw 1
   # return to top level if not already there
@@ -1492,6 +1532,9 @@ proc probe_inst {device} {
       set inst $device
       regsub {\..*} $inst {} inst
       regsub {[^.]+\.} $device {} device
+      if {$hilight_each_level} {
+        xschem search exact 0 name $inst
+      }
       xschem search exact 1 name $inst
       xschem descend
     }

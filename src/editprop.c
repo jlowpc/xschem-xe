@@ -23,7 +23,11 @@
 #include <stdarg.h>
 #include "xschem.h"
 
-
+double mylog10(double x)
+{
+  if(x > 0) return log10(x);
+  else return -35;
+}
 
 int my_strcasecmp(const char *s1, const char *s2)
 {
@@ -283,6 +287,40 @@ size_t my_strdup2(int id, char **dest, const char *src) /* 20150409 duplicates a
  return 0;
 }
 
+/* recognizes spice suffixes: 12p --> 1.2e11, 3MEG --> 3e6 */
+double atof_spice(const char *s)
+{
+  int n;
+  double a = 0.0, mul=1.0;
+  char lower_s[100];
+  const char *p;
+
+  if(!s) return 0.0;
+  my_strncpy(lower_s, s, S(lower_s));
+  strtolower(lower_s);
+  n = sscanf(lower_s, "%lf", &a);
+  if(n == 1) {
+    p = strpbrk(lower_s, "tgmkunpfa");
+    if(!p) mul = 1.0;
+    else if(*p == 't') mul=1e12;
+    else if(*p == 'g') mul=1e9;
+    else if(*p == 'm') {
+      if(strstr(p, "meg") == p) mul=1e6;
+      else if(strstr(p, "mil") == p) mul=25.4e-6;
+      else mul=1e-3;
+    }
+    else if(*p == 'k') mul=1e3;
+    else if(*p == 'u') mul=1e-6;
+    else if(*p == 'n') mul=1e-9;
+    else if(*p == 'p') mul=1e-12;
+    else if(*p == 'f') mul=1e-15;
+    else if(*p == 'a') mul=1e-18;
+    else mul = 1.0;
+    a *= mul;
+  }
+  return a;
+}
+
 char *my_itoa(int i)
 {
   static char s[30];
@@ -294,8 +332,9 @@ char *my_itoa(int i)
 
 char *dtoa(double i)
 {
-  static char s[50];
+  static char s[70];
   size_t n;
+
   n = my_snprintf(s, S(s), "%g", i);
   if(xctx) xctx->tok_size = n;
   return s;
@@ -303,7 +342,7 @@ char *dtoa(double i)
 
 char *dtoa_prec(double i)
 {
-  static char s[50];
+  static char s[70];
   size_t n;
   n = my_snprintf(s, S(s), "%.10e", i);
   if(xctx) xctx->tok_size = n;
@@ -472,12 +511,12 @@ int my_strncpy(char *d, const char *s, size_t n)
 
 char *strtolower(char* s) {
   char *p;
-  for(p=s; *p; p++) *p=(char)tolower(*p);
+  if(s) for(p=s; *p; p++) *p=(char)tolower(*p);
   return s;
 }
 char *strtoupper(char* s) {
   char *p;
-  for(p=s; *p; p++) *p=(char)toupper(*p);
+  if(s) for(p=s; *p; p++) *p=(char)toupper(*p);
   return s;
 }
 
@@ -1258,6 +1297,41 @@ void change_elem_order(void)
   }
 }
 
+char *str_replace(const char *s, const char *rep, const char *with)
+{
+  static char *result = NULL;
+  static size_t size=0;
+  size_t result_pos = 0;
+  size_t rep_len;
+  size_t with_len;
+
+  if(s==NULL || rep == NULL || with == NULL || rep[0] == '\0') {
+    my_free(1244, &result);
+    size = 0;
+    return NULL;
+  }
+  rep_len = strlen(rep);
+  with_len = strlen(with);
+  dbg(1, "str_replace(): %s, %s, %s\n", s, rep, with);
+  if( size == 0 ) {
+    size = CADCHUNKALLOC;
+    my_realloc(1245, &result, size);
+  }
+  while(*s) {
+    STR_ALLOC(&result, result_pos + with_len + 1, &size);
+    if(!strncmp(s, rep, rep_len)) {
+      my_strncpy(result + result_pos, with, with_len + 1);
+      result_pos += with_len;
+      s += rep_len;
+    } else {
+      result[result_pos++] = *s++;
+    }
+  }
+  result[result_pos] = '\0';
+  dbg(1, "str_replace(): returning %s\n", result);
+  return result;
+}
+
 /* x=0 use tcl text widget  x=1 use vim editor  x=2 only view data */
 void edit_property(int x)
 {
@@ -1368,7 +1442,7 @@ void edit_property(int x)
   case ELEMENT:
    edit_symbol_property(x);
    while( x == 0 && tclgetvar("edit_symbol_prop_new_sel")[0] == '1' ) {
-     unselect_all();
+     unselect_all(1);
      select_object(xctx->mousex, xctx->mousey, SELECTED, 0);
      rebuild_selected_array();
      if(xctx->lastsel && xctx->sel_array[0].type ==ELEMENT) {

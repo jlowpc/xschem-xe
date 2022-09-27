@@ -1,8 +1,9 @@
 v {xschem version=3.1.0 file_version=1.2 }
 G {}
 K {type=subcircuit
-format="@name @pinlist @symname vcc=@vcc vss=@vss"
-template="name=x1 vcc=vcc vss=vss"}
+format="@name @pinlist @@vcc @@vss @symname"
+template="name=x1 vcc=vcc vss=vss"
+extra="vcc vss"}
 V {}
 S {}
 E {}
@@ -13,9 +14,9 @@ L 4 140 -240 470 -240 {}
 T {@symname} 360 -270 0 0 0.4 0.4 {}
 T {@name} 140 -270 0 0 0.4 0.4 {}
 N 220 -200 260 -200 {
-lab=xxx}
+lab=A}
 N 340 -200 380 -200 {
-lab=#net1}
+lab=B}
 N 440 -200 470 -200 {
 lab=q}
 N 140 -140 190 -140 {
@@ -29,7 +30,7 @@ lab=clkB}
 N 140 -200 160 -200 {
 lab=d}
 C {yxt/yxt_title.sym} 160 0 0 0 {name=l1 author="Joanne Low"}
-C {sky130_stdcells/inv_1.sym} 300 -200 0 0 {name=x1 VGND=vcc VNB=vcc VPB=vss VPWR=vss prefix=sky130_fd_sc_hd__ }
+C {sky130_stdcells/inv_1.sym} 300 -200 0 0 {name=x1 VGND=vss VNB=vss VPB=vcc VPWR=vcc prefix=sky130_fd_sc_hd__ }
 C {yxt/latch.sym} 190 -130 0 0 {name=x2 vcc=vcc vss=vss}
 C {yxt/latch.sym} 410 -130 0 0 {name=x3 vcc=vcc vss=vss}
 C {devices/ipin.sym} 140 -200 0 0 {name=p1 lab=d}

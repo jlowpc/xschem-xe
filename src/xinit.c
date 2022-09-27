@@ -141,7 +141,8 @@ static int window_state (Display *disp, Window win, char *arg) {/*{{{*/
         tmp1[i] = '\0';
         my_snprintf(tmp_prop1, S(tmp_prop1), "_NET_WM_STATE_%s", tmp1);
         prop1 = XInternAtom(disp, tmp_prop1, False);
-
+        dbg(1, "window_state(): issuing client_msg((disp, win, \"_NET_WM_STATE\", %d, %d, %d\n",
+            action, prop1, prop2);
 
         return client_msg(disp, win, "_NET_WM_STATE",
             action, (unsigned long)prop1, (unsigned long)prop2, 0, 0);
@@ -325,7 +326,7 @@ static void free_xschem_data()
   my_free(1385, &xctx->inst_table);
   my_free(1386, &xctx->node_redraw_table);
   my_free(1387, &xctx->hilight_table);
-  my_free(1388, &xctx->raw_table);
+  my_free(1388, &xctx->graph_raw_table);
 
   my_free(1098, &xctx->wire);
   my_free(1100, &xctx->text);
@@ -377,6 +378,7 @@ static void free_xschem_data()
   my_free(1295, &xctx->top_path);
   my_free(1463, &xctx->current_win_path);
   my_free(1120, &xctx->fill_type);
+  my_free(1543, &xctx->format);
   if(xctx->inst_redraw_table) my_free(604, &xctx->inst_redraw_table);
   my_free(269, &xctx);
 }
@@ -441,16 +443,16 @@ static void alloc_xschem_data(const char *top_path, const char *win_path)
   xctx->graph_datasets = 0;
   xctx->graph_master = 0;
   xctx->graph_cursor1_x = 0;
-  xctx->graph_unlock_x = 0;
   xctx->graph_flags = 0;
   xctx->graph_top = 0;
   xctx->graph_bottom = 0;
   xctx->graph_left = 0;
   xctx->graph_lastsel = -1;
-  xctx->graph_sim_type = 0; /* type of sim, 1: Tran, 2: Dc, 3: Ac */
-  xctx->graph_struct.hilight_wave[0] = -1; /* graph index of hilight wave */
-  xctx->graph_struct.hilight_wave[1] = -1; /* index of wave */
-  xctx->raw_schname = NULL;
+  xctx->graph_sim_type = NULL; /* type of sim, "tran", "dc", "op", "ac", ... */
+  xctx->graph_annotate_p = -1; /* point in raw file to use for annotating voltages/currents/etc */
+  xctx->graph_struct.hilight_wave = -1; /* index of wave */
+  xctx->graph_raw_schname = NULL;
+  xctx->graph_raw_level = -1; /* hierarchy level where raw file has been read */
   xctx->wires = 0;
   xctx->instances = 0;
   xctx->symbols = 0;
@@ -476,9 +478,11 @@ static void alloc_xschem_data(const char *top_path, const char *win_path)
   xctx->prep_hash_wires = 0;
   xctx->modified = 0;
   xctx->semaphore = 0;
+  xctx->current_name[0] = '\0';
+  xctx->sel_or_clip[0] = '\0';
+  xctx->sch_to_compare[0] = '\0';
   xctx->tok_size = 0;
   xctx->netlist_name[0] = '\0';
-  xctx->flat_netlist = 0;
   xctx->plotfile[0] = '\0';
   xctx->netlist_unconn_cnt = 0; /* unique count of unconnected pins while netlisting */
   xctx->current_dirname[0] = '\0';
@@ -493,7 +497,7 @@ static void alloc_xschem_data(const char *top_path, const char *win_path)
   xctx->node_redraw_table = my_calloc(973,  HASHSIZE, sizeof(Int_hashentry *));
   xctx->inst_table = my_calloc(1382,  HASHSIZE, sizeof(Inst_hashentry *));
   xctx->hilight_table = my_calloc(1383,  HASHSIZE, sizeof(Hilight_hashentry *));
-  xctx->raw_table = my_calloc(1384,  HASHSIZE, sizeof(Int_hashentry *));
+  xctx->graph_raw_table = my_calloc(1384,  HASHSIZE, sizeof(Int_hashentry *));
 
   xctx->inst_redraw_table = NULL;
   xctx->inst_redraw_table_size = 0;
@@ -534,6 +538,7 @@ static void alloc_xschem_data(const char *top_path, const char *win_path)
   xctx->hilight_nets = 0;
   xctx->hilight_color = 0;
   for(i=0;i<CADMAXHIER;i++) {
+    xctx->sch[i][0] = '\0';
     xctx->sch_path[i]=NULL;
     xctx->sch_path_hash[i]=0;
     xctx->hier_attr[i].prop_ptr = NULL;
@@ -598,13 +603,13 @@ static void alloc_xschem_data(const char *top_path, const char *win_path)
   xctx->draw_single_layer = -1;
   xctx->draw_dots = 1;
   xctx->only_probes = 0;
-  xctx->menu_removed = 0; /* fullscreen pervious setting */
+  xctx->menu_removed = 0; /* fullscreen previous setting */
   xctx->save_lw = 0.0;  /* used to save linewidth when selecting 'only_probes' view */
   xctx->onetime = 0; /* callback() static var */
   xctx->save_netlist_type = 0;
   xctx->loaded_symbol = 0;
   xctx->no_draw = 0;
-  xctx->sem = 0; /* bbox */
+  xctx->bbox_set = 0; /* bbox */
   xctx->old_prop = NULL;
   xctx->edit_sym_i = -1;
   xctx->netlist_commands = 0;
@@ -617,23 +622,27 @@ static void alloc_xschem_data(const char *top_path, const char *win_path)
   xctx->active_layer=my_calloc(563, cadlayers, sizeof(int));
   xctx->hide_symbols = 0;
   xctx->netlist_type = CAD_SPICE_NETLIST;
+  xctx->format = NULL; /* custom format string for netlist, otherwise use
+                        * "format", "verilog_format", "vhdl_format", "tedax_format" */
   xctx->top_path = NULL;
   xctx->current_win_path = NULL;
   my_strdup2(1296, &xctx->top_path, top_path);
   my_strdup2(1462, &xctx->current_win_path, win_path);
   xctx->fill_type=my_calloc(640, cadlayers, sizeof(int));
   xctx->case_insensitive = 0;
+  xctx->show_hidden_texts = 0;
   xctx->x_strcmp = strcmp;
   xctx->fill_pattern = 1;
   xctx->draw_window = 0;
+  xctx->do_copy_area = 1;
   xctx->time_last_modify = 0;
 }
 
-static void delete_schematic_data(void)
+static void delete_schematic_data(int delete_pixmap)
 {
   dbg(1, "delete_schematic_data()\n");
-  unselect_all();
-  /* clear static data in get_tok_value() must be done after unselect_all() 
+  unselect_all(1);
+  /* clear static data in get_tok_value() must be done after unselect_all(1) 
    * as this functions re-uses get_tok_value() */
   get_tok_value(NULL, NULL, 0); /* clear static data in function */
   /* delete inst and wire node fields, delete inst_pin spatial hash, and node hash table */
@@ -641,16 +650,187 @@ static void delete_schematic_data(void)
   clear_all_hilights();      /* data structs for hilighting nets/instances */
   get_unnamed_node(0, 0, 0); /* net### enumerator used for netlisting */
   clear_drawing();
-  if(has_x) {
+  if(has_x && delete_pixmap) {
     resetwin(0, 1, 1, 0, 0);  /* delete preview pixmap, delete cairo surfaces */
     free_gc();
   }
   /* delete instances, wires, lines, rects, arcs, polys, texts, hash_inst, hash_wire, 
    * inst & wire .node fields, instance name hash */
   remove_symbols();
+  str_replace(NULL, NULL, NULL);
   free_rawfile(0);
   free_xschem_data(); /* delete the xctx struct */
 }
+
+int compare_schematics(const char *f)
+{
+  Int_hashentry *table1[HASHSIZE],  *table2[HASHSIZE];
+  Int_hashentry *found;
+  char *s = NULL;
+  int i;
+  size_t l;
+  int ret=0; /* ret==0 means no differences found */
+  Xschem_ctx *save_xctx;
+
+  memset(table1, 0, HASHSIZE * sizeof(Int_hashentry *));
+  memset(table2, 0, HASHSIZE * sizeof(Int_hashentry *));
+
+  /* set filename of schematic to compare */
+  if(f == NULL) {
+    tcleval("load_file_dialog {Schematic to compare with} .sch.sym INITIALLOADDIR");
+    if(tclresult()[0]) my_strncpy(xctx->sch_to_compare, tclresult(), S(xctx->sch_to_compare));
+    else my_strncpy(xctx->sch_to_compare, "", S(xctx->sch_to_compare));
+  } else if(f[0] != '\0') {
+    my_strncpy(xctx->sch_to_compare, f, S(xctx->sch_to_compare));
+  }
+  if(!xctx->sch_to_compare[0]) {
+     my_strncpy(xctx->sch_to_compare, abs_sym_path(xctx->current_name, ""), S(xctx->sch_to_compare));
+     dbg(0, "Compare current schematic with saved version of itself!\n");
+  }
+
+  /* HASH SCHEMATIC 1 */
+  for(i = 0; i < xctx->instances; i++) {
+    l =  1024 + strlen(xctx->inst[i].prop_ptr ? xctx->inst[i].prop_ptr : "");
+    my_realloc(1540, &s, l);
+    my_snprintf(s, l, "C %s %g %g %d %d %s",  xctx->inst[i].name,
+        xctx->inst[i].x0, xctx->inst[i].y0, xctx->inst[i].rot, xctx->inst[i].flip, 
+        xctx->inst[i].prop_ptr ?  xctx->inst[i].prop_ptr : "");
+    int_hash_lookup(table1, s, i, XINSERT_NOREPLACE);
+  }
+  for(i=0;i<xctx->wires;i++)
+  {
+    l =1024 + strlen(xctx->wire[i].prop_ptr ? xctx->wire[i].prop_ptr : "");
+    my_realloc(1541, &s, l);
+    my_snprintf(s, l, "N %g %g %g %g", xctx->wire[i].x1,  xctx->wire[i].y1,
+        xctx->wire[i].x2, xctx->wire[i].y2);
+    int_hash_lookup(table1, s, i, XINSERT_NOREPLACE);
+  }
+
+
+  /* save old xctx and create new xctx for compare schematic */
+  save_xctx = xctx;
+  xctx = NULL; 
+  alloc_xschem_data("", ".drw");
+  xctx->netlist_type = CAD_SPICE_NETLIST;
+  tclsetvar("netlist_type","spice"); 
+  init_pixdata(); /* populate xctx->fill_type array that is used in create_gc() to set fill styles */
+  /* draw in same window */
+  xctx->window = save_xctx->window;
+  /* copy filename from saved schematic ctx */
+  my_strncpy(xctx->sch_to_compare, save_xctx->sch_to_compare, S(xctx->sch_to_compare));
+  set_snap(0); /* set default value specified in xschemrc as 'snap' else CADSNAP */
+  set_grid(0); /* set default value specified in xschemrc as 'grid' else CADGRID */
+  create_gc();
+  enable_layers();
+  build_colors(0.0, 0.0);
+
+  /* copy graphic context data from schematic 1 */
+  xctx->areax1 = save_xctx->areax1;
+  xctx->areax2 = save_xctx->areax2;
+  xctx->areay1 = save_xctx->areay1;
+  xctx->areay2 = save_xctx->areay2;
+  xctx->areaw = save_xctx->areaw;
+  xctx->areah = save_xctx->areah;
+  xctx->xrect[0].x = save_xctx->xrect[0].x;
+  xctx->xrect[0].y = save_xctx->xrect[0].y;
+  xctx->xrect[0].width = save_xctx->xrect[0].width;
+  xctx->xrect[0].height = save_xctx->xrect[0].height;
+  xctx->save_pixmap = save_xctx->save_pixmap;
+  xctx->gctiled = save_xctx->gctiled;
+#if HAS_CAIRO==1
+  xctx->cairo_ctx = save_xctx->cairo_ctx;
+  xctx->cairo_save_ctx = save_xctx->cairo_save_ctx;
+#endif
+
+  /* set identical viewport */
+  xctx->zoom = save_xctx->zoom;
+  xctx->mooz = save_xctx->mooz;
+  xctx->xorigin = save_xctx->xorigin;
+  xctx->yorigin = save_xctx->yorigin;
+  /* Load schematic 2 for comparing */
+  load_schematic(1, xctx->sch_to_compare, 0); /* last param to 0, do not alter window title */
+
+  /* HASH SCHEMATIC 2 , CHECK SCHEMATIC 2 WITH SCHEMATIC 1 */
+  for(i = 0; i < xctx->instances; i++) {
+    l =  1024 + strlen(xctx->inst[i].prop_ptr ? xctx->inst[i].prop_ptr : "");
+    my_realloc(1534, &s, l);
+    my_snprintf(s, l, "C %s %g %g %d %d %s",  xctx->inst[i].name,
+        xctx->inst[i].x0, xctx->inst[i].y0, xctx->inst[i].rot, xctx->inst[i].flip, 
+        xctx->inst[i].prop_ptr ?  xctx->inst[i].prop_ptr : "");
+    int_hash_lookup(table2, s, i, XINSERT_NOREPLACE);
+    found = int_hash_lookup(table1, s, i, XLOOKUP);
+    if(!found) {
+      dbg(1, "schematic 2 instance %d: %s mismatch or not found in schematic 1\n", i,
+         xctx->inst[i].instname ? xctx->inst[i].instname : "");
+      xctx->inst[i].sel = SELECTED;
+      xctx->need_reb_sel_arr=1;
+      ret = 1;
+    }
+  }
+  for(i=0;i<xctx->wires;i++)
+  {
+    l =1024 + strlen(xctx->wire[i].prop_ptr ? xctx->wire[i].prop_ptr : "");
+    my_realloc(1535, &s, l);
+    my_snprintf(s, l, "N %g %g %g %g", xctx->wire[i].x1,  xctx->wire[i].y1,
+        xctx->wire[i].x2, xctx->wire[i].y2);
+    int_hash_lookup(table2, s, i, XINSERT_NOREPLACE);
+    found = int_hash_lookup(table1, s, i, XLOOKUP);
+    if(!found) {
+      dbg(1, "schematic 2 net %d: %s mismatch or not found in schematic 1\n", i,
+         xctx->wire[i].prop_ptr ? xctx->wire[i].prop_ptr : "");
+      xctx->wire[i].sel = SELECTED;
+      xctx->need_reb_sel_arr=1;
+      ret = 1;
+    }
+  }
+  /* draw mismatches in red */
+  if(ret) {
+    rebuild_selected_array();
+    draw_selection(xctx->gc[PINLAYER], 0);
+  }
+  unselect_all(0);
+
+  /* delete compare schematic data */
+  delete_schematic_data(0); /* do not delete save_pixmap */
+
+  /* restore schematic 1 */
+  xctx = save_xctx;
+
+  /* CHECK SCHEMATIC 1 WITH SCHEMATIC 2*/
+  for(i = 0; i < xctx->instances; i++) {
+    l = 1024 + strlen(xctx->inst[i].prop_ptr ? xctx->inst[i].prop_ptr : "");
+    my_realloc(1536,&s, l);
+    my_snprintf(s, l, "C %s %g %g %d %d %s",  xctx->inst[i].name,
+        xctx->inst[i].x0, xctx->inst[i].y0, xctx->inst[i].rot, xctx->inst[i].flip,
+        xctx->inst[i].prop_ptr ?  xctx->inst[i].prop_ptr : "");
+    found = int_hash_lookup(table2, s, i, XLOOKUP);
+    if(!found) {
+      xctx->inst[i].sel = SELECTED;
+      xctx->need_reb_sel_arr=1;
+      ret = 1;
+    }
+  }
+  for(i=0;i<xctx->wires;i++)
+  {
+    l = 1024 + strlen(xctx->wire[i].prop_ptr ? xctx->wire[i].prop_ptr : "");
+    my_realloc(1537, &s, l);
+    my_snprintf(s, l, "N %g %g %g %g", xctx->wire[i].x1,  xctx->wire[i].y1,
+        xctx->wire[i].x2, xctx->wire[i].y2);
+    found = int_hash_lookup(table2, s, i, XLOOKUP);
+    if(!found) {
+      xctx->wire[i].sel = SELECTED;
+      xctx->need_reb_sel_arr=1;
+      ret = 1;
+    }
+  }
+  int_hash_free(table1);
+  int_hash_free(table2);
+  rebuild_selected_array();
+  draw_selection(xctx->gc[SELLAYER], 0);
+  my_free(1531, &s);
+  return ret;
+}
+
 
 static void xwin_exit(void)
 {
@@ -661,7 +841,7 @@ static void xwin_exit(void)
    return;
  }
  tcleval("catch { ngspice::resetdata }"); /* remove ngspice annotation data if any */
- delete_schematic_data();
+ delete_schematic_data(1);
  if(has_x) {
    Tk_DestroyWindow(mainwindow);
    #ifdef __unix__
@@ -835,6 +1015,7 @@ int pending_events(void)
 }
 #endif
 
+/* topwin: .drw (always in tabbed interface) or .x1.drw, .x2.drw ... for multiple windows */
 void toggle_fullscreen(const char *topwin)
 {
   char fullscr[]="add,fullscreen";
@@ -845,58 +1026,58 @@ void toggle_fullscreen(const char *topwin)
   unsigned int framewindow_nchildren;
   int fs;
 
+  dbg(1, "toggle_fullscreen(): topwin=%s\n", topwin);
   if(!strcmp(topwin, ".drw")) {
     tcleval( "winfo id .");
     sscanf(tclresult(), "0x%x", (unsigned int *) &topwin_id);
   } else {
+    /* xctx->top_path is empty string for main window or .x1, .x2, ... for additional windows */
     tclvareval("winfo id ", xctx->top_path, NULL);
     sscanf(tclresult(), "0x%x", (unsigned int *) &topwin_id);
   }
   XQueryTree(display, topwin_id, &rootwindow, &parent_id, &framewin_child_ptr, &framewindow_nchildren);
   fs = tclgetintvar("fullscreen");
   fs = (fs+1)%3;
-  if(fs==1) tclsetvar("fullscreen","1");
-  else if(fs==2) tclsetvar("fullscreen","2");
-  else tclsetvar("fullscreen","0");
+  if(fs==1) tclsetvar("fullscreen","1");  /* full screen with menubar, toolbar, tabs, statusbar */
+  else if(fs==2) tclsetvar("fullscreen","2"); /* full screen with only drawing area */
+  else tclsetvar("fullscreen","0"); /* normal view */
 
   dbg(1, "toggle_fullscreen(): fullscreen=%d\n", fs);
   if(fs==2) {
     if(tclgetboolvar("toolbar_visible")) {
-      xctx->menu_removed |= 2;
+      xctx->menu_removed |= 2; /* menu_removed bit 1 == 1: toolbar was removed */
       tclvareval("toolbar_hide ", xctx->top_path, NULL);
     }
     tclvareval("pack forget ", xctx->top_path, ".tabs", NULL);
-    tclvareval("pack forget ", xctx->top_path, ".menubar ",
-       xctx->top_path, ".statusbar; update", NULL);
-    xctx->menu_removed |= 1;
-  }
-  if(fs !=2 && xctx->menu_removed ) {
+    tclvareval("pack forget ", xctx->top_path, ".menubar", NULL);
+    tclvareval("pack forget ", xctx->top_path, ".statusbar", NULL);
+    xctx->menu_removed |= 1; /* menu_removed bit 0 == 1: other bars were removed */
+  } else if(xctx->menu_removed) { /* bars were removed so pack them back */
+    tclvareval("pack forget ", xctx->top_path, ".drw", NULL);
+    tclvareval("pack ", xctx->top_path, ".menubar -side top -fill x", NULL);
+    tclvareval("pack ", xctx->top_path, ".statusbar  -side bottom -fill x", NULL);
+    tclvareval("pack ", xctx->top_path, ".drw  -side right -fill both -expand true", NULL);
     if(tclgetboolvar("tabbed_interface")) {
-      tclvareval("pack ", xctx->top_path, 
-       ".tabs  -fill x -side top -expand false -side top -before ",
-         xctx->top_path, ".drw", NULL);
-      tclvareval("pack ", xctx->top_path,
-         ".menubar -anchor n -side top -fill x  -before ", xctx->top_path, ".tabs; pack ",
-         xctx->top_path, ".statusbar -after ", xctx->top_path,
-         ".drw -anchor sw  -fill x; update", NULL);
-    } else {
-      tclvareval("pack ", xctx->top_path,
-         ".menubar -anchor n -side top -fill x  -before ", xctx->top_path, ".drw; pack ",
-         xctx->top_path, ".statusbar -after ", xctx->top_path,
-          ".drw -anchor sw  -fill x; update", NULL);
+      tclvareval("pack_tabs", NULL);
     }
     if(xctx->menu_removed & 2) tclvareval("toolbar_show ", xctx->top_path, NULL);
     xctx->menu_removed=0;
   }
   if(fs == 1) {
-    window_state(display , parent_id,fullscr);
+    xctx->pending_fullzoom=1;
+    window_state(display , parent_id,fullscr); /* full screen with menus and toolbars */
   } else if(fs == 2) {
-    window_state(display , parent_id,normal);
+    xctx->pending_fullzoom=2;
+    window_state(display , parent_id,normal); /* full screen, only drawing area */
     window_state(display , parent_id,fullscr);
   } else {
-    window_state(display , parent_id,normal);
+    xctx->pending_fullzoom=1;
+    window_state(display , parent_id,normal); /* normal view */
+    /* when switching back from fullscreen multiple ConfigureNotify events are generated. 
+     * pending_fullzoom does not work on the last corect ConfigureNotify event,
+     * so wee zoom_full() again */
   }
-  xctx->pending_fullzoom=1;
+  zoom_full(1, 0, 1, 0.97); /* draw */
 }
 
 
@@ -933,7 +1114,12 @@ void preview_window(const char *what, const char *win_path, const char *fname)
   static Xschem_ctx *preview_xctx = NULL; /* save pointer to current schematic context structure */
   static Window pre_window;
   static Tk_Window tkpre_window;
+  static int semaphore=0;
 
+  /* avoid reentrant calls for example if an alert box is displayed while loading file to preview,
+   * and an Expose event calls another preview draw */
+  if(semaphore) return;
+  semaphore++;
   dbg(1, "------\n");
   if(!strcmp(what, "create")) {
     dbg(1, "preview_window() create, save ctx, win_path=%s\n", win_path);
@@ -947,7 +1133,7 @@ void preview_window(const char *what, const char *win_path, const char *fname)
     xctx = preview_xctx;
     if(!current_file || strcmp(fname, current_file) ) { 
       if(current_file) {
-        delete_schematic_data();
+        delete_schematic_data(1);
       }
       my_strdup(117, &current_file, fname);
       xctx = NULL;      /* reset for preview */
@@ -969,7 +1155,7 @@ void preview_window(const char *what, const char *win_path, const char *fname)
     dbg(1, "preview_window() destroy\n");
     xctx = preview_xctx;
     if(current_file) {
-      delete_schematic_data();
+      delete_schematic_data(1);
       preview_xctx = NULL;
     }
     
@@ -979,6 +1165,7 @@ void preview_window(const char *what, const char *win_path, const char *fname)
     save_xctx = NULL;
     set_modify(-1);
   }
+  semaphore--;
 }
 
 /* check if filename is already loaded into a tab or window */
@@ -1116,7 +1303,8 @@ static void create_new_window(int *window_count, const char *fname)
     return; /* no more free slots */
   }
   (*window_count)++;
-  tcleval(".menubar.view.menu entryconfigure 21 -state disabled");
+  tclvareval("[xschem get top_path].menubar.simulate configure -bg $simulate_bg", NULL);
+  tcleval(".menubar.view.menu entryconfigure {Tabbed interface} -state disabled");
   n = -1;
   for(i = 1; i < MAX_NEW_WINDOWS; i++) { /* search 1st free slot */
     if(save_xctx[i] == NULL) {
@@ -1206,7 +1394,8 @@ static void create_new_tab(int *window_count, const char *fname)
     return; /* no more free slots */
   }
   (*window_count)++;
-  tcleval(".menubar.view.menu entryconfigure 21 -state disabled");
+  tclvareval("[xschem get top_path].menubar.simulate configure -bg $simulate_bg", NULL);
+  tcleval(".menubar.view.menu entryconfigure {Tabbed interface} -state disabled");
   n = -1;
   for(i = 1; i < MAX_NEW_WINDOWS; i++) { /* search 1st free slot */
     if(save_xctx[i] == NULL) {
@@ -1249,6 +1438,7 @@ static void create_new_tab(int *window_count, const char *fname)
   build_colors(0.0, 0.0);
   resetwin(1, 0, 1, 0, 0);  /* create pixmap.  resetwin(create_pixmap, clear_pixmap, force, w, h) */
   /* draw empty window so if following load fails due to missing file window appears correctly drawn */
+  tclvareval("housekeeping_ctx", NULL);
   zoom_full(1, 0, 1, 0.97);
   load_schematic(1,fname, 1);
   zoom_full(1, 0, 1, 0.97); /* draw */
@@ -1292,13 +1482,13 @@ static void destroy_window(int *window_count, const char *win_path)
         /* set saved ctx to main window if current is to be destroyed */
         if(savectx == xctx) savectx = save_xctx[0];
         tclvareval("winfo toplevel ", win_path, NULL);
-        delete_schematic_data();
+        delete_schematic_data(1);
         save_xctx[n] = NULL;
         Tk_DestroyWindow(Tk_NameToWindow(interp, window_path[n], mainwindow));
         tclvareval("destroy ", tclresult(), NULL);
         my_strncpy(window_path[n], "", S(window_path[n]));
         (*window_count)--;
-        if(*window_count == 0) tcleval(".menubar.view.menu entryconfigure 21 -state normal");
+        if(*window_count == 0) tcleval(".menubar.view.menu entryconfigure {Tabbed interface} -state normal");
       }
     }
     /* following 3 lines must be done also if window not closed */
@@ -1345,16 +1535,20 @@ static void destroy_tab(int *window_count, const char *win_path)
         tclvareval("delete_ctx ", win_path, NULL);
         tclvareval("delete_tab ", win_path, NULL);
         xctx = save_xctx[n];
-        delete_schematic_data();
+        delete_schematic_data(1);
         save_xctx[n] = NULL;
         my_strncpy(window_path[n], "", S(window_path[n]));
         /* delete Tcl context of deleted schematic window */
         (*window_count)--;
-        if(*window_count == 0) tcleval(".menubar.view.menu entryconfigure 21 -state normal");
+        if(*window_count == 0) tcleval(".menubar.view.menu entryconfigure {Tabbed interface} -state normal");
       }
       xctx = save_xctx[0]; /* restore main (.drw) schematic */
-      resetwin(1, 0, 0, 0, 0);  /* create pixmap.  resetwin(create_pixmap, clear_pixmap, force, w, h) */
+
+      /* seems unnecessary; previous tab save_pixmap was not deleted */
+      /* resetwin(1, 0, 0, 0, 0); */ /* create pixmap.  resetwin(create_pixmap, clear_pixmap, force, w, h) */
+ 
       tclvareval("restore_ctx ", xctx->current_win_path, " ; housekeeping_ctx", NULL);
+      resetwin(1, 1, 1, 0, 0);
       set_modify(-1); /* sets window title */
       draw();
     }
@@ -1390,7 +1584,7 @@ static void destroy_all_windows(int *window_count)
           Tcl_ResetResult(interp);
           if(close) {
             tclvareval("winfo toplevel ", window_path[i], NULL);
-            delete_schematic_data();
+            delete_schematic_data(1);
             /* set saved ctx to main window if previous is about to be destroyed */
             if(savectx == save_xctx[i]) savectx = save_xctx[0];
             save_xctx[i] = NULL;
@@ -1400,7 +1594,7 @@ static void destroy_all_windows(int *window_count)
             tclvareval("delete_ctx ", window_path[i], NULL);
             my_strncpy(window_path[i], "", S(window_path[i]));
             (*window_count)--;
-            if(*window_count == 0) tcleval(".menubar.view.menu entryconfigure 21 -state normal");
+            if(*window_count == 0) tcleval(".menubar.view.menu entryconfigure {Tabbed interface} -state normal");
           }
         }
       }
@@ -1437,13 +1631,13 @@ static void destroy_all_tabs(int *window_count)
           /* delete Tcl context of deleted schematic window */
           tclvareval("delete_ctx ", window_path[i], NULL);
           tclvareval("delete_tab ", window_path[i], NULL);
-          delete_schematic_data();
+          delete_schematic_data(1);
           /* set saved ctx to main window if previous is about to be destroyed */
           if(savectx == save_xctx[i]) savectx = save_xctx[0];
           save_xctx[i] = NULL;
           my_strncpy(window_path[i], "", S(window_path[i]));
           (*window_count)--;
-          if(*window_count == 0) tcleval(".menubar.view.menu entryconfigure 21 -state normal");
+          if(*window_count == 0) tcleval(".menubar.view.menu entryconfigure {Tabbed interface} -state normal");
         }
       }
     }
@@ -1507,11 +1701,11 @@ void change_linewidth(double w)
   /* choose line width automatically based on zoom */
   if(w<0.) {
     double cs;
+    changed=1;
     cs = tclgetdoublevar("cadsnap");
     if(tclgetboolvar("change_lw"))  {
       xctx->lw=xctx->mooz * 0.09 * cs;
       cadhalfdotsize = CADHALFDOTSIZE +  0.04 * (cs-10);
-      changed=1;
     }
   /* explicitly set line width */
   } else {
@@ -1610,7 +1804,6 @@ void resetwin(int create_pixmap, int clear_pixmap, int force, int w, int h)
   #else
   XWindowAttributes wattr;
   #endif
-
   if(has_x) {
     if(w && h) {
       width = w;
@@ -1632,6 +1825,8 @@ void resetwin(int create_pixmap, int clear_pixmap, int force, int w, int h)
       #endif
     }
     if(status) {
+       dbg(1, "resetwin(): create_pixmap=%d, clear_pixmap=%d, force=%d, width=%d, height=%d, pending_fullzoom=%d\n",
+           create_pixmap, clear_pixmap, force, width, height, xctx->pending_fullzoom);
       /* if(wattr.map_state==IsUnmapped) return; */
       xctx->areax2 = width + 2 * INT_WIDTH(xctx->lw);
       xctx->areay2 = height + 2 * INT_WIDTH(xctx->lw);
@@ -1674,10 +1869,10 @@ void resetwin(int create_pixmap, int clear_pixmap, int force, int w, int h)
         }
       }
     }
-    if(xctx->pending_fullzoom) {
+    if(xctx->pending_fullzoom > 0) {
       dbg(1, "resetwin(): pending_fulzoom: doing zoom_full()\n");
-      zoom_full(0, 0, 1, 0.97);
-      xctx->pending_fullzoom=0;
+      zoom_full(1, 0, 1, 0.97);
+      xctx->pending_fullzoom--;
     }
     dbg(1, "resetwin(): Window reset\n");
   } /* end if(has_x) */
@@ -2055,7 +2250,6 @@ int Tcl_AppInit(Tcl_Interp *inter)
  tclsetvar("menu_debug_var",debug_var ? "1" : "0" );
  if(cli_opt_flat_netlist) {
    tclsetvar("flat_netlist","1");
-   xctx->flat_netlist = 1;
  }
  xctx->areaw = CADWIDTH+4*INT_WIDTH(xctx->lw);  /* clip area extends 1 pixel beyond physical xctx->window area */
  xctx->areah = CADHEIGHT+4*INT_WIDTH(xctx->lw); /* to avoid drawing clipped rectangle borders at xctx->window edges */
@@ -2176,12 +2370,16 @@ int Tcl_AppInit(Tcl_Interp *inter)
  if(fs) {
    tclsetvar("fullscreen", "0");
    tcleval("update");
-   toggle_fullscreen(".");
+   toggle_fullscreen(".drw");
  }
 
  if(tclgetboolvar("case_insensitive")) {
    xctx->case_insensitive = 1;
    xctx->x_strcmp = my_strcasecmp;
+ }
+
+ if(tclgetboolvar("show_hidden_texts")) {
+   xctx->show_hidden_texts = 1;
  }
 
  /*                                */
@@ -2246,7 +2444,7 @@ int Tcl_AppInit(Tcl_Interp *inter)
  xctx->pending_fullzoom=1;
  if(cli_opt_do_netlist) {
    if(debug_var>=1) {
-     if(xctx->flat_netlist)
+     if(tclgetboolvar("flat_netlist"))
        fprintf(errfp, "xschem: flat netlist requested\n");
    }
    if(!cli_opt_filename[0]) {
@@ -2351,7 +2549,7 @@ int Tcl_AppInit(Tcl_Interp *inter)
  if(!detach && !cli_opt_no_readline) {
    tcleval( "if {![catch {package require tclreadline}]} "
      "{::tclreadline::readline builtincompleter 0;"
-     /*  "::tclreadline::readline customcompleter completer;" */
+      "::tclreadline::readline customcompleter completer;"
       "::tclreadline::Loop }" 
    );
  }

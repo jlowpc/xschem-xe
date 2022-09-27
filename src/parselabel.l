@@ -62,7 +62,6 @@ typedef struct          /* used in expandlabel.y */
 Stringptr dest_string={NULL,0};  /*19102004; */
 
 extern int yyparse(void) ;
-extern int yyparse_error;
 extern int yylex();
 
 void clear_expandlabel_data(void)
@@ -106,12 +105,12 @@ const char *expandlabel(const char *s, int *m)
    char *cmd = NULL;
    size_t l;
    yyparse_error = -1;
-   l = strlen(s)+120;
+   l = strlen(s)+400;
    cmd = my_malloc(526, l);
    fprintf(errfp, "syntax error in %s\n", s);
    my_snprintf(cmd, l, 
      "tk_messageBox -icon error -type ok -parent [xschem get topwindow] "
-     "-message {Syntax error in identifier expansion: %s}", s);
+     "-message {Syntax error in identifier expansion: %s\nschematic:\n%s}", s, xctx->sch[xctx->currsch]);
    if(has_x) tcleval(cmd);
    my_free(543, &cmd);
 

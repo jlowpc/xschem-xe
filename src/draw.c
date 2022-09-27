@@ -81,7 +81,7 @@ void print_image()
   #if HAS_CAIRO == 0
   char cmd[PATH_MAX+100];
   #endif
-  int save_draw_grid;
+  int save_draw_grid, save_draw_window;
   static char lastdir[PATH_MAX] = "";
   const char *r;
 
@@ -107,7 +107,10 @@ void print_image()
   #endif
   save_draw_grid = tclgetboolvar("draw_grid");
   tclsetvar("draw_grid", "0");
+  save_draw_window = xctx->draw_window;
+  xctx->draw_window=0;
   xctx->draw_pixmap=1;
+  xctx->do_copy_area=0;
   draw();
   
 
@@ -115,29 +118,31 @@ void print_image()
                       * XPM and handles Xrender extensions for transparent embedded images */
   {
     cairo_surface_t *png_sfc;
-#ifdef __unix__
+    #ifdef __unix__
     png_sfc = cairo_xlib_surface_create(display, xctx->save_pixmap, visual,
                xctx->xrect[0].width, xctx->xrect[0].height);
-#else
+    #else
     HWND hwnd = Tk_GetHWND(xctx->window);
     HDC dc = GetDC(hwnd);
     png_sfc = cairo_win32_surface_create(dc);
-#endif
+    #endif
 
     if(xctx->plotfile[0])
       cairo_surface_write_to_png(png_sfc, xctx->plotfile);
     else
       cairo_surface_write_to_png(png_sfc, "plot.png");
+
+    cairo_surface_destroy(png_sfc);
   }
   #else /* no cairo */
-#ifdef __unix__
+  #ifdef __unix__
   XpmWriteFileFromPixmap(display, "plot.xpm", xctx->save_pixmap,0, NULL ); /* .gz ???? */
   dbg(1, "print_image(): Window image saved\n");
   if(xctx->plotfile[0]) {
     my_snprintf(cmd, S(cmd), "convert_to_png plot.xpm {%s}", xctx->plotfile);
     tcleval(cmd);
   } else tcleval( "convert_to_png plot.xpm plot.png");
-#else
+  #else
   char *psfile = NULL;
   create_ps(&psfile, 7);
   if (xctx->plotfile[0]) {
@@ -145,11 +150,13 @@ void print_image()
     tcleval(cmd);
   }
   else tcleval("convert_to_png {%s} plot.png", psfile);
-#endif
+  #endif
   #endif
   my_strncpy(xctx->plotfile,"", S(xctx->plotfile));
   tclsetboolvar("draw_grid", save_draw_grid);
   xctx->draw_pixmap=1;
+  xctx->draw_window=save_draw_window;
+  xctx->do_copy_area=1;
 }
 
 #if HAS_CAIRO==1
@@ -169,7 +176,7 @@ static void set_cairo_color(int layer)
 int set_text_custom_font(xText *txt) /* 20171122 for correct text_bbox calculation */
 {
   const char *textfont;
-
+  if (xctx->cairo_ctx==NULL) return 0;
   textfont = txt->font;
   if((textfont && textfont[0]) || (txt->flags & (TEXT_BOLD | TEXT_OBLIQUE | TEXT_ITALIC))) {
     cairo_font_slant_t slant;
@@ -421,7 +428,6 @@ void draw_symbol(int what,int c, int n,int layer,short tmp_flip, short rot,
   #if HAS_CAIRO==1
   const char *textfont;
   #endif
-  int show_hidden_texts = tclgetboolvar("show_hidden_texts");
 
   if(xctx->inst[n].ptr == -1) return;
   if( (layer != PINLAYER && !xctx->enable_layer[layer]) ) return;
@@ -550,7 +556,7 @@ void draw_symbol(int what,int c, int n,int layer,short tmp_flip, short rot,
     {
       text = symptr->text[j];
       if(text.xscale*FONTWIDTH*xctx->mooz<1) continue;
-      if(!show_hidden_texts && (symptr->text[j].flags & HIDE_TEXT)) continue;
+      if(!xctx->show_hidden_texts && (text.flags & HIDE_TEXT)) continue;
       if( hide && text.txt_ptr && strcmp(text.txt_ptr, "@symname") && strcmp(text.txt_ptr, "@name") ) continue;
       txtptr= translate(n, text.txt_ptr);
       ROTATION(rot, flip, 0.0,0.0,text.x0,text.y0,x1,y1);
@@ -709,6 +715,7 @@ void draw_temp_symbol(int what, GC gc, int n,int layer,short tmp_flip, short rot
   for(j=0;j< symptr->texts;j++)
   {
    text = symptr->text[j];
+   if(!xctx->show_hidden_texts && (text.flags & HIDE_TEXT)) continue;
    if(text.xscale*FONTWIDTH*xctx->mooz<1) continue;
    txtptr= translate(n, text.txt_ptr);
    ROTATION(rot, flip, 0.0,0.0,text.x0,text.y0,x1,y1);
@@ -1581,7 +1588,7 @@ static double axis_increment(double a, double b, int div, int freq)
   delta /= div;
   sign = (delta < 0.0) ? -1.0 : 1.0;
   delta = fabs(delta);
-  scale = pow(10.0, floor(log10(delta)));
+  scale = pow(10.0, floor(mylog10(delta)));
   scaled_delta =  delta / scale; /* 1 <= scaled_delta < 10 */
   dbg(1, "a=%g, b=%g, scale=%g, scaled_delta=%g --> ", a, b, scale, scaled_delta);
   if(freq && scaled_delta > 2.5) scaled_delta = 10.0;
@@ -1632,15 +1639,23 @@ static double get_unit(const char *val)
   return 1.0;
 }
 
-int schematic_waves_loaded(void)
+/* return hierarchy level where raw file was loaded (so may include top level 0) or -1 
+ * if there is no matching schematic name up in the hierarchy */
+int sch_waves_loaded(void)
 {
   int i;
-  if(xctx->graph_values && xctx->raw_schname) {
+  if(xctx->graph_raw_level == -1) return -1;
+  else if(xctx->graph_values && xctx->graph_names && xctx->graph_raw_schname) {
+    dbg(1, "sch_waves_loaded(): graph_raw_schname=%s\n", xctx->graph_raw_schname);
     for(i = xctx->currsch; i >= 0; i--) {
-      if( !strcmp(xctx->raw_schname, xctx->sch[i]) ) return 1;
+      dbg(1, "sch_waves_loaded(): %d --> %s\n", i, xctx->sch[i]);
+      if( !strcmp(xctx->graph_raw_schname, xctx->sch[i]) ) {
+        dbg(1, "sch_waves_loaded(): returning %d\n", i);
+        return i;
+      }
     } 
   }
-  return 0;
+  return -1;
 }
 
 static void get_bus_value(int n_bits, int hex_digits, SPICE_DATA **idx_arr, int p, char *busval,
@@ -1697,18 +1712,22 @@ static SPICE_DATA **get_bus_idx_array(const char *ntok, int *n_bits)
   char *saven, *nptr, *ntok_copy = NULL;
   const char *bit_name;
   *n_bits = count_items(ntok, ";,", "") - 1;
+  /* dbg(0, "get_bus_idx_array(): ntok=%s\n", ntok); */
+  /* dbg(0, "get_bus_idx_array(): *n_bits=%d\n", *n_bits); */
   idx_arr = my_malloc(1454, (*n_bits) * sizeof(SPICE_DATA *));
   p = 0;
   my_strdup2(1402, &ntok_copy, ntok);
   nptr = ntok_copy;
   my_strtok_r(nptr, ";,", "", &saven); /*strip off bus name (1st field) */
-  while( (bit_name = my_strtok_r(NULL, ",", "", &saven)) ) {
+  while( (bit_name = my_strtok_r(NULL, ";,", "", &saven)) ) {
     int idx;
+    if(p >= *n_bits) break; /* security check to avoid out of bound writing */
     if( (idx = get_raw_index(bit_name)) != -1) {
       idx_arr[p] = xctx->graph_values[idx];
     } else {
       idx_arr[p] = NULL;
     }
+    /* dbg(0, "get_bus_idx_array(): bit_name=%s, p=%d\n", bit_name, p); */
     p++;
   }
   my_free(1404, &ntok_copy);
@@ -1721,11 +1740,11 @@ static SPICE_DATA **get_bus_idx_array(const char *ntok, int *n_bits)
 static void set_thick_waves(int what, int wcnt, int wave_col, Graph_ctx *gr)
 {
   if(what) {
-      if(gr->hilight_wave[0] == gr->i && gr->hilight_wave[1] == wcnt)
+      if(gr->hilight_wave == wcnt)
          XSetLineAttributes (display, xctx->gc[wave_col],
             3 * INT_WIDTH(xctx->lw) ,LineSolid, CapRound , JoinRound);
   } else {
-      if(gr->hilight_wave[0] == gr->i && gr->hilight_wave[1] == wcnt)
+      if(gr->hilight_wave == wcnt)
          XSetLineAttributes (display, xctx->gc[wave_col],
             INT_WIDTH(xctx->lw) ,LineSolid, CapRound , JoinRound);
   }
@@ -1743,8 +1762,8 @@ static void draw_graph_bus_points(const char *ntok, int n_bits, SPICE_DATA **idx
   double s2 = DIG_SPACE; /* (DIG_NWAVES - DIG_SPACE) spacing between traces */
   double c = (n_nodes - wcnt) * s1 * gr->gh - gr->gy1 * s2; /* trace baseline */
   double c1 = c + gr->gh * 0.5 * s2; /* trace y-center, used for clipping */
-  double lx1 = W_X(xctx->graph_values[sweep_idx][first]);
-  double lx2 = W_X(xctx->graph_values[sweep_idx][last]);
+  double lx1;
+  double lx2;
   double ylow  = DW_Y(c + gr->gy2 * s2); /* swapped as xschem Y coordinates are top-bottom */
   double yhigh = DW_Y(c + gr->gy1 * s2);
   char busval[1024], old_busval[1024];
@@ -1756,6 +1775,14 @@ static void draw_graph_bus_points(const char *ntok, int n_bits, SPICE_DATA **idx
   double vthh = gr->gy1 * 0.2 + gr->gy2 * 0.8;
   double vthl = gr->gy1 * 0.8 + gr->gy2 * 0.2;
   int hex_digits = ((n_bits - 1) >> 2) + 1;
+
+  if(gr->logx) {
+    lx1 = W_X(mylog10(xctx->graph_values[sweep_idx][first]));
+    lx2 = W_X(mylog10(xctx->graph_values[sweep_idx][last]));
+  } else {
+    lx1 = W_X(xctx->graph_values[sweep_idx][first]);
+    lx2 = W_X(xctx->graph_values[sweep_idx][last]);
+  }
   if(c1 >= gr->ypos1 && c1 <=gr->ypos2) {
     set_thick_waves(1, wcnt, wave_col, gr);
     drawline(wave_col, NOW, lx1, ylow, lx2, ylow, 0);
@@ -1764,7 +1791,11 @@ static void draw_graph_bus_points(const char *ntok, int n_bits, SPICE_DATA **idx
       /* calculate value of bus by adding all binary bits */
       /* hex_digits = */
       get_bus_value(n_bits, hex_digits, idx_arr, p, busval, vthl, vthh);
-      xval =  W_X(xctx->graph_values[sweep_idx][p]);
+      if(gr->logx) {
+        xval =  W_X(mylog10(xctx->graph_values[sweep_idx][p]));
+      } else {
+        xval =  W_X(xctx->graph_values[sweep_idx][p]);
+      }
       /* used to draw bus value before 1st transition */
       if(p == first) {
         my_strncpy(old_busval, busval, hex_digits+1);
@@ -1822,10 +1853,11 @@ static void draw_graph_points(int idx, int first, int last,
       if(digital) {
         yy = c + yy *s2;
         /* Build poly y array. Translate from graph coordinates to screen coordinates  */
-        point[poly_npoints].y = (short)CLIP(DS_Y(yy), xctx->areay1, xctx->areay2);
+        point[poly_npoints].y = (short)CLIP(DS_Y(yy), -30000, 30000);
       } else {
         /* Build poly y array. Translate from graph coordinates to screen coordinates  */
-        point[poly_npoints].y = (short)CLIP(S_Y(yy), xctx->areay1, xctx->areay2);
+        if(gr->logy) yy = mylog10(yy);
+        point[poly_npoints].y = (short)CLIP(S_Y(yy), -30000, 30000);
       }
       poly_npoints++;
     }
@@ -1864,15 +1896,15 @@ static void draw_graph_grid(Graph_ctx *gr)
   bbox(ADD, gr->rx1, gr->ry1, gr->rx2, gr->ry2);
   bbox(SET_INSIDE, 0.0, 0.0, 0.0, 0.0);
   /* vertical grid lines */
-  deltax = axis_increment(gr->gx1, gr->gx2, gr->divx, (xctx->graph_sim_type == 3));
+  deltax = axis_increment(gr->gx1, gr->gx2, gr->divx, (gr->logx));
   startx = axis_start(gr->gx1, deltax, gr->divx);
   for(j = -1;; j++) { /* start one interval before to allow sub grids at beginning */
     wx = startx + j * deltax;
     if(gr->subdivx > 0) for(k = 1; k <=gr->subdivx; k++) {
       double subwx;
-      if(xctx->graph_sim_type == 3)  {
-        subwx = wx + deltax * log10(1.0 + (double)k * 9.0 / ((double)gr->subdivx + 1.0)); 
-      } else
+      if(gr->logx)
+        subwx = wx + deltax * mylog10(1.0 + (double)k * 9.0 / ((double)gr->subdivx + 1.0)); 
+      else
         subwx = wx + deltax * (double)k / ((double)gr->subdivx + 1.0);
       if(!axis_within_range(subwx, gr->gx1, gr->gx2)) continue;
       if(axis_end(subwx, deltax, gr->gx2)) break;
@@ -1884,8 +1916,8 @@ static void draw_graph_grid(Graph_ctx *gr)
     drawline(GRIDLAYER, ADD, W_X(wx),   W_Y(gr->gy2), W_X(wx),   W_Y(gr->gy1), (int)dash_sizey);
     drawline(GRIDLAYER, ADD, W_X(wx),   W_Y(gr->gy1), W_X(wx),   W_Y(gr->gy1) + mark_size, 0); /* axis marks */
     /* X-axis labels */
-    if(xctx->graph_sim_type == 3) 
-      draw_string(3, NOW, dtoa(pow(10, wx ) * gr->unitx), 0, 0, 1, 0, W_X(wx), gr->y2 + mark_size + 5 * gr->txtsizex,
+    if(gr->logx) 
+      draw_string(3, NOW, dtoa(pow(10, wx) * gr->unitx), 0, 0, 1, 0, W_X(wx), gr->y2 + mark_size + 5 * gr->txtsizex,
                 gr->txtsizex, gr->txtsizex);
     else
       draw_string(3, NOW, dtoa(wx * gr->unitx), 0, 0, 1, 0, W_X(wx), gr->y2 + mark_size + 5 * gr->txtsizex,
@@ -1896,12 +1928,16 @@ static void draw_graph_grid(Graph_ctx *gr)
   drawline(GRIDLAYER, ADD, W_X(gr->gx2),   W_Y(gr->gy2), W_X(gr->gx2),   W_Y(gr->gy1), 0);
   /* horizontal grid lines */
   if(!gr->digital) {
-    deltay = axis_increment(gr->gy1, gr->gy2, gr->divy, 0);
+    deltay = axis_increment(gr->gy1, gr->gy2, gr->divy, gr->logy);
     starty = axis_start(gr->gy1, deltay, gr->divy);
     for(j = -1;; j++) { /* start one interval before to allow sub grids at beginning */
       wy = starty + j * deltay;
       if(gr->subdivy > 0) for(k = 1; k <=gr->subdivy; k++) {
-        double subwy = wy + k * deltay / (gr->subdivy + 1);
+        double subwy;
+        if(gr->logy)
+          subwy = wy + deltay * mylog10(1.0 + (double)k * 9.0 / ((double)gr->subdivy + 1.0));
+        else
+          subwy = wy + deltay * (double)k / ((double)gr->subdivy + 1.0);
         if(!axis_within_range(subwy, gr->gy1, gr->gy2)) continue;
         if(axis_end(subwy, deltay, gr->gy2)) break;
         drawline(GRIDLAYER, ADD, W_X(gr->gx1), W_Y(subwy),   W_X(gr->gx2), W_Y(subwy), (int)dash_sizex);
@@ -1911,7 +1947,11 @@ static void draw_graph_grid(Graph_ctx *gr)
       drawline(GRIDLAYER, ADD, W_X(gr->gx1), W_Y(wy),   W_X(gr->gx2), W_Y(wy), (int)dash_sizex);
       drawline(GRIDLAYER, ADD, W_X(gr->gx1) - mark_size, W_Y(wy),   W_X(gr->gx1), W_Y(wy), 0); /* axis marks */
       /* Y-axis labels */
-      draw_string(3, NOW, dtoa(wy * gr->unity), 0, 1, 0, 1, gr->x1 - mark_size - 5 * gr->txtsizey, W_Y(wy),
+      if(gr->logy)
+        draw_string(3, NOW, dtoa(pow(10, wy) * gr->unity), 0, 1, 0, 1, gr->x1 - mark_size - 5 * gr->txtsizey, W_Y(wy),
+                  gr->txtsizey, gr->txtsizey);
+      else 
+        draw_string(3, NOW, dtoa(wy * gr->unity), 0, 1, 0, 1, gr->x1 - mark_size - 5 * gr->txtsizey, W_Y(wy),
                   gr->txtsizey, gr->txtsizey);
     }
   }
@@ -1935,19 +1975,19 @@ void setup_graph_data(int i, const int flags, int skip, Graph_ctx *gr)
   const char *val;
   xRect *r = &xctx->rect[GRIDLAYER][i];
 
-  gr->i = i;
   /* default values */
   gr->divx = gr->divy = 5;
   gr->subdivx = gr->subdivy = 0;
+  gr->logx = gr->logy = 0;
   gr->digital = 0;
 
   if(!skip) {
     gr->gx1 = 0;
     gr->gx2 = 1e-6;
     val = get_tok_value(r->prop_ptr,"x1",0);
-    if(val[0]) gr->gx1 = atof(val);
+    if(val[0]) gr->gx1 = atof_spice(val);
     val = get_tok_value(r->prop_ptr,"x2",0);
-    if(val[0]) gr->gx2 = atof(val);
+    if(val[0]) gr->gx2 = atof_spice(val);
     if(gr->gx1 == gr->gx2) gr->gx2 += 1e-6;
     gr->gw = gr->gx2 - gr->gx1;
   }
@@ -1979,12 +2019,17 @@ void setup_graph_data(int i, const int flags, int skip, Graph_ctx *gr)
   gr->rw = gr->rx2 - gr->rx1;
   gr->rh = gr->ry2 - gr->ry1;
 
+  /* wave to display in bold, -1=none */
+  val=get_tok_value(r->prop_ptr,"hilight_wave",0);
+  if(val[0]) gr->hilight_wave = atoi(val);
+  else gr->hilight_wave = -1;
+
   /* get x/y range, grid info etc */
   val = get_tok_value(r->prop_ptr,"unitx",0);
   gr->unitx_suffix = val[0];
   gr->unitx = get_unit(val);
   val = get_tok_value(r->prop_ptr,"unity",0);
-  if(xctx->graph_sim_type == 3) { /* AC */
+  if(gr->logx) { /* AC */
     gr->unity_suffix = '1';
     gr->unity = 1.0;
   } else {
@@ -2001,18 +2046,22 @@ void setup_graph_data(int i, const int flags, int skip, Graph_ctx *gr)
   val = get_tok_value(r->prop_ptr,"divy",0);
   if(val[0]) gr->divy = atoi(val);
   if(gr->divy < 1) gr->divy = 1;
+  val = get_tok_value(r->prop_ptr,"logx",0);
+  if(val[0] == '1') gr->logx = 1;
+  val = get_tok_value(r->prop_ptr,"logy",0);
+  if(val[0] == '1') gr->logy = 1;
   val = get_tok_value(r->prop_ptr,"y1",0);
-  if(val[0]) gr->gy1 = atof(val);
+  if(val[0]) gr->gy1 = atof_spice(val);
   val = get_tok_value(r->prop_ptr,"y2",0);
-  if(val[0]) gr->gy2 = atof(val);
+  if(val[0]) gr->gy2 = atof_spice(val);
   if(gr->gy1 == gr->gy2) gr->gy2 += 1.0;
   val = get_tok_value(r->prop_ptr,"digital",0);
   if(val[0]) gr->digital = atoi(val);
   if(gr->digital) {
     val = get_tok_value(r->prop_ptr,"ypos1",0);
-    if(val[0]) gr->ypos1 = atof(val);
+    if(val[0]) gr->ypos1 = atof_spice(val);
     val = get_tok_value(r->prop_ptr,"ypos2",0);
-    if(val[0]) gr->ypos2 = atof(val);
+    if(val[0]) gr->ypos2 = atof_spice(val);
     if(gr->ypos2 == gr->ypos1) gr->ypos2 += 1.0;
   }
   gr->posh = gr->ypos2 - gr->ypos1;
@@ -2091,7 +2140,7 @@ static void draw_cursor(double active_cursorx, double other_cursorx, int cursor_
 
   if(xx >= gr->x1 && xx <= gr->x2) {
     drawline(cursor_color, NOW, xx, gr->ry1, xx, gr->ry2, 1);
-    if(xctx->graph_sim_type == 3) active_cursorx = pow(10, active_cursorx);
+    if(gr->logx) active_cursorx = pow(10, active_cursorx);
     if(gr->unitx != 1.0)
        my_snprintf(tmpstr, S(tmpstr), "%.5g%c", gr->unitx * active_cursorx , gr->unitx_suffix);
     else
@@ -2118,7 +2167,7 @@ static void draw_cursor_difference(Graph_ctx *gr)
   double yy = gr->ry2 - 1;
   double dtmp;
   double yline;
-  if(xctx->graph_sim_type == 3) return;
+  if(gr->logx) return;
   if(gr->unitx != 1.0)
      my_snprintf(tmpstr, S(tmpstr), "%.4g%c", gr->unitx * diffw , gr->unitx_suffix);
   else
@@ -2147,11 +2196,11 @@ static void draw_graph_variables(int wcnt, int wave_color, int n_nodes, int swee
   bbox(SET_INSIDE, 0.0, 0.0, 0.0, 0.0);
   /* draw sweep variable(s) on x-axis */
   if(wcnt == 0 || (stok && stok[0])) {
-    if(xctx->graph_values) stok = xctx->graph_names[sweep_idx];
+    if(sch_waves_loaded() >= 0) stok = xctx->graph_names[sweep_idx];
     if(gr->unitx != 1.0) my_snprintf(tmpstr, S(tmpstr), "%s[%c]", stok ? stok : "" , gr->unitx_suffix);
     else  my_snprintf(tmpstr, S(tmpstr), "%s", stok ? stok : "");
     draw_string(wave_color, NOW, tmpstr, 2, 1, 0, 0,
-       gr->rx1 + 2 + gr->rw / n_nodes * wcnt, gr->ry2-1, gr->txtsizelab, gr->txtsizelab);
+       gr->rx1 + 2 + gr->rw / n_nodes * wcnt, gr->ry2-5, gr->txtsizelab, gr->txtsizelab);
   }
   /* draw node labels in graph */
   if(bus_msb) {
@@ -2169,13 +2218,7 @@ static void draw_graph_variables(int wcnt, int wave_color, int n_nodes, int swee
        my_strdup2(1155, &ntok_ptr, ntok);
     }
       
-    if(xctx->graph_sim_type == 3) {
-      if(strstr(ntok_ptr, "ph(") == ntok_ptr || strstr(ntok_ptr, "_ph"))
-        my_snprintf(tmpstr, S(tmpstr), "%s[Phase]", alias_ptr);
-      else
-        my_snprintf(tmpstr, S(tmpstr), "%s[Mag]", alias_ptr);
-    }
-    else if(gr->unity != 1.0) my_snprintf(tmpstr, S(tmpstr), "%s[%c]", alias_ptr, gr->unity_suffix);
+    if(gr->unity != 1.0) my_snprintf(tmpstr, S(tmpstr), "%s[%c]", alias_ptr, gr->unity_suffix);
     else  my_snprintf(tmpstr, S(tmpstr), "%s", alias_ptr);
     my_free(1188, &alias_ptr);
     my_free(1189, &ntok_ptr);
@@ -2192,7 +2235,7 @@ static void draw_graph_variables(int wcnt, int wave_color, int n_nodes, int swee
 
     if(yt <= gr->ypos2 && yt >= gr->ypos1) {
       #if HAS_CAIRO == 1
-      if(gr->hilight_wave[0] == gr->i && gr->hilight_wave[1] == wcnt) {
+      if(gr->hilight_wave == wcnt) {
         cairo_select_font_face(xctx->cairo_ctx, "Sans-Serif", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
         cairo_select_font_face(xctx->cairo_save_ctx, "Sans-Serif", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
       }
@@ -2200,7 +2243,7 @@ static void draw_graph_variables(int wcnt, int wave_color, int n_nodes, int swee
       draw_string(wave_color, NOW, tmpstr, 2, 0, 0, 0,
         xt, DW_Y(yt), gr->digtxtsizelab, gr->digtxtsizelab);
       #if HAS_CAIRO == 1
-      if(gr->hilight_wave[0] == gr->i && gr->hilight_wave[1] == wcnt) {
+      if(gr->hilight_wave == wcnt) {
         cairo_select_font_face(xctx->cairo_ctx, "Sans-Serif", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
         cairo_select_font_face(xctx->cairo_save_ctx, "Sans-Serif", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
       }
@@ -2208,7 +2251,7 @@ static void draw_graph_variables(int wcnt, int wave_color, int n_nodes, int swee
     }
   } else {
     #if HAS_CAIRO == 1
-    if(gr->hilight_wave[0] == gr->i && gr->hilight_wave[1] == wcnt) {
+    if(gr->hilight_wave == wcnt) {
       cairo_select_font_face(xctx->cairo_ctx, "Sans-Serif", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
       cairo_select_font_face(xctx->cairo_save_ctx, "Sans-Serif", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
     }
@@ -2216,7 +2259,7 @@ static void draw_graph_variables(int wcnt, int wave_color, int n_nodes, int swee
     draw_string(wave_color, NOW, tmpstr, 0, 0, 0, 0,
         gr->rx1 + 2 + gr->rw / n_nodes * wcnt, gr->ry1, gr->txtsizelab, gr->txtsizelab);
     #if HAS_CAIRO == 1
-    if(gr->hilight_wave[0] == gr->i && gr->hilight_wave[1] == wcnt) {
+    if(gr->hilight_wave == wcnt) {
       cairo_select_font_face(xctx->cairo_ctx, "Sans-Serif", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
       cairo_select_font_face(xctx->cairo_save_ctx, "Sans-Serif", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
     }
@@ -2302,20 +2345,6 @@ int embed_rawfile(const char *rawfile)
   return res;
 }
 
-int read_embedded_rawfile(void)
-{
-  int res = 0;
-
-  if(xctx->lastsel==1 && xctx->sel_array[0].type==ELEMENT) {
-    xInstance *i = &xctx->inst[xctx->sel_array[0].n];
-    const char *b64_spice_data;
-    if(i->prop_ptr && (b64_spice_data = get_tok_value(i->prop_ptr, "spice_data", 0))[0]) {
-      res = read_rawfile_from_attr(b64_spice_data, strlen(b64_spice_data));
-    }
-  }
-  return res;
-}
-
 /* when double clicking in a graph if this happens on a wave label
  * what == 1: 
  *   look up the wave and call tcl "graph_edit_wave <graph> <wave>"
@@ -2367,19 +2396,18 @@ int edit_wave_attributes(int what, int i, Graph_ctx *gr)
           char s[30];
           ret = 1;
           if(what == 1) {
+            int save = gr->hilight_wave;
             my_snprintf(s, S(s), "%d %d", i, wcnt);
-            gr->hilight_wave[0] = i;
-            gr->hilight_wave[1] = wcnt;
+            gr->hilight_wave = wcnt;
             tclvareval("graph_edit_wave ", s, NULL);
-            gr->hilight_wave[0] = -1;
-            gr->hilight_wave[1] = -1;
+            gr->hilight_wave = save;
           } else {
-             if(gr->hilight_wave[0] == i && gr->hilight_wave[1] == wcnt) {
-               gr->hilight_wave[0] = -1;
-               gr->hilight_wave[1] = -1;
+             if(gr->hilight_wave == wcnt) {
+               gr->hilight_wave = -1;
+               my_strdup2(1522, &r->prop_ptr, subst_token(r->prop_ptr, "hilight_wave", my_itoa(gr->hilight_wave)));
              } else {
-               gr->hilight_wave[0] = i;
-               gr->hilight_wave[1] = wcnt;
+               gr->hilight_wave = wcnt;
+               my_strdup2(1525, &r->prop_ptr, subst_token(r->prop_ptr, "hilight_wave", my_itoa(gr->hilight_wave)));
              }
           }
         }
@@ -2393,19 +2421,18 @@ int edit_wave_attributes(int what, int i, Graph_ctx *gr)
         char s[50];
         ret = 1;
         if(what == 1) {
+          int save = gr->hilight_wave;
           my_snprintf(s, S(s), "%d %d", i, wcnt);
-          gr->hilight_wave[0] = i;
-          gr->hilight_wave[1] = wcnt;
+          gr->hilight_wave = wcnt;
           tclvareval("graph_edit_wave ", s, NULL);
-          gr->hilight_wave[0] = -1;
-          gr->hilight_wave[1] = -1;
+          gr->hilight_wave = save;
         } else {
-          if(gr->hilight_wave[0] == i && gr->hilight_wave[1] == wcnt) {
-            gr->hilight_wave[0] = -1;
-            gr->hilight_wave[1] = -1;
+          if(gr->hilight_wave == wcnt) {
+            gr->hilight_wave = -1;
+            my_strdup2(1538, &r->prop_ptr, subst_token(r->prop_ptr, "hilight_wave", my_itoa(gr->hilight_wave)));
           } else {
-            gr->hilight_wave[0] = i;
-            gr->hilight_wave[1] = wcnt;
+            gr->hilight_wave = wcnt;
+            my_strdup2(1539, &r->prop_ptr, subst_token(r->prop_ptr, "hilight_wave", my_itoa(gr->hilight_wave)));
           }
         }
       }
@@ -2442,8 +2469,11 @@ int calc_custom_data_yrange(int sweep_idx, const char *express, Graph_ctx *gr)
     prev_prev_x = prev_x = 0;
     last = ofs; 
     for(p = ofs ; p < ofs + xctx->graph_npoints[dset]; p++) {
-      xx = gv[p];
-      wrap = (sweep_idx == 0 && cnt > 1 && XSIGN(xx - prev_x) != XSIGN(prev_x - prev_prev_x));
+      if(gr->logx) 
+        xx = mylog10(gv[p]);
+      else
+        xx = gv[p];
+      wrap = ( /* sweep_idx == 0 && */ cnt > 1 && XSIGN(xx - prev_x) != XSIGN(prev_x - prev_prev_x));
       if(first != -1) {                      /* there is something to plot ... */
         if(xx > end || xx < start ||         /* ... and we ran out of graph area ... */
           wrap) {                          /* ... or sweep variable changed direction */
@@ -2480,6 +2510,133 @@ int calc_custom_data_yrange(int sweep_idx, const char *express, Graph_ctx *gr)
   return idx;
 }
 
+int find_closest_wave(int i, Graph_ctx *gr)
+{
+  double xval, yval;
+  char *node = NULL, *sweep = NULL;
+  int sweep_idx = 0;
+  char *saven, *saves, *nptr, *sptr;
+  const char *ntok, *stok;
+  int wcnt = 0, idx, expression;
+  char *express = NULL;
+  xRect *r = &xctx->rect[GRIDLAYER][i];
+  int closest_dataset = -1;
+  double min=-1.0;
+  
+  if(gr->digital) return -1;
+
+  yval = G_Y(xctx->mousey);
+  xval = G_X(xctx->mousex);
+  /* get data to plot */
+  my_strdup2(474, &node, get_tok_value(r->prop_ptr,"node",0));
+  my_strdup2(1012, &sweep, get_tok_value(r->prop_ptr,"sweep",0)); 
+  nptr = node;
+  sptr = sweep;
+  /* process each node given in "node" attribute, get also associated sweep var if any*/
+  while( (ntok = my_strtok_r(nptr, "\n\t ", "\"", &saven)) ) {
+    if(strstr(ntok, ",")) {
+      if(find_nth(ntok, ";,", 2)[0]) continue; /* bus signal: skip */
+    }
+    stok = my_strtok_r(sptr, "\t\n ", "\"", &saves);
+    nptr = sptr = NULL;
+    dbg(1, "ntok=%s\n", ntok);
+    if(stok && stok[0]) {
+      sweep_idx = get_raw_index(stok);
+      if( sweep_idx == -1) {
+        sweep_idx = 0;
+      }
+    }
+    /* if ntok following possible 'alias;' definition contains spaces --> custom data plot */
+    idx = -1;
+    expression = 0;
+    if(xctx->graph_values) {
+      if(strstr(ntok, ";")) {
+        my_strdup2(1191, &express, find_nth(ntok, ";", 2));
+      } else {
+        my_strdup2(1192, &express, ntok);
+      }
+      if(strstr(express, " ")) {
+        expression = 1;
+      }
+    }
+    if(expression) idx = plot_raw_custom_data(sweep_idx, 0, xctx->graph_allpoints-1, express);
+    else idx = get_raw_index(express);
+    if( idx != -1 ) {
+      int p, dset, ofs;
+      int first, last;
+      double xx, yy ; /* the p-th point */
+      double start;
+      double end;
+      int sweepvar_wrap = 0; /* incremented on new dataset or sweep variable wrap */
+      ofs = 0;
+      start = (gr->gx1 <= gr->gx2) ? gr->gx1 : gr->gx2;
+      end = (gr->gx1 <= gr->gx2) ? gr->gx2 : gr->gx1;
+      /* loop through all datasets found in raw file */
+      for(dset = 0 ; dset < xctx->graph_datasets; dset++) {
+        double prev_x, prev_prev_x;
+        int cnt=0, wrap;
+        register SPICE_DATA *gvx = xctx->graph_values[sweep_idx];
+        register SPICE_DATA *gvy = xctx->graph_values[idx];
+        dbg(1, "find_closest_wave(): dset=%d\n", dset);
+        first = -1;
+        /* Process "npoints" simulation items 
+         * p loop split repeated 2 timed (for x and y points) to preserve cache locality */
+        prev_prev_x = prev_x = 0;
+        last = ofs; 
+        dbg(1, "find_closest_wave(): xval=%g yval=%g\n", xval, yval);
+        for(p = ofs ; p < ofs + xctx->graph_npoints[dset]; p++) {
+          if(gr->logx) xx = mylog10(gvx[p]);
+          else xx = gvx[p];
+          if(gr->logy) yy = mylog10(gvy[p]);
+          else  yy = gvy[p];
+          wrap = (/* sweep_idx == 0 && */ cnt > 1 && XSIGN(xx - prev_x) != XSIGN(prev_x - prev_prev_x));
+          if(first != -1) {
+            if(xx > end || xx < start || wrap) {
+              dbg(1, "find_closest_wave(): last=%d\n", last);
+              first = -1;
+            }
+          }
+          if(wrap) {
+             cnt = 0;
+             sweepvar_wrap++;
+          }
+          if(xx >= start && xx <= end) {
+            if(first == -1) first = p;
+            if( XSIGN(xval - xx) != XSIGN(xval - prev_x)) {
+
+               if(min < 0.0) {
+                  min = fabs(yval - yy);
+                  closest_dataset = sweepvar_wrap;
+               } else {
+                 double tmp = fabs(yval - yy);
+                 if(tmp < min) {
+                   min = tmp;
+                   closest_dataset = sweepvar_wrap;
+                 }
+               }
+               dbg(1, "find_closest_wave(): xval=%g yval=%g xx=%g yy=%g sweepvar_wrap=%d ntok=%s stok=%s\n",
+                   xval, yval, xx, yy, sweepvar_wrap, ntok, stok? stok : "<NULL>");
+            }
+            last = p;
+            cnt++;
+          } /* if(xx >= start && xx <= end) */
+          prev_prev_x = prev_x;
+          prev_x = xx;
+        } /* for(p = ofs ; p < ofs + xctx->graph_npoints[dset]; p++) */
+        /* offset pointing to next dataset */
+        ofs += xctx->graph_npoints[dset];
+        sweepvar_wrap++;
+      } /* for(dset...) */
+
+    } /*  if( (idx = get_raw_index(ntok)) != -1 ) */
+    wcnt++;
+  } /* while( (ntok = my_strtok_r(nptr, "\n\t ", "", &saven)) ) */
+  dbg(0, "closest dataset=%d\n", closest_dataset);
+  if(express) my_free(1487, &express);
+  my_free(478, &node);
+  my_free(1262, &sweep);
+  return closest_dataset;
+}
 
 
 /* flags:
@@ -2506,13 +2663,16 @@ void draw_graph(int i, const int flags, Graph_ctx *gr)
   char *express = NULL;
   xRect *r = &xctx->rect[GRIDLAYER][i];
   
+  if(xctx->only_probes) return;
   if(RECT_OUTSIDE( gr->sx1, gr->sy1, gr->sx2, gr->sy2,
       xctx->areax1, xctx->areay1, xctx->areax2, xctx->areay2)) return;
-  /*
-   * dbg(0, "draw_graph(): window: %d %d %d %d\n", xctx->areax1, xctx->areay1, xctx->areax2, xctx->areay2);
-   * dbg(0, "draw_graph(): graph: %g %g %g %g\n", gr->sx1, gr->sy1, gr->sx2, gr->sy2);
-   * dbg(0, "draw_graph(): i = %d, flags = %d\n", i, flags);
-   */
+  
+   #if 0
+   dbg(0, "draw_graph(): window: %d %d %d %d\n", xctx->areax1, xctx->areay1, xctx->areax2, xctx->areay2);
+   dbg(0, "draw_graph(): graph: %g %g %g %g\n", gr->sx1, gr->sy1, gr->sx2, gr->sy2);
+   dbg(0, "draw_graph(): i = %d, flags = %d\n", i, flags);
+   #endif
+ 
   /* draw stuff */
   if(flags & 8) {
 #if !defined(__unix__) && defined(HAS_CAIRO)
@@ -2555,9 +2715,9 @@ void draw_graph(int i, const int flags, Graph_ctx *gr)
       expression = 0;
       if(xctx->graph_values && !bus_msb) {
         if(strstr(ntok, ";")) {
-          my_strdup2(1191, &express, find_nth(ntok, ";", 2));
+          my_strdup2(460, &express, find_nth(ntok, ";", 2));
         } else {
-          my_strdup2(1192, &express, ntok);
+          my_strdup2(473, &express, ntok);
         }
         if(strstr(express, " ")) {
           expression = 1;
@@ -2600,8 +2760,9 @@ void draw_graph(int i, const int flags, Graph_ctx *gr)
           prev_prev_x = prev_x = 0;
           last = ofs; 
           for(p = ofs ; p < ofs + xctx->graph_npoints[dset]; p++) {
-            xx = gv[p];
-            wrap = (sweep_idx == 0 && cnt > 1 && XSIGN(xx - prev_x) != XSIGN(prev_x - prev_prev_x));
+            if(gr->logx) xx = mylog10(gv[p]);
+            else  xx = gv[p];
+            wrap = (/* sweep_idx == 0 && */ cnt > 1 && XSIGN(xx - prev_x) != XSIGN(prev_x - prev_prev_x));
             if(first != -1) {                      /* there is something to plot ... */
               if(xx > end || xx < start ||         /* ... and we ran out of graph area ... */
                 wrap) {                          /* ... or sweep variable changed direction */
@@ -2669,11 +2830,11 @@ void draw_graph(int i, const int flags, Graph_ctx *gr)
 
         my_free(1403, &point);
         if(idx_arr) my_free(1455, &idx_arr);
-      } /*  if( (idx = get_raw_index(bus_msb ? bus_msb : ntok)) != -1 ) */
+      } /* if( expression || (idx = get_raw_index(bus_msb ? bus_msb : express)) != -1 ) */
       wcnt++;
       if(bus_msb) my_free(1453, &bus_msb);
     } /* while( (ntok = my_strtok_r(nptr, "\n\t ", "", &saven)) ) */
-    if(express) my_free(1487, &express);
+    if(express) my_free(1520, &express);
     my_free(1391, &node);
     my_free(1392, &color);
     my_free(1408, &sweep);
@@ -2705,15 +2866,14 @@ static void draw_graph_all(int flags)
 {
   int  i, sch_loaded, hide_graphs;
   int bbox_set = 0;
-  const char *tmp;
   int save_bbx1, save_bby1, save_bbx2, save_bby2;
   dbg(1, "draw_graph_all(): flags=%d\n", flags);
   /* save bbox data, since draw_graph_all() is called from draw() which may be called after a bbox(SET) */
-  sch_loaded = schematic_waves_loaded();
-  tmp =  tclgetvar("hide_empty_graphs");
-  hide_graphs = (tmp && tmp[0] == '1') ? 1 : 0;
+  sch_loaded = (sch_waves_loaded() >= 0);
+  dbg(1, "draw_graph_all(): sch_loaded=%d\n", sch_loaded);
+  hide_graphs =  tclgetboolvar("hide_empty_graphs");
   if(sch_loaded || !hide_graphs) {
-    if(xctx->sem) {
+    if(xctx->bbox_set) {
       bbox_set = 1;
       save_bbx1 = xctx->bbx1;
       save_bby1 = xctx->bby1;
@@ -2746,7 +2906,7 @@ static void draw_graph_all(int flags)
       xctx->bby1 = save_bby1;
       xctx->bbx2 = save_bbx2;
       xctx->bby2 = save_bby2;
-      xctx->sem = 1;
+      xctx->bbox_set = 1;
       bbox(SET, 0.0, 0.0, 0.0, 0.0);
     }
   }
@@ -2785,10 +2945,10 @@ static cairo_status_t png_writer(void *in_closure, const unsigned char *in_data,
 
 
 /* rot and flip for rotated / flipped symbols
- * draw: 1 draw image
+ * dr: 1 draw image
  *       0 only load image and build base64 
  */
-void draw_image(int draw, xRect *r, double *x1, double *y1, double *x2, double *y2, int rot, int flip)
+void draw_image(int dr, xRect *r, double *x1, double *y1, double *x2, double *y2, int rot, int flip)
 {
   #if HAS_CAIRO == 1
   const char *ptr;
@@ -2803,6 +2963,7 @@ void draw_image(int draw, xRect *r, double *x1, double *y1, double *x2, double *
   png_to_byte_closure_t closure;
   xEmb_image *emb_ptr;
 
+  if(xctx->only_probes) return;
   xx1 = *x1; yy1 = *y1; /* image anchor point */
   RECTORDER(*x1, *y1, *x2, *y2);
 
@@ -2815,7 +2976,7 @@ void draw_image(int draw, xRect *r, double *x1, double *y1, double *x2, double *
                   xctx->areax1,xctx->areay1,xctx->areax2,xctx->areay2)) return;
   set_rect_extraptr(1, r); /* create r->extraptr pointing to a xEmb_image struct */
   emb_ptr = r->extraptr;
-  if(draw) {
+  if(dr) {
     cairo_save(xctx->cairo_ctx);
     cairo_save(xctx->cairo_save_ctx);
   }
@@ -2916,7 +3077,7 @@ void draw_image(int draw, xRect *r, double *x1, double *y1, double *x2, double *
     scalex = rw/w * xctx->mooz;
     scaley = rh/h * xctx->mooz;
   }
-  if(draw && xctx->draw_pixmap) {
+  if(dr && xctx->draw_pixmap) {
     cairo_translate(xctx->cairo_save_ctx, x, y);
     if(flip && (rot == 0 || rot == 2)) cairo_scale(xctx->cairo_save_ctx, -scalex, scaley);
     else if(flip && (rot == 1 || rot == 3)) cairo_scale(xctx->cairo_save_ctx, scalex, -scaley);
@@ -2929,7 +3090,7 @@ void draw_image(int draw, xRect *r, double *x1, double *y1, double *x2, double *
     cairo_clip(xctx->cairo_save_ctx);
     cairo_paint_with_alpha(xctx->cairo_save_ctx, alpha);
   }
-  if(draw && xctx->draw_window) {
+  if(dr && xctx->draw_window) {
     cairo_translate(xctx->cairo_ctx, x, y);
     if(flip && (rot == 0 || rot == 2)) cairo_scale(xctx->cairo_ctx, -scalex, scaley);
     else if(flip && (rot == 1 || rot == 3)) cairo_scale(xctx->cairo_ctx, scalex, -scaley);
@@ -2942,7 +3103,7 @@ void draw_image(int draw, xRect *r, double *x1, double *y1, double *x2, double *
     cairo_clip(xctx->cairo_ctx);
     cairo_paint_with_alpha(xctx->cairo_ctx, alpha);
   }
-  if(draw) {
+  if(dr) {
     cairo_restore(xctx->cairo_ctx);
     cairo_restore(xctx->cairo_save_ctx);
   }
@@ -2964,6 +3125,74 @@ static void draw_images_all(void)
   #endif
 }
 
+void svg_embedded_graph(FILE *fd, xRect *r, double rx1, double ry1, double rx2, double ry2)
+{
+  #if defined(__unix__) && defined(HAS_CAIRO)
+  char *ptr = NULL;
+  double x1, y1, x2, y2, w, h, rw, rh, scale;
+  char transform[150];
+  png_to_byte_closure_t closure;
+  cairo_surface_t *png_sfc;
+  int save_draw_window, save_draw_grid, rwi, rhi;
+  size_t olength;
+  const double max_size = 2000.0;
+
+  rw = fabs(rx2 -rx1);
+  rh = fabs(ry2 - ry1);
+  scale = 1.0;
+  if(rw > rh && rw > max_size) {
+    scale = max_size / rw;
+  } else if(rh > max_size) {
+    scale = max_size / rh;
+  }
+  rwi = (int) (rw * scale + 1.0);
+  rhi = (int) (rh * scale + 1.0);
+  save_restore_zoom(1);
+  set_viewport_size(rwi, rhi, 1.0);
+  zoom_box(rx1, ry1, rx2, ry2, 1.0);
+  resetwin(1, 1, 1, rwi, rhi);
+  save_draw_grid = tclgetboolvar("draw_grid");
+  tclsetvar("draw_grid", "0");
+  save_draw_window = xctx->draw_window;
+  xctx->draw_window=0;
+  xctx->draw_pixmap=1;
+  xctx->do_copy_area=0;
+  draw();
+  png_sfc = cairo_xlib_surface_create(display, xctx->save_pixmap, visual,
+               xctx->xrect[0].width, xctx->xrect[0].height);
+  closure.buffer = NULL;
+  closure.size = 0;
+  closure.pos = 0;
+  cairo_surface_write_to_png_stream(png_sfc, png_writer, &closure);
+  ptr = base64_encode(closure.buffer, closure.pos, &olength, 1);
+  my_free(1547, &closure.buffer);
+  cairo_surface_destroy(png_sfc);
+  xctx->draw_pixmap=1;
+  xctx->draw_window=save_draw_window;
+  xctx->do_copy_area=1;
+  tclsetboolvar("draw_grid", save_draw_grid);
+  save_restore_zoom(0);
+  resetwin(1, 1, 1, 0, 0);
+  change_linewidth(-1.);
+
+  x1=X_TO_SVG(rx1);
+  y1=Y_TO_SVG(ry1);
+  x2=X_TO_SVG(rx2);
+  y2=Y_TO_SVG(ry2);
+  h = fabs(y2 - y1);
+  w = fabs(x2 - x1);
+
+  my_snprintf(transform, S(transform), "transform=\"translate(%g,%g)\"", x1, y1);
+  if(ptr[0]) {
+    fprintf(fd, "<image x=\"%g\" y=\"%g\" width=\"%g\" height=\"%g\" %s "
+                "xlink:href=\"data:image/png;base64,%s\"/>\n",
+                0.0, 0.0, w, h, transform, ptr);
+  }
+  my_free(1546, &ptr);
+  #endif
+}
+
+
 void draw(void)
 {
  /* inst_ptr  and wire hash iterator 20171224 */
@@ -2974,16 +3203,15 @@ void draw(void)
  int c, i = 0;
  xSymbol *symptr;
  int textlayer;
- int show_hidden_texts = tclgetboolvar("show_hidden_texts");
-
+ 
  #if HAS_CAIRO==1
  const char *textfont;
-#ifndef __unix__
+ #ifndef __unix__
  clear_cairo_surface(xctx->cairo_save_ctx,
    xctx->xrect[0].x, xctx->xrect[0].y, xctx->xrect[0].width, xctx->xrect[0].height);
  clear_cairo_surface(xctx->cairo_ctx,
    xctx->xrect[0].x, xctx->xrect[0].y, xctx->xrect[0].width, xctx->xrect[0].height);
-#endif
+ #endif
  #endif
  if(xctx->no_draw) return;
  rebuild_selected_array();
@@ -3021,10 +3249,11 @@ void draw(void)
           if(xctx->enable_layer[c]) for(i=0;i<xctx->rects[c];i++) {
             xRect *r = &xctx->rect[c][i]; 
             #if HAS_CAIRO==1
-            if(c != GRIDLAYER || !(r->flags & (1 + 1024)) )  {
+            if(c != GRIDLAYER || !(r->flags & (1 + 1024)))
             #else
-            if(c != GRIDLAYER || !(r->flags & 1) )  {
+            if(c != GRIDLAYER || !(r->flags & 1) )
             #endif
+            {
               drawrect(c, ADD, r->x1, r->y1, r->x2, r->y2, r->dash);
               filledrect(c, ADD, r->x1, r->y1, r->x2, r->y2);
             }
@@ -3094,7 +3323,7 @@ void draw(void)
           for(i=0;i<xctx->texts;i++)
           {
             textlayer = xctx->text[i].layer;
-            if(!show_hidden_texts && (xctx->text[i].flags & HIDE_TEXT)) continue;
+            if(!xctx->show_hidden_texts && (xctx->text[i].flags & HIDE_TEXT)) continue;
             if(textlayer < 0 ||  textlayer >= cadlayers) textlayer = TEXTLAYER;
             dbg(1, "draw(): drawing string %d = %s\n",i, xctx->text[i].txt_ptr);
             #if HAS_CAIRO==1
@@ -3136,14 +3365,16 @@ void draw(void)
         }
     } /* !xctx->only_probes, 20110112 */
     draw_hilight_net(xctx->draw_window);
-    if(!xctx->draw_window) {
-      MyXCopyArea(display, xctx->save_pixmap, xctx->window, xctx->gctiled, xctx->xrect[0].x, xctx->xrect[0].y,
-         xctx->xrect[0].width, xctx->xrect[0].height, xctx->xrect[0].x, xctx->xrect[0].y);
+    if(xctx->do_copy_area) { /* this is zero only when doing png hardcopy to avoid video flickering */
+      if(!xctx->draw_window) {
+        MyXCopyArea(display, xctx->save_pixmap, xctx->window, xctx->gctiled, xctx->xrect[0].x, xctx->xrect[0].y,
+           xctx->xrect[0].width, xctx->xrect[0].height, xctx->xrect[0].x, xctx->xrect[0].y);
+      }
+      #if !defined(__unix__) && defined(HAS_CAIRO)
+      else 
+        my_cairo_fill(xctx->cairo_sfc, xctx->xrect[0].x, xctx->xrect[0].y, xctx->xrect[0].width, xctx->xrect[0].height);
+      #endif
     }
-#if !defined(__unix__) && defined(HAS_CAIRO)
-    else 
-      my_cairo_fill(xctx->cairo_sfc, xctx->xrect[0].x, xctx->xrect[0].y, xctx->xrect[0].width, xctx->xrect[0].height);
-#endif
     draw_selection(xctx->gc[SELLAYER], 0); /* 20181009 moved outside of cadlayers loop */
  } /* if(has_x) */
 }
@@ -3161,7 +3392,8 @@ int XSetTile(Display* display, GC gc, Pixmap s_pixmap)
 }
 #endif
 
-void MyXCopyArea(Display* display, Drawable src, Drawable dest, GC gc, int src_x, int src_y, unsigned int width, unsigned int height, int dest_x, int dest_y)
+void MyXCopyArea(Display* display, Drawable src, Drawable dest, GC gc, int src_x, int src_y,
+     unsigned int width, unsigned int height, int dest_x, int dest_y)
 {
   XCopyArea(display, src, dest, gc, src_x, src_y, width, height, dest_x, dest_y);
 #if !defined(__unix__)  && defined(HAS_CAIRO)

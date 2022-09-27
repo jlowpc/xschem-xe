@@ -172,6 +172,8 @@ void global_tedax_netlist(int global)  /* netlister driver */
 
  fprintf(fd, "end netlist\n");
 
+ /* warning if two symbols perfectly overlapped */
+ warning_overlapped_symbols();
  /* preserve current level instance flags before descending hierarchy for netlisting, restore later */
  stored_flags = my_calloc(149, xctx->instances, sizeof(unsigned int));
  for(i=0;i<xctx->instances;i++) stored_flags[i] = xctx->inst[i].color;
@@ -179,7 +181,7 @@ void global_tedax_netlist(int global)  /* netlister driver */
  if(global) /* was if(global) ... 20180901 no hierarchical tEDAx netlist for now */
  {
    int saved_hilight_nets = xctx->hilight_nets;
-   unselect_all();
+   unselect_all(1);
    remove_symbols(); /* 20161205 ensure all unused symbols purged before descending hierarchy */
    /* reload data without popping undo stack, this populates embedded symbols if any */
    xctx->pop_undo(2, 0);
@@ -204,7 +206,7 @@ void global_tedax_netlist(int global)  /* netlister driver */
    /*clear_drawing(); */
    my_strncpy(xctx->sch[xctx->currsch] , "", S(xctx->sch[xctx->currsch]));
    xctx->currsch--;
-   unselect_all();
+   unselect_all(1);
    xctx->pop_undo(0, 0);
    my_strncpy(xctx->current_name, rel_sym_path(xctx->sch[xctx->currsch]), S(xctx->current_name));
    prepare_netlist_structs(1); /* so 'lab=...' attributes for unnamed nets are set */
@@ -237,5 +239,4 @@ void global_tedax_netlist(int global)  /* netlister driver */
  if(!debug_var) xunlink(netl_filename);
  xctx->netlist_count = 0;
 }
-
 

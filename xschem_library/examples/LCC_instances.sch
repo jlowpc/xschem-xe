@@ -1,4 +1,5 @@
-v {xschem version=3.0.0 file_version=1.2 }
+v {xschem version=3.1.0 file_version=1.2
+}
 G {}
 K {}
 V {}
@@ -24,25 +25,27 @@ B 2 750 -490 1410 -260 {flags=graph
 y1 = -0.0578106
 y2 = 3.04806
 divy = 6
-x1=-0.0234922
-x2=3.11495
+x1=0
+x2=3
 divx=6
 node="a
 zz
 zzz"
 color="4 6 8"
-sweep="v(a)"}
+sweep="v(a)"
+dataset=-1}
 B 2 10 -930 570 -700 {flags=graph 
 y1 = -0.0578112
 y2 = 3.04806
 divy = 6
-x1=-0.0339625
-x2=3.10448
+x1=0
+x2=3
 divx=6
-node="a
-z"
+node="z
+a"
 color="4 6"
-sweep="v(z) v(a)"}
+sweep="v(a) v(z)"
+dataset=-1}
 P 4 5 560 -700 560 -510 1350 -510 1350 -700 560 -700 {dash=3}
 P 4 5 820 -920 820 -730 1350 -730 1350 -920 820 -920 {dash=3}
 T {These 2 instances are equivalent} 260 -310 0 0 0.4 0.4 {}

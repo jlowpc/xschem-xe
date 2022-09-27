@@ -526,12 +526,19 @@ static void wirecheck(int k)    /* recursive routine */
 
 void set_tcl_netlist_type(void)
 {
-    if(xctx->netlist_type == CAD_SPICE_NETLIST) tclsetvar("netlist_type", "spice");
-    else if(xctx->netlist_type == CAD_VERILOG_NETLIST) tclsetvar("netlist_type", "verilog");
-    else if(xctx->netlist_type == CAD_VHDL_NETLIST) tclsetvar("netlist_type", "vhdl");
-    else if(xctx->netlist_type == CAD_TEDAX_NETLIST) tclsetvar("netlist_type", "tedax");
-    else if(xctx->netlist_type == CAD_SYMBOL_ATTRS) tclsetvar("netlist_type", "symbol");
-    else tclsetvar("netlist_type", "unknown");
+    if(xctx->netlist_type == CAD_SPICE_NETLIST) {
+      tclsetvar("netlist_type", "spice");
+    }  else if(xctx->netlist_type == CAD_VERILOG_NETLIST) {
+      tclsetvar("netlist_type", "verilog");
+    } else if(xctx->netlist_type == CAD_VHDL_NETLIST) {
+      tclsetvar("netlist_type", "vhdl");
+    } else if(xctx->netlist_type == CAD_TEDAX_NETLIST) {
+      tclsetvar("netlist_type", "tedax");
+    } else if(xctx->netlist_type == CAD_SYMBOL_ATTRS) {
+      tclsetvar("netlist_type", "symbol");
+    } else {
+      tclsetvar("netlist_type", "unknown");
+    }
 }
 
 /* what==0 -> initialize  */
@@ -803,6 +810,7 @@ void prepare_netlist_structs(int for_netlist)
     } /* if(type && ... */
   } /* for(i=0;i<instances... */
 
+
   /* name nets that do not touch ipin opin alias instances */
   dbg(2, "prepare_netlist_structs(): naming nets that dont touch labels\n");
   get_unnamed_node(0,0,0); /*initializes node multiplicity data struct */
@@ -1033,7 +1041,6 @@ void prepare_netlist_structs(int for_netlist)
     xctx->prep_net_structs=1;
     xctx->prep_hi_structs=1;
   } else xctx->prep_hi_structs=1;
-
   my_free(835, &dir);
   my_free(836, &type);
   my_free(837, &sig_type);
@@ -1044,6 +1051,36 @@ void prepare_netlist_structs(int for_netlist)
   dbg(2, "prepare_netlist_structs(): returning\n");
   /* avoid below call: it in turn calls prepare_netlist_structs(), too many side effects */
   /* propagate_hilights(1, 0, XINSERT_NOREPLACE);*/
+}
+
+int warning_overlapped_symbols()
+{
+  int i;
+  Int_hashentry *table[HASHSIZE];
+  Int_hashentry *found;
+  char str[2048];
+  char s[512];
+
+  memset(table, 0, HASHSIZE * sizeof(Int_hashentry *));
+  for(i = 0; i < xctx->instances; i++) {
+    dbg(1, "instance:%s: %s\n", xctx->inst[i].instname, xctx->inst[i].name);
+    my_snprintf(s, S(s), "%g %g %g %g",
+       xctx->inst[i].xx1, xctx->inst[i].yy1, xctx->inst[i].xx2, xctx->inst[i].yy2);
+
+    dbg(1, "  bbox: %g %g %g %g\n", xctx->inst[i].xx1, xctx->inst[i].yy1, xctx->inst[i].xx2, xctx->inst[i].yy2);
+    dbg(1, "  s=%s\n", s);
+    found =  int_hash_lookup(table, s, i, XINSERT_NOREPLACE);
+    if(found) {
+      xctx->inst[i].color = -PINLAYER;
+      xctx->hilight_nets=1;
+      my_snprintf(str, S(str), "Warning: overlapped instance found: %s(%s) -> %s\n",
+            xctx->inst[i].instname, xctx->inst[i].name, xctx->inst[found->value].instname);
+      statusmsg(str,2);
+      tcleval("show_infotext"); /* critical error: force ERC window showing */
+    }
+  }
+  int_hash_free(table);
+  return 0;
 }
 
 int sym_vs_sch_pins()

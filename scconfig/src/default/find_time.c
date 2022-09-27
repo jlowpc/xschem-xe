@@ -73,6 +73,123 @@ int find_time_Sleep(const char *name, int logdepth, int fatal)
 	return try_fail(logdepth, "libs/time/Sleep");
 }
 
+static int test_clock_gettime(const char *name_, int logdepth, int fatal, const char *print_name, const char *src_name)
+{
+	char name[64], test_c[512], *test_c_in =
+		NL "#include <stdio.h>"
+		NL "int main() {"
+		NL "	struct timespec now;"
+		NL 	"	if (clock_gettime(%s, &now) == 0)"
+		NL "		puts(\"OK\");"
+		NL "	return 0;"
+		NL "}"
+		NL;
+	int len = strlen(name_);
+
+	/* truncate "/ *" from the end of the node name */
+	memcpy(name, name_, len);
+	if (name[len-1] == '*')
+		name[len-2] = '\0';
+
+	sprintf(test_c, test_c_in, src_name);
+
+	require("cc/cc", logdepth, fatal);
+
+	report("Checking for %s... ", name);
+	logprintf(logdepth, "test_clock_gettime: trying to find %s...\n", name);
+	logdepth++;
+
+	if (try_icl(logdepth, name, test_c, "#include <time.h>", NULL, NULL))
+		return 0;
+	return try_fail(logdepth, name);
+}
+
+int find_time_clock_gettime(const char *name, int logdepth, int fatal)
+{
+	return test_clock_gettime(name, logdepth, fatal, "clock_gettime", "CLOCK_MONOTONIC");
+}
+
+int find_time_CLOCK_MONOTONIC_RAW(const char *name, int logdepth, int fatal)
+{
+	/* this is Linux-specific */
+	return test_clock_gettime(name, logdepth, fatal, "clock_gettime", "CLOCK_MONOTONIC_RAW");
+}
+
+
+
+int find_time_mach_absolute_time(const char *name, int logdepth, int fatal)
+{
+	char *test_c =
+		NL "#include <stdio.h>"
+		NL "int main() {"
+		NL "	uint64_t now = mach_absolute_time();"
+		NL "	if (now > 1)"
+		NL "		puts(\"OK\");"
+		NL "	return 0;"
+		NL "}"
+		NL;
+
+	require("cc/cc", logdepth, fatal);
+
+	report("Checking for mach_absolute_time()... ");
+	logprintf(logdepth, "find_time_mach_absolute_time: trying to find mach_absolute_time...\n");
+	logdepth++;
+
+	if (try_icl(logdepth, "libs/time/mach_absolute_time", test_c, "#include <mach/mach_time.h>", NULL, NULL))
+		return 0;
+	return try_fail(logdepth, "libs/time/mach_absolute_time");
+}
+
+int find_time_QueryPerformanceCounter(const char *name, int logdepth, int fatal)
+{
+	char *test_c =
+		NL "#include <stdio.h>"
+		NL "int main() {"
+		NL "	LARGE_INTEGER tmp;"
+		NL "	BOOL res;"
+		NL "	res = QueryPerformanceCounter(&tmp);"
+		NL "	if (res && (tmp.QuadPart > 1))"
+		NL "		puts(\"OK\");"
+		NL "	return 0;"
+		NL "}"
+		NL;
+
+	require("cc/cc", logdepth, fatal);
+
+	report("Checking for QueryPerformanceCounter()... ");
+	logprintf(logdepth, "find_time_QueryPerformanceCounter: trying to find QueryPerformanceCounter...\n");
+	logdepth++;
+
+	if (try_icl(logdepth, "libs/time/QueryPerformanceCounter", test_c, "#include <windows.h>", NULL, NULL))
+		return 0;
+	return try_fail(logdepth, "libs/time/QueryPerformanceCounter");
+}
+
+int find_time_timeGetTime(const char *name, int logdepth, int fatal)
+{
+	char *test_c =
+		NL "#include <stdio.h>"
+		NL "int main() {"
+		NL "	DWORD now;"
+		NL "	now = timeGetTime();"
+		NL "	if (now > 1)"
+		NL "		puts(\"OK\");"
+		NL "	return 0;"
+		NL "}"
+		NL;
+
+	require("cc/cc", logdepth, fatal);
+
+	report("Checking for timeGetTime()... ");
+	logprintf(logdepth, "find_time_timeGetTime: trying to find timeGetTime...\n");
+	logdepth++;
+
+	if (try_icl(logdepth, "libs/time/timeGetTime", test_c, "#include <windows.h>", NULL, "-lwinmm"))
+		return 0;
+	return try_fail(logdepth, "libs/time/timeGetTime");
+}
+
+
 int find_time_gettimeofday(const char *name, int logdepth, int fatal)
 {
 	char *test_c =

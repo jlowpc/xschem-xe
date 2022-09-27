@@ -36,6 +36,12 @@ unsigned int str_hash(const char *tok)
   return hash;
 }
 
+static char *find_bracket(char *s)
+{
+ while(*s!='['&& *s!='\0') s++;
+ return s;
+}
+
 /* 20180926 added token_size */
 /* what:
  * 0,XINSERT : lookup token and insert xctx->inst[value].instname in hash table
@@ -46,15 +52,18 @@ unsigned int str_hash(const char *tok)
  * 1,XDELETE : delete token entry, return NULL
  * 2,XLOOKUP : lookup only
  */
-static Inst_hashentry *inst_hash_lookup(char *token, int value, int what, size_t token_size)
+static Inst_hashentry *inst_hash_lookup(char *token, int value, int what)
 {
   unsigned int hashcode;
   unsigned int idx;
   Inst_hashentry *entry, *saveptr, **preventry;
   int s;
+  char *token_base = NULL;
 
   if(token==NULL) return NULL;
-  hashcode=str_hash(token);
+  my_strdup(1519, &token_base, token);
+  *(find_bracket(token_base)) = '\0';
+  hashcode=str_hash(token_base);
   idx=hashcode % HASHSIZE;
   entry=xctx->inst_table[idx];
   preventry=&xctx->inst_table[idx];
@@ -65,15 +74,17 @@ static Inst_hashentry *inst_hash_lookup(char *token, int value, int what, size_t
         entry=(Inst_hashentry *) my_malloc(425, s);
         *preventry=entry;
         entry->next=NULL;
+        entry->token = NULL;
+        my_strdup(1248, &entry->token, token_base);
         entry->hash=hashcode;
-        entry->token = xctx->inst[value].instname; /* do not strdup, store pointer */
         entry->value = value;
       }
       return NULL; /* token was not in hash */
     }
-    if( entry->hash==hashcode && !strcmp(token,entry->token) ) { /* found a matching token */
+    if( entry->hash==hashcode && !strcmp(token_base, entry->token) ) { /* found a matching token */
       if(what == XDELETE) {              /* remove token from the hash table ... */
         saveptr=entry->next;
+        my_free(1249, &entry->token);
         my_free(969, &entry);
         *preventry=saveptr;
         return NULL;
@@ -86,6 +97,7 @@ static Inst_hashentry *inst_hash_lookup(char *token, int value, int what, size_t
     preventry=&entry->next; /* descend into the list. */
     entry = entry->next;
   }
+  my_free(1545, &token_base);
 }
 
 static void inst_hash_free_entry(Inst_hashentry *entry)
@@ -111,25 +123,39 @@ static void inst_hash_free(void) /* remove the whole hash table  */
 
 void hash_all_names(int n)
 {
-  int i;
+  int i, has_fmt_attr;
+  char *upinst = NULL, *type = NULL;
+  const char *fmt_attr = NULL;
   inst_hash_free();
+  fmt_attr = xctx->format ? xctx->format : "format";
   for(i=0; i<xctx->instances; i++) {
-    /* if(i == n) continue; */
-    inst_hash_lookup(xctx->inst[i].instname, i, XINSERT, strlen(xctx->inst[i].instname));
+    has_fmt_attr = get_tok_value((xctx->inst[i].ptr + xctx->sym)->prop_ptr, fmt_attr, 2)[0] ? 1 : 0;
+    if(xctx->inst[i].instname && xctx->inst[i].instname[0]) {
+      my_strdup(1526, &type,(xctx->inst[i].ptr+ xctx->sym)->type);
+      if(!type || !has_fmt_attr || IS_LABEL_SH_OR_PIN(type) ) continue;
+      my_strdup(1254, &upinst, xctx->inst[i].instname);
+      strtoupper(upinst);
+      /* if(i == n) continue; */
+      inst_hash_lookup(upinst, i, XINSERT);
+    }
   }
+  my_free(1255, &upinst);
+  my_free(1527, &type);
 }
 
 const char *tcl_hook2(char **res)
 {
   static char *result = NULL;
   static const char *empty="";
+  char *unescaped_res;
 
   if(res == NULL || *res == NULL) {
     my_free(1285, &result);
     return empty;
   }
   if(strstr(*res, "tcleval(") == *res) {
-    tclvareval("tclpropeval2 {", *res, "}" , NULL);
+    unescaped_res = str_replace(*res, "\\}", "}");
+    tclvareval("tclpropeval2 {", unescaped_res, "}" , NULL);
     my_strdup2(1286, &result, tclresult());
     return result;
   } else {
@@ -148,11 +174,13 @@ void clear_instance_hash()
  */
 void check_unique_names(int rename)
 {
-  int i, first = 1;
+  int i, first = 1, has_fmt_attr;
   int newpropcnt = 0;
   char *tmp = NULL;
   Inst_hashentry *entry;
   int big =  xctx->wires> 2000 || xctx->instances > 2000;
+  char *upinst = NULL, *type = NULL;
+  const char *fmt_attr = NULL;
   /* int save_draw; */
 
   if(xctx->hilight_nets) {
@@ -171,10 +199,15 @@ void check_unique_names(int rename)
   }
   inst_hash_free();
   first = 1;
+  fmt_attr = xctx->format ? xctx->format : "format";
   for(i=0;i<xctx->instances;i++) {
     if(xctx->inst[i].instname && xctx->inst[i].instname[0]) {
-      if( (entry = inst_hash_lookup(xctx->inst[i].instname, i, XINSERT_NOREPLACE, 
-         strlen(xctx->inst[i].instname)) ) && entry->value != i) {
+      has_fmt_attr = get_tok_value((xctx->inst[i].ptr + xctx->sym)->prop_ptr, fmt_attr, 2)[0] ? 1 : 0;
+      my_strdup(1261, &type,(xctx->inst[i].ptr+ xctx->sym)->type);
+      if(!type || !has_fmt_attr || IS_LABEL_SH_OR_PIN(type) ) continue;
+      my_strdup(1246, &upinst, xctx->inst[i].instname);
+      strtoupper(upinst);
+      if( (entry = inst_hash_lookup(upinst, i, XINSERT_NOREPLACE) ) && entry->value != i) {
         xctx->inst[i].color = -PINLAYER;
         xctx->hilight_nets=1;
         if(rename == 1) {
@@ -192,13 +225,17 @@ void check_unique_names(int rename)
       if( (xctx->inst[i].color != -10000) && rename) {
         my_strdup(511, &tmp, xctx->inst[i].prop_ptr);
         new_prop_string(i, tmp, newpropcnt++, 0);
-        inst_hash_lookup(xctx->inst[i].instname, i, XINSERT, strlen(xctx->inst[i].instname));
+        my_strdup(1259, &upinst, xctx->inst[i].instname);
+        strtoupper(upinst);
+        inst_hash_lookup(upinst, i, XINSERT);
         symbol_bbox(i, &xctx->inst[i].x1, &xctx->inst[i].y1, &xctx->inst[i].x2, &xctx->inst[i].y2);
         bbox(ADD, xctx->inst[i].x1, xctx->inst[i].y1, xctx->inst[i].x2, xctx->inst[i].y2);
         my_free(972, &tmp);
       }
     }
   } /* for(i...) */
+  my_free(1247, &upinst);
+  my_free(1263, &type);
   if(rename == 1 && xctx->hilight_nets) {
     bbox(SET,0.0,0.0,0.0,0.0);
     draw();
@@ -488,6 +525,7 @@ const char *get_tok_value(const char *s,const char *tok, int with_quotes)
 }
 
 /* return template string excluding name=... and token=value where token listed in extra */
+/* drop spiceprefix attribute */
 const char *get_sym_template(char *s,char *extra)
 {
  static char *result=NULL;
@@ -508,12 +546,14 @@ const char *get_sym_template(char *s,char *extra)
 /* 2: eat backslashes */
 /* 3: 1+2  :) */
 
+ dbg(1, "get_sym_template(): s=%s, extra=%s\n", s, extra);
  if(s==NULL) {
    my_free(978, &result);
    return "";
  }
  l = strlen(s);
  STR_ALLOC(&result, l+1, &sizeres);
+ result[0] = '\0';
  sizetok = sizeval = CADCHUNKALLOC;
  my_realloc(438, &value,sizeval);
  my_realloc(439, &token,sizetok);
@@ -542,7 +582,7 @@ const char *get_sym_template(char *s,char *extra)
 
   } else if(state==TOK_END) {
     value[value_pos]='\0';
-    if((!extra || !strstr(extra, token)) && strcmp(token,"name")) {
+    if((!extra || !strstr(extra, token)) && strcmp(token,"name") && strcmp(token,"spiceprefix")) {
       memcpy(result+result_pos, value, value_pos+1);
       result_pos+=value_pos;
     }
@@ -553,7 +593,7 @@ const char *get_sym_template(char *s,char *extra)
   } else if(state==TOK_ENDTOK || state==TOK_SEP) {
     if(token_pos) {
       token[token_pos]='\0';
-      if((!extra || !strstr(extra, token)) && strcmp(token,"name")) {
+      if((!extra || !strstr(extra, token)) && strcmp(token,"name") && strcmp(token,"spiceprefix")) {
         memcpy(result+result_pos, token, token_pos+1);
         result_pos+=token_pos;
         result[result_pos++] = (char)c;
@@ -568,12 +608,6 @@ const char *get_sym_template(char *s,char *extra)
  my_free(979, &value);
  my_free(980, &token);
  return result;
-}
-
-static const char *find_bracket(const char *s)
-{
- while(*s!='['&& *s!='\0') s++;
- return s;
 }
 
 /* caller is responsible for freeing up storage for return value
@@ -626,10 +660,11 @@ void new_prop_string(int i, const char *old_prop, int fast, int dis_uniq_names)
  int q,qq;
  static int last[1 << 8 * sizeof(char) ]; /* safe to keep with multiple schematics, reset on 1st invocation */
  size_t old_name_len;
- size_t new_name_len;
  int n;
  char *old_name_base = NULL;
  Inst_hashentry *entry;
+ char *up_old_name = NULL;
+ char *up_new_name = NULL;
 
  dbg(1, "new_prop_string(): i=%d, old_prop=%s, fast=%d\n", i, old_prop, fast);
  if(!fast) { /* on 1st invocation of new_prop_string */
@@ -642,6 +677,8 @@ void new_prop_string(int i, const char *old_prop, int fast, int dis_uniq_names)
   return;
  }
  old_name_len = my_strdup(444, &old_name,get_tok_value(old_prop,"name",0) ); /* added old_name_len */
+ my_strdup(1256, &up_old_name, old_name);
+ strtoupper(up_old_name);
 
  if(old_name==NULL)
  {
@@ -651,12 +688,12 @@ void new_prop_string(int i, const char *old_prop, int fast, int dis_uniq_names)
  }
  xctx->prefix=old_name[0];
  /* don't change old_prop if name does not conflict. */
- if(dis_uniq_names || (entry = inst_hash_lookup(old_name, i, XLOOKUP, old_name_len))==NULL ||
+ if(dis_uniq_names || (entry = inst_hash_lookup(up_old_name, i, XLOOKUP))==NULL ||
      entry->value == i)
  {
   my_strdup(447, &xctx->inst[i].prop_ptr, old_prop);
   my_strdup2(90, &xctx->inst[i].instname, old_name);
-  inst_hash_lookup(old_name, i, XINSERT, old_name_len);
+  inst_hash_lookup(up_old_name, i, XINSERT);
   my_free(985, &old_name);
   return;
  }
@@ -668,11 +705,13 @@ void new_prop_string(int i, const char *old_prop, int fast, int dis_uniq_names)
  for(q=qq;;q++)
  {
    if(n >= 1 ) {
-     new_name_len = my_snprintf(new_name, old_name_len + 40, "%s%d%s", old_name_base, q, tmp);
+     my_snprintf(new_name, old_name_len + 40, "%s%d%s", old_name_base, q, tmp);
    } else { /* goes here if weird name set for example to name=[3:0] or name=12 */
-     new_name_len = my_snprintf(new_name, old_name_len + 40, "%c%d%s", xctx->prefix,q, tmp);
+     my_snprintf(new_name, old_name_len + 40, "%c%d%s", xctx->prefix,q, tmp);
    }
-   if((entry = inst_hash_lookup(new_name, i, XLOOKUP, new_name_len)) == NULL || entry->value == i)
+   my_strdup(1258, &up_new_name, new_name);
+   strtoupper(up_new_name);
+   if((entry = inst_hash_lookup(up_new_name, i, XLOOKUP)) == NULL || entry->value == i)
    {
     last[(int)xctx->prefix]=q+1;
     break;
@@ -683,10 +722,12 @@ void new_prop_string(int i, const char *old_prop, int fast, int dis_uniq_names)
  if(strcmp(tmp2, old_prop) ) {
    my_strdup(449, &xctx->inst[i].prop_ptr, tmp2);
    my_strdup2(235, &xctx->inst[i].instname, new_name);
-   inst_hash_lookup(new_name, i, XINSERT, new_name_len); /* reinsert in hash */
+   inst_hash_lookup(up_new_name, i, XINSERT); /* reinsert in hash */
  }
  my_free(987, &old_name);
+ my_free(1257, &up_old_name);
  my_free(988, &new_name);
+ my_free(1260, &up_new_name);
 }
 
 
@@ -737,15 +778,17 @@ static void print_vhdl_primitive(FILE *fd, int inst) /* netlist  primitives, 200
  int escape=0;
  int no_of_pins=0;
  /* Inst_hashentry *ptr; */
+ char *fmt_attr = NULL;
 
  my_strdup(513, &template, (xctx->inst[inst].ptr + xctx->sym)->templ);
  my_strdup(514, &name, xctx->inst[inst].instname);
+ fmt_attr = xctx->format ? xctx->format : "vhdl_format";
  if(!name) my_strdup(50, &name, get_tok_value(template, "name", 0));
 
  /* allow format string override in instance */
- my_strdup(1000, &format, get_tok_value(xctx->inst[inst].prop_ptr,"vhdl_format",2));
+ my_strdup(1000, &format, get_tok_value(xctx->inst[inst].prop_ptr, fmt_attr, 2));
  if(!format || !format[0])
-   my_strdup(516, &format, get_tok_value((xctx->inst[inst].ptr + xctx->sym)->prop_ptr,"vhdl_format",2));
+   my_strdup(516, &format, get_tok_value((xctx->inst[inst].ptr + xctx->sym)->prop_ptr, fmt_attr, 2));
  if((name==NULL) || (format==NULL) ) {
    my_free(1047, &template);
    my_free(1048, &name);
@@ -823,11 +866,21 @@ static void print_vhdl_primitive(FILE *fd, int inst) /* netlist  primitives, 200
    {
      fputs(get_cell_w_ext(xctx->inst[inst].name, 0), fd);
    }
-   else if(strcmp(token,"@schname")==0) /* of course schname must not be present  */
+   else if(strcmp(token,"@schname_ext")==0) /* of course schname must not be present  */
                                         /* in hash table */
    {
      /* fputs(xctx->sch[xctx->currsch],fd); */
      fputs(xctx->current_name, fd);
+   }
+   else if(strcmp(token,"@schname")==0)
+   {
+     fputs(get_cell(xctx->current_name, 0), fd);
+   }
+   else if(strcmp(token,"@topschname")==0) /* of course topschname must not be present in attributes */
+   {
+     const char *topsch;
+     topsch = get_trailing_path(xctx->sch[0], 0, 1);
+     fputs(topsch, fd);
    }
    else if(strcmp(token,"@pinlist")==0) /* of course pinlist must not be present  */
                                         /* in hash table. print multiplicity */
@@ -1145,8 +1198,10 @@ void print_vhdl_element(FILE *fd, int inst)
   int quote=0;
   int escape=0;
   xRect *pinptr;
+  const char *fmt_attr = NULL;
 
-  if(get_tok_value((xctx->inst[inst].ptr + xctx->sym)->prop_ptr,"vhdl_format", 2)[0] != '\0') {
+  fmt_attr = xctx->format ? xctx->format : "vhdl_format";
+  if(get_tok_value((xctx->inst[inst].ptr + xctx->sym)->prop_ptr, fmt_attr, 2)[0] != '\0') {
    print_vhdl_primitive(fd, inst);
    return;
   }
@@ -1489,109 +1544,19 @@ void print_verilog_param(FILE *fd, int symbol)
 void print_tedax_subckt(FILE *fd, int symbol)
 {
  int i=0, multip;
- const char *str_ptr=NULL;
- register int c, state=TOK_BEGIN, space;
- char *format=NULL,*s, *token=NULL;
- int pin_number;
- size_t sizetok=0;
- size_t token_pos=0;
- int escape=0;
  int no_of_pins=0;
+ const char *str_ptr=NULL;
 
- my_strdup(460, &format, get_tok_value(xctx->sym[symbol].prop_ptr,"format",2));
- if( format==NULL ) {
-   my_free(473, &format);
-   return; /* no format */
- }
- no_of_pins= xctx->sym[symbol].rects[PINLAYER];
- s=format;
+  no_of_pins= xctx->sym[symbol].rects[PINLAYER];
 
- /* begin parsing format string */
- while(1)
- {
-  c=*s++;
-  if(c=='\\') {
-    escape=1;
-    c=*s++;
-  }
-  else escape=0;
-  if(c=='\n' && escape ) c=*s++; /* 20171030 eat escaped newlines */
-  space=SPACE(c);
-  if( state==TOK_BEGIN && (c=='@' || c=='%')  && !escape) state=TOK_TOKEN;
-  else if(state==TOK_TOKEN && token_pos > 1 &&
-     (
-       ( (space  || c == '%' || c == '@') && !escape ) ||
-       ( (!space && c != '%' && c != '@') && escape  )
-     )
-    ) {
-    state = TOK_SEP;
-  }
-
-  STR_ALLOC(&token, token_pos, &sizetok);
-  if(state==TOK_TOKEN) {
-    token[token_pos++]=(char)c;
-  }
-  else if(state==TOK_SEP)                    /* got a token */
+  for(i=0;i<no_of_pins;i++)
   {
-   token[token_pos]='\0';
-   token_pos=0;
-   if(!strcmp(token, "@name")) {
-     /* do nothing */
-   }
-   else if(strcmp(token, "@symname")==0) {
-     break ;
-   }
-   else if(strcmp(token, "@pinlist")==0) {
-    for(i=0;i<no_of_pins;i++)
-    {
-      if(strcmp(get_tok_value(xctx->sym[symbol].rect[PINLAYER][i].prop_ptr,"spice_ignore",0), "true")) {
-        str_ptr=
-          expandlabel(get_tok_value(xctx->sym[symbol].rect[PINLAYER][i].prop_ptr,"name",0), &multip);
-        fprintf(fd, "%s ", str_ptr);
-      }
+    if(strcmp(get_tok_value(xctx->sym[symbol].rect[PINLAYER][i].prop_ptr,"spice_ignore",0), "true")) {
+      str_ptr=
+        expandlabel(get_tok_value(xctx->sym[symbol].rect[PINLAYER][i].prop_ptr,"name",0), &multip);
+      fprintf(fd, "%s ", str_ptr);
     }
-   }
-   else if(token[0]=='@' && token[1]=='@') {    /* recognize single pins 15112003 */
-     char *prop=NULL;
-     for(i = 0; i<no_of_pins; i++) {
-       prop = xctx->sym[symbol].rect[PINLAYER][i].prop_ptr;
-       if(!strcmp(get_tok_value(prop, "name",0), token + 2)) break;
-     }
-     if(i<no_of_pins && strcmp(get_tok_value(prop,"spice_ignore",0), "true")) {
-       fprintf(fd, "%s ", expandlabel(token+2, &multip));
-     }
-   }
-   /* reference by pin number instead of pin name, allows faster lookup of the attached net name 20180911 */
-   else if(token[0]=='@' && token[1]=='#') {
-     pin_number = atoi(token+2);
-     if(pin_number < no_of_pins) {
-       if(strcmp(get_tok_value(xctx->sym[symbol].rect[PINLAYER][pin_number].prop_ptr,"spice_ignore",0), "true")) {
-       str_ptr =  get_tok_value(xctx->sym[symbol].rect[PINLAYER][pin_number].prop_ptr,"name",0);
-       fprintf(fd, "%s ",  expandlabel(str_ptr, &multip));
-       }
-     }
-   }
-   /* this will print the other @parameters, usually "extra" nodes so they will be in the order
-    * specified by the format string. The 'extra' attribute is no more used to print extra nodes
-    * in spice_block_netlist(). */
-   else if(token[0] == '@') { /* given previous if() conditions not followed by @ or # */
-     fprintf(fd, "%s ",  token + 1);
-   }
-   if(c!='%' && c!='@' && c!='\0' ) fputc(c,fd);
-   if(c == '@' || c =='%') s--;
-   state=TOK_BEGIN;
   }
-                 /* 20151028 dont print escaping backslashes */
-  else if(state==TOK_BEGIN && c!='\0') {
-   /* do nothing */
-  }
-  if(c=='\0')
-  {
-   break ;
-  }
- }
- my_free(474, &format);
- my_free(478, &token);
 }
 
 
@@ -1600,16 +1565,27 @@ void print_spice_subckt(FILE *fd, int symbol)
  int i=0, multip;
  const char *str_ptr=NULL;
  register int c, state=TOK_BEGIN, space;
- char *format=NULL,*s, *token=NULL;
+ char *format=NULL, *format1 = NULL, *s, *token=NULL;
  int pin_number;
  size_t sizetok=0;
  size_t token_pos=0;
  int escape=0;
  int no_of_pins=0;
+ const char *tclres, *fmt_attr = NULL;
 
- my_strdup(103, &format, get_tok_value(xctx->sym[symbol].prop_ptr,"format",2));
+ fmt_attr = xctx->format ? xctx->format : "format";
+ my_strdup(103, &format1, get_tok_value(xctx->sym[symbol].prop_ptr, fmt_attr, 2));
+ dbg(1, "print_spice_subckt(): format1=%s\n", format1);
+ if(format1 && strstr(format1, "tcleval(") == format1) {
+    tclres = tcl_hook2(&format1);
+    if(!strcmp(tclres, "?\n")) my_strdup(1529, &format,  format1 + 8);
+    else my_strdup(455, &format,  tclres);
+ } else {
+   my_strdup(1530, &format,  format1);
+ }
+ if(format1) my_free(1544, &format1);
+ dbg(1, "print_spice_subckt(): format=%s\n", format);
  if( format==NULL ) {
-   my_free(1012, &format);
    return; /* no format */
  }
  no_of_pins= xctx->sym[symbol].rects[PINLAYER];
@@ -1670,7 +1646,7 @@ void print_spice_subckt(FILE *fd, int symbol)
        if(!strcmp(get_tok_value(prop, "name",0), token + 2)) break;
      }
      if(i<no_of_pins && strcmp(get_tok_value(prop,"spice_ignore",0), "true")) {
-       fprintf(fd, "%s ", expandlabel(token+2, &multip));
+       fprintf(fd, "%s", expandlabel(token+2, &multip));
      }
    }
    /* reference by pin number instead of pin name, allows faster lookup of the attached net name 20180911 */
@@ -1702,6 +1678,7 @@ void print_spice_subckt(FILE *fd, int symbol)
    break ;
   }
  }
+ my_free(1072, &format1);
  my_free(1013, &format);
  my_free(1014, &token);
 }
@@ -1714,7 +1691,7 @@ int print_spice_element(FILE *fd, int inst)
   register int c, state=TOK_BEGIN, space;
   char *template=NULL,*format=NULL,*s, *name=NULL,  *token=NULL;
   const char *lab, *value = NULL;
-  char *translatedvalue = NULL;
+  /* char *translatedvalue = NULL; */
   int pin_number;
   size_t sizetok=0;
   size_t token_pos=0;
@@ -1723,7 +1700,8 @@ int print_spice_element(FILE *fd, int inst)
   char *result = NULL;
   size_t result_pos = 0;
   size_t size = 0;
-  char *spiceprefixtag = NULL;
+  char *spiceprefixtag = NULL; 
+  const char *fmt_attr = NULL;
 
   size = CADCHUNKALLOC;
   my_realloc(1211, &result, size);
@@ -1734,9 +1712,10 @@ int print_spice_element(FILE *fd, int inst)
   if (!name) my_strdup(43, &name, get_tok_value(template, "name", 0));
 
   /* allow format string override in instance */
-  my_strdup(470, &format, get_tok_value(xctx->inst[inst].prop_ptr,"format",2));
+  fmt_attr = xctx->format ? xctx->format : "format";
+  my_strdup(470, &format, get_tok_value(xctx->inst[inst].prop_ptr, fmt_attr, 2));
   if(!format || !format[0])
-     my_strdup(486, &format, get_tok_value((xctx->inst[inst].ptr + xctx->sym)->prop_ptr,"format",2));
+     my_strdup(486, &format, get_tok_value((xctx->inst[inst].ptr + xctx->sym)->prop_ptr, fmt_attr, 2));
 
   if ((name==NULL) || (format==NULL)) {
     my_free(1015, &template);
@@ -1859,14 +1838,30 @@ int print_spice_element(FILE *fd, int inst)
         result_pos += my_snprintf(result + result_pos, tmp, "%s", s);
         /* fputs(s,fd); */
       }
-      else if(strcmp(token,"@schname")==0) /* of course schname must not be present in attributes */
+      else if(strcmp(token,"@topschname")==0) /* of course topschname must not be present in attributes */
+      {
+        const char *topsch;
+        topsch = get_trailing_path(xctx->sch[0], 0, 1);
+        tmp = strlen(topsch) + 100 ; /* always make room for some extra chars 
+                                                * so 1-char writes to result do not need reallocs */
+        STR_ALLOC(&result, tmp + result_pos, &size);
+        result_pos += my_snprintf(result + result_pos, tmp, "%s", topsch);
+      }
+      else if(strcmp(token,"@schname_ext")==0) /* of course schname must not be present in attributes */
       {
         tmp = strlen(xctx->current_name) +100 ; /* always make room for some extra chars 
                                                 * so 1-char writes to result do not need reallocs */
         STR_ALLOC(&result, tmp + result_pos, &size);
         result_pos += my_snprintf(result + result_pos, tmp, "%s", xctx->current_name);
         /* fputs(xctx->current_name, fd); */
-
+      }
+      else if(strcmp(token,"@schname")==0) /* of course schname must not be present in attributes */
+      {
+        const char *schname = get_cell(xctx->current_name, 0);
+        tmp = strlen(schname) +100 ; /* always make room for some extra chars 
+                                      * so 1-char writes to result do not need reallocs */
+        STR_ALLOC(&result, tmp + result_pos, &size);
+        result_pos += my_snprintf(result + result_pos, tmp, "%s", schname);
       }
       else if(strcmp(token,"@pinlist")==0) /* of course pinlist must not be present in attributes */
                                            /* print multiplicity */
@@ -1962,9 +1957,9 @@ int print_spice_element(FILE *fd, int inst)
 
   /* do one level of substitutions to resolve @params and equations*/
   if(result && strstr(result, "tcleval(")== result) {
-    dbg(1, "print_spice_element(): before translate()result=%s\n", result);
+    dbg(1, "print_spice_element(): before translate() result=%s\n", result);
     my_strdup(22, &result, translate(inst, result));
-    dbg(1, "print_spice_element(): after  translate()result=%s\n", result);
+    dbg(1, "print_spice_element(): after  translate() result=%s\n", result);
   }
 
 
@@ -1986,14 +1981,14 @@ int print_spice_element(FILE *fd, int inst)
   #endif
 
 
-  fprintf(fd, "%s", result);
+  if(result) fprintf(fd, "%s", result);
   my_free(1019, &template);
   my_free(1020, &format);
   my_free(1021, &name);
   my_free(1022, &token);
   my_free(1194, &result);
   my_free(298, &spiceprefixtag);
-  my_free(455, &translatedvalue);
+  /* my_free(455, &translatedvalue); */
   return 1;
 }
 
@@ -2185,11 +2180,22 @@ void print_tedax_element(FILE *fd, int inst)
     {
       fputs(get_cell_w_ext(xctx->inst[inst].name, 0), fd);
     }
-    else if(strcmp(token,"@schname")==0)        /* of course schname must not be present  */
-                                        /* in hash table */
+    else if(strcmp(token,"@schname_ext")==0)        /* of course schname must not be present  */
+                                                /* in hash table */
     {
      /* fputs(xctx->sch[xctx->currsch],fd); */
      fputs(xctx->current_name, fd);
+    }
+    else if(strcmp(token,"@schname")==0)        /* of course schname must not be present  */
+                                                /* in hash table */
+    {
+     fputs(get_cell(xctx->current_name, 0), fd);
+    }
+    else if(strcmp(token,"@topschname")==0) /* of course topschname must not be present in attributes */
+    {
+      const char *topsch;
+      topsch = get_trailing_path(xctx->sch[0], 0, 1);
+      fputs(topsch, fd);
     }
     else if(strcmp(token,"@pinlist")==0)        /* of course pinlist must not be present  */
                                         /* in hash table. print multiplicity */
@@ -2312,6 +2318,7 @@ static void print_verilog_primitive(FILE *fd, int inst) /* netlist switch level 
   int escape=0;
   int no_of_pins=0;
   /* Inst_hashentry *ptr; */
+  const char *fmt_attr = NULL;
 
   my_strdup(519, &template,
       (xctx->inst[inst].ptr + xctx->sym)->templ);
@@ -2319,10 +2326,11 @@ static void print_verilog_primitive(FILE *fd, int inst) /* netlist switch level 
   my_strdup(520, &name,xctx->inst[inst].instname);
   if(!name) my_strdup(4, &name, get_tok_value(template, "name", 0));
 
+  fmt_attr = xctx->format ? xctx->format : "verilog_format";
   /* allow format string override in instance */
-  my_strdup(1186, &format, get_tok_value(xctx->inst[inst].prop_ptr,"verilog_format",2));
+  my_strdup(1186, &format, get_tok_value(xctx->inst[inst].prop_ptr, fmt_attr, 2));
   if(!format || !format[0])
-    my_strdup(522, &format, get_tok_value((xctx->inst[inst].ptr + xctx->sym)->prop_ptr,"verilog_format",2));
+    my_strdup(522, &format, get_tok_value((xctx->inst[inst].ptr + xctx->sym)->prop_ptr, fmt_attr, 2));
   if((name==NULL) || (format==NULL) ) {
     my_free(1054, &template);
     my_free(1055, &name);
@@ -2400,11 +2408,22 @@ static void print_verilog_primitive(FILE *fd, int inst) /* netlist switch level 
     {
       fputs(get_cell_w_ext(xctx->inst[inst].name, 0), fd);
     }
-    else if(strcmp(token,"@schname")==0) /* of course schname must not be present  */
+    else if(strcmp(token,"@schname_ext")==0) /* of course schname must not be present  */
                                          /* in hash table */
     {
       /* fputs(xctx->sch[xctx->currsch],fd); */
       fputs(xctx->current_name, fd);
+    }
+    else if(strcmp(token,"@schname")==0) /* of course schname must not be present  */
+                                         /* in hash table */
+    {
+      fputs(get_cell(xctx->current_name, 0), fd);
+    }
+    else if(strcmp(token,"@topschname")==0) /* of course topschname must not be present in attributes */
+    {
+      const char *topsch;
+      topsch = get_trailing_path(xctx->sch[0], 0, 1);
+      fputs(topsch, fd);
     }
     else if(strcmp(token,"@pinlist")==0) /* of course pinlist must not be present  */
                                          /* in hash table. print multiplicity */
@@ -2501,8 +2520,10 @@ void print_verilog_element(FILE *fd, int inst)
  size_t sizetok=0, sizeval=0;
  size_t token_pos=0, value_pos=0;
  int quote=0;
+ const char *fmt_attr = NULL;
 
- if(get_tok_value((xctx->inst[inst].ptr + xctx->sym)->prop_ptr,"verilog_format",2)[0] != '\0') {
+ fmt_attr = xctx->format ? xctx->format : "verilog_format";
+ if(get_tok_value((xctx->inst[inst].ptr + xctx->sym)->prop_ptr, fmt_attr, 2)[0] != '\0') {
   print_verilog_primitive(fd, inst);
   return;
  }
@@ -2634,6 +2655,12 @@ const char *net_name(int i, int j, int *multip, int hash_prefix_unnamed_net, int
  char *pinname = NULL;
 
 
+ /* if merging a ngspice_probe.sym element it contains a @@p token, 
+  * so translate calls net_name, but we are placing the merged objects, 
+  * no net name is assigned yet */
+ if(!xctx->inst[i].node) {
+   return expandlabel("", multip);
+ }
  if(xctx->inst[i].node && xctx->inst[i].node[j] == NULL)
  {
    my_strdup(1508, &pinname, get_tok_value( sym->rect[PINLAYER][j].prop_ptr,"name",0));
@@ -2787,8 +2814,8 @@ const char *translate(int inst, const char* s)
  int s_pnetname;
  int level;
  Lcc *lcc;
- char *value1 = NULL, *value2 = NULL;
-
+ char *value1 = NULL;
+ int sim_is_xyce;
 
  s_pnetname = tclgetboolvar("show_pin_net_names");
  sp_prefix = tclgetboolvar("spiceprefix");
@@ -2797,6 +2824,7 @@ const char *translate(int inst, const char* s)
    return empty;
  }
 
+ sim_is_xyce = tcleval("sim_is_xyce")[0] == '1' ? 1 : 0;
  level = xctx->currsch;
  lcc = xctx->hier_attr;
  size=CADCHUNKALLOC;
@@ -2962,18 +2990,214 @@ const char *translate(int inst, const char* s)
       memcpy(result+result_pos, date, tmp+1);
       result_pos+=tmp;
     }
-   } else if(strcmp(token,"@schname")==0) {
+   } else if(strcmp(token,"@schname_ext")==0) {
      /* tmp=strlen(xctx->sch[xctx->currsch]);*/
      tmp = strlen(xctx->current_name);
      STR_ALLOC(&result, tmp + result_pos, &size);
      /* memcpy(result+result_pos,xctx->sch[xctx->currsch], tmp+1); */
      memcpy(result+result_pos, xctx->current_name, tmp+1);
      result_pos+=tmp;
+   } else if(strcmp(token,"@schname")==0) {
+     const char *schname = get_cell(xctx->current_name, 0);
+     tmp = strlen(schname);
+     STR_ALLOC(&result, tmp + result_pos, &size);
+     memcpy(result+result_pos, schname, tmp+1);
+     result_pos+=tmp;
+   } else if(strcmp(token,"@topschname")==0)  {
+      const char *topsch;
+      topsch = get_trailing_path(xctx->sch[0], 0, 1);
+      tmp = strlen(topsch);
+      STR_ALLOC(&result, tmp + result_pos, &size);
+      memcpy(result+result_pos, topsch, tmp+1);
+      result_pos+=tmp;
    } else if(strcmp(token,"@prop_ptr")==0 && xctx->inst[inst].prop_ptr) {
      tmp=strlen(xctx->inst[inst].prop_ptr);
      STR_ALLOC(&result, tmp + result_pos, &size);
      memcpy(result+result_pos,xctx->inst[inst].prop_ptr, tmp+1);
      result_pos+=tmp;
+   }
+   else if(strcmp(token,"@spice_get_voltage")==0 )
+   {
+     int start_level; /* hierarchy level where waves were loaded */
+     if((start_level = sch_waves_loaded()) >= 0 && xctx->graph_annotate_p>=0) {
+       int multip;
+       int no_of_pins= (xctx->inst[inst].ptr + xctx->sym)->rects[PINLAYER];
+       if(no_of_pins == 1) {
+         char *fqnet = NULL;
+         const char *path =  xctx->sch_path[xctx->currsch] + 1;
+         const char *net;
+         size_t len;
+         int idx;
+         double val;
+         char valstr[120];
+         if(path) {
+           int skip = 0;
+           /* skip path components that are above the level where raw file was loaded */
+           while(*path && skip < start_level) {
+             if(*path == '.') skip++;
+             path++;
+           }
+           prepare_netlist_structs(0);
+           net = net_name(inst,0, &multip, 0, 0);
+           len = strlen(path) + strlen(net) + 1;
+           dbg(1, "net=%s\n", net);
+           fqnet = my_malloc(1548, len);
+           my_snprintf(fqnet, len, "%s%s", path, net);
+           strtolower(fqnet);
+           dbg(1, "translate(): fqnet=%s start_level=%d\n", fqnet, start_level);
+           idx = get_raw_index(fqnet);
+           if(idx >= 0) {
+             val = xctx->graph_values[idx][xctx->graph_annotate_p];
+           }
+           if(idx < 0) {
+              my_snprintf(valstr, S(valstr), "");
+           } else if( fabs(val) < 1.0e-5) {
+             my_snprintf(valstr, S(valstr), "0");
+           } else if( fabs(val) < 1.0e-3 && val != 0.0) {
+             my_snprintf(valstr, S(valstr), "%.4e", val);
+           } else {
+             my_snprintf(valstr, S(valstr), "%.4g", val);
+           }
+           len = strlen(valstr);
+           if(len) {
+             STR_ALLOC(&result, len + result_pos, &size);
+             memcpy(result+result_pos, valstr, len+1);
+             result_pos += len;
+           }
+           dbg(1, "inst %d, net=%s, fqnet=%s idx=%d valstr=%s\n", inst,  net, fqnet, idx, valstr);
+           my_free(1549, &fqnet);
+         }
+       }
+     }
+   }
+   else if(strcmp(token,"@spice_get_diff_voltage")==0 )
+   {
+     int start_level; /* hierarchy level where waves were loaded */
+     if((start_level = sch_waves_loaded()) >= 0 && xctx->graph_annotate_p>=0) {
+       int multip;
+       int no_of_pins= (xctx->inst[inst].ptr + xctx->sym)->rects[PINLAYER];
+       if(no_of_pins == 2) {
+         char *fqnet1 = NULL, *fqnet2 = NULL;
+         const char *path =  xctx->sch_path[xctx->currsch] + 1;
+         const char *net1, *net2;
+         size_t len;
+         int idx1, idx2;
+         double val = 0.0, val1 = 0.0, val2 = 0.0;
+         char valstr[120];
+         if(path) {
+           int skip = 0;
+           /* skip path components that are above the level where raw file was loaded */
+           while(*path && skip < start_level) {
+             if(*path == '.') skip++;
+             path++;
+           }
+           prepare_netlist_structs(0);
+           net1 = net_name(inst, 0, &multip, 0, 0);
+           len = strlen(path) + strlen(net1) + 1;
+           dbg(1, "net1=%s\n", net1);
+           fqnet1 = my_malloc(1552, len);
+           my_snprintf(fqnet1, len, "%s%s", path, net1);
+           strtolower(fqnet1);
+           net2 = net_name(inst, 1, &multip, 0, 0);
+           len = strlen(path) + strlen(net2) + 1;
+           dbg(1, "net2=%s\n", net2);
+           fqnet2 = my_malloc(1554, len);
+           my_snprintf(fqnet2, len, "%s%s", path, net2);
+           strtolower(fqnet2);
+           dbg(1, "translate(): fqnet1=%s start_level=%d\n", fqnet1, start_level);
+           dbg(1, "translate(): fqnet2=%s start_level=%d\n", fqnet2, start_level);
+           idx1 = get_raw_index(fqnet1);
+           if(idx1 >= 0) {
+             val1 = xctx->graph_values[idx1][xctx->graph_annotate_p];
+           }
+           idx2 = get_raw_index(fqnet2);
+           if(idx2 >= 0) {
+             val2 = xctx->graph_values[idx2][xctx->graph_annotate_p];
+           }
+           val = val1 - val2;
+           if(idx1 < 0 || idx2 < 0) {
+              my_snprintf(valstr, S(valstr), "");
+           } else if( fabs(val) < 1.0e-5) {
+             my_snprintf(valstr, S(valstr), "0");
+           } else if( fabs(val) < 1.0e-3 && val != 0.0) {
+             my_snprintf(valstr, S(valstr), "%.4e", val);
+           } else {
+             my_snprintf(valstr, S(valstr), "%.4g", val);
+           }
+           len = strlen(valstr);
+           if(len) {
+             STR_ALLOC(&result, len + result_pos, &size);
+             memcpy(result+result_pos, valstr, len+1);
+             result_pos += len;
+           }
+           dbg(1, "inst %d, fqnet1=%s fqnet2=%s idx1=%d idx2=%d, val1=%g val2=%g valstr=%s\n",
+               inst, fqnet1, fqnet2, idx1, idx2, val1, val2, valstr);
+           my_free(1553, &fqnet1);
+           my_free(1555, &fqnet2);
+         }
+       }
+     }
+   }
+   else if(strcmp(token,"@spice_get_current")==0 )
+   {
+     int start_level; /* hierarchy level where waves were loaded */
+     if((start_level = sch_waves_loaded()) >= 0 && xctx->graph_annotate_p>=0) {
+       char *fqdev = NULL;
+       const char *path =  xctx->sch_path[xctx->currsch] + 1;
+       char *dev = NULL;
+       size_t len;
+       int idx;
+       double val;
+       char valstr[120];
+       if(path) {
+         int skip = 0;
+         /* skip path components that are above the level where raw file was loaded */
+         while(*path && skip < start_level) {
+           if(*path == '.') skip++;
+           path++;
+         }
+         my_strdup2(1550, &dev, xctx->inst[inst].instname);
+         strtolower(dev);
+         len = strlen(path) + strlen(dev) + 11; /* some extra chars for i(..) wrapper */
+         dbg(1, "dev=%s\n", dev);
+         fqdev = my_malloc(1556, len);
+         if(!sim_is_xyce) {
+           int prefix=dev[0];
+           int vsource = (prefix == 'v') || (prefix == 'e');
+           if(path[0]) {
+             if(vsource) my_snprintf(fqdev, len, "i(%c.%s%s)", prefix, path, dev);
+             else my_snprintf(fqdev, len, "i(@%c.%s%s)", prefix, path, dev);
+           } else {
+             if(vsource) my_snprintf(fqdev, len, "i(%s)", dev);
+             else my_snprintf(fqdev, len, "i(@%s)", dev);
+           }
+         } else {
+           my_snprintf(fqdev, len, "i(%s%s)", path, dev);
+         }
+         dbg(1, "fqdev=%s\n", fqdev);
+         strtolower(fqdev);
+         idx = get_raw_index(fqdev);
+         if(idx >= 0) {
+           val = xctx->graph_values[idx][xctx->graph_annotate_p];
+         }
+         if(idx < 0) {
+            my_snprintf(valstr, S(valstr), "");
+         } else if( fabs(val) < 1.0e-3 && val != 0.0) {
+           my_snprintf(valstr, S(valstr), "%.4e", val);
+         } else {
+           my_snprintf(valstr, S(valstr), "%.4g", val);
+         }
+         len = strlen(valstr);
+         if(len) {
+           STR_ALLOC(&result, len + result_pos, &size);
+           memcpy(result+result_pos, valstr, len+1);
+           result_pos += len;
+         }
+         dbg(1, "inst %d, dev=%s, fqdev=%s idx=%d valstr=%s\n", inst,  dev, fqdev, idx, valstr);
+         my_free(1557, &fqdev);
+         my_free(1551, &dev);
+       }
+     }
    }
    else if(strcmp(token,"@schvhdlprop")==0 && xctx->schvhdlprop)
    {
@@ -3034,10 +3258,10 @@ const char *translate(int inst, const char* s)
        my_strdup2(1521, &value1, value);
        /* recursive substitution of value using parent level prop_str attributes */
        while(i > 0) {
-         my_strdup2(1522, &value2, get_tok_value(lcc[i-1].prop_ptr, value1, 0));
-         if(xctx->tok_size && value2[0]) {
-           dbg(1, "value2=%s\n", value2);
-           my_strdup2(1523, &value1, value2);
+         const char *tok = get_tok_value(lcc[i-1].prop_ptr, value1, 0);
+         if(xctx->tok_size && tok[0]) {
+           dbg(1, "tok=%s\n", tok);
+           my_strdup2(1523, &value1, tok);
          }
          dbg(1, "2 translate(): lcc[%d].prop_ptr=%s, value1=%s\n", i-1, lcc[i-1].prop_ptr, value1);
          i--;
@@ -3049,8 +3273,6 @@ const char *translate(int inst, const char* s)
        memcpy(result+result_pos, value1, tmp+1);
        result_pos+=tmp;
        my_free(1524, &value1);
-       my_free(1525, &value2);
-
      }
    }
    token_pos = 0;

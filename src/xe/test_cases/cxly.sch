@@ -1,8 +1,9 @@
 v {xschem version=3.1.0 file_version=1.2 }
 G {}
 K {type=subcircuit
-format="@name @pinlist @symname vcc=@vcc vss=@vss"
-template="name=x1 vcc=vcc vss=vss"}
+format="@name @pinlist @@vcc @@vss @symname"
+template="name=x1 vcc=vcc vss=vss"
+extra="vcc vss"}
 V {}
 S {}
 E {}
@@ -32,7 +33,7 @@ C {yxt/yxt_title.sym} 160 0 0 0 {name=l1 author="Joanne Low"}
 C {devices/ipin.sym} 130 -160 0 0 {name=p1 lab=in}
 C {devices/ipin.sym} 130 -120 0 0 {name=p2 lab=clk}
 C {devices/opin.sym} 560 -140 0 0 {name=p3 lab=out}
-C {sky130_stdcells/inv_1.sym} 190 -120 0 0 {name=x2 VGND=VGND VNB=VNB VPB=VPB VPWR=VPWR prefix=sky130_fd_sc_hd__ }
+C {sky130_stdcells/inv_1.sym} 190 -120 0 0 {name=x2 VGND=vss VNB=vss VPB=vcc VPWR=vcc prefix=sky130_fd_sc_hd__ }
 C {yxt/latch.sym} 500 -70 0 0 {name=x1 vcc=vcc vss=vss}
 C {sky130_stdcells/nand2_1.sym} 330 -140 0 0 {name=x3 VGND=vss VNB=vss VPB=vcc VPWR=vcc prefix=sky130_fd_sc_hd__ }
 C {devices/lab_wire.sym} 460 -140 0 0 {name=l2 sig_type=std_logic lab=d_clk}
