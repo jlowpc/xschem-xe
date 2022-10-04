@@ -690,7 +690,7 @@ typedef struct {
   /* graph box (smaller than rect container due to margins) */
   double x1, y1, x2, y2, w, h;
   double gx1, gy1, gx2, gy2, gw, gh;
-  double master_gx1, master_gx2, master_gw;
+  double master_gx1, master_gx2, master_gw, master_cx;
   /* y area range for digital graphs */
   double ypos1, ypos2, posh;
   double marginx; /* will be recalculated later */
@@ -770,6 +770,7 @@ typedef struct {
   int need_reb_sel_arr;
   int lastsel;
   int maxsel;
+  int hash_size; /* used in str_hash_lookup and int_hash_lookup */
   Selected *sel_array;
   int prep_net_structs;
   int prep_hi_structs;
@@ -1291,7 +1292,7 @@ extern const char *translate(int inst, const char* s);
 extern const char* translate2(Lcc *lcc, int level, char* s);
 extern void print_tedax_element(FILE *fd, int inst);
 extern int print_spice_element(FILE *fd, int inst);
-extern void print_spice_subckt(FILE *fd, int symbol);
+extern void print_spice_subckt_nodes(FILE *fd, int symbol);
 extern void print_tedax_subckt(FILE *fd, int symbol);
 extern void print_vhdl_element(FILE *fd, int inst);
 extern void print_verilog_element(FILE *fd, int inst);
@@ -1305,6 +1306,7 @@ extern char *my_strtok_r(char *str, const char *delim, const char *quote, char *
 extern int my_strncpy(char *d, const char *s, size_t n);
 extern int my_strcasecmp(const char *s1, const char *s2);
 extern double mylog10(double x);
+extern double mylog(double x);
 extern int my_strncasecmp(const char *s1, const char *s2, size_t n);
 extern char* strtolower(char* s);
 extern char* strtoupper(char* s);
@@ -1317,6 +1319,7 @@ extern size_t my_mstrcat(int id, char **str, const char *append_str, ...);
 extern char *my_itoa(int i);
 extern double atof_spice(const char *s);
 extern char *dtoa(double i);
+extern char *dtoa_eng(double i);
 extern char *dtoa_prec(double i);
 extern double my_round(double a);
 extern double round_to_n_digits(double x, int n);
@@ -1380,7 +1383,7 @@ extern void redraw_hilights(int clear);
 extern void set_tcl_netlist_type(void);
 extern void prepare_netlist_structs(int for_netlist);
 extern int compare_schematics(const char *filename);
-extern int warning_overlapped_symbols();
+extern int warning_overlapped_symbols(int sel);
 extern void free_simdata(void);
 extern void delete_netlist_structs(void);
 extern void delete_inst_node(int i);

@@ -266,7 +266,6 @@ proc execute_fileevent {id} {
   }
 }
 
-
 proc execute_wait {status args} {
   global execute 
   set id [eval execute $status $args]
@@ -346,6 +345,33 @@ proc sframe {container} {
   return $container.f.scrl
 }
 #### /Scrollable frame
+
+
+## convert number to engineering form
+proc to_eng {i} {
+  set suffix {}
+  set absi [expr {abs($i)}]
+
+  if       {$absi == 0.0}  { set mult 1    ; set suffix {}
+  } elseif {$absi >=1e12}  { set mult 1e-12; set suffix T
+  } elseif {$absi >=1e9}   { set mult 1e-9 ; set suffix G
+  } elseif {$absi >=1e6}   { set mult 1e-6 ; set suffix M
+  } elseif {$absi >=1e3}   { set mult 1e-3 ; set suffix k
+  } elseif {$absi >=0.1}   { set mult 1    ; set suffix {}
+  } elseif {$absi >=1e-3}  { set mult 1e3  ; set suffix m
+  } elseif {$absi >=1e-6}  { set mult 1e6  ; set suffix u
+  } elseif {$absi >=1e-9}  { set mult 1e9  ; set suffix n
+  } elseif {$absi >=1e-12} { set mult 1e12 ; set suffix p
+  } elseif {$absi >=1e-15} { set mult 1e15 ; set suffix f
+  } else                   { set mult 1e18 ; set suffix a}
+  if {$suffix ne {}} {
+    set i [expr {$i * $mult}]
+    set s [format  {%.5g%s} $i $suffix]
+  } else {
+    set s [format  {%.5g} $i]
+  }
+  return $s
+}
 
 ## evaluate expression. if expression has errors or does not evaluate return expression as is
 proc ev {s} {
@@ -583,9 +609,15 @@ proc load_recent_file {} {
             -icon warning -parent . -type ok
       }
     }
+    foreach i [info vars c_toolbar::c_t_*] {
+      if {[set ${i}(w)] != $c_toolbar::c_t(w) ||
+          [set ${i}(n)] != $c_toolbar::c_t(n)} {
+         array unset $i
+      }
+    }
     set hash $c_toolbar::c_t(hash)
     if { [info exists c_toolbar::c_t_$hash]} {
-      array set c_toolbar::c_t [array get c_toolbar::c_t_$hash]
+        array set c_toolbar::c_t [array get c_toolbar::c_t_$hash]
     }
   }
 }
@@ -661,6 +693,125 @@ proc setup_recent_menu { {in_new_window 0} { topwin {} } } {
     }
   }
 }
+
+
+
+## ngspice:: raw file access functions
+namespace eval ngspice {
+  # Create a variable inside the namespace
+  variable ngspice_data
+  variable op_point_read
+}
+
+proc ngspice::get_current {n} {
+  global path graph_raw_level
+  set path [string range [xschem get sch_path] 1 end]
+  # skip hierarchy components above the level where raw file has been loaded. 
+  # node path names to look up in raw file begin from there.
+  set skip 0
+  while { $skip < $graph_raw_level } { 
+    regsub {^[^.]*\.} $path {} path
+    incr skip
+  }
+  set n [string tolower $n]
+  set prefix [string range $n 0 0]
+  #puts "ngspice::get_current: path=$path n=$n"
+  set n $path$n
+  if { ![sim_is_xyce] } {
+    if {$path ne {} } {
+      set n $prefix.$n
+    }
+    if { ![regexp $prefix {[ve]}] } {
+      set n @$n
+    }
+  }
+  set n i($n)
+  #puts "ngspice::get_current --> $n"
+  set err [catch {set ngspice::ngspice_data($n)} res]
+  if { $err } {
+    set res {?}
+  }
+  # puts "$n --> $res"
+  return $res
+}
+
+proc ngspice::get_diff_voltage {n m} {
+  global path graph_raw_level
+  set path [string range [xschem get sch_path] 1 end]
+  # skip hierarchy components above the level where raw file has been loaded. 
+  # node path names to look up in raw file begin from there.
+  set skip 0
+  while { $skip < $graph_raw_level } {
+    regsub {^[^.]*\.} $path {} path
+    incr skip
+  }
+  set n [string tolower $n]
+  set m [string tolower $m]
+  set nn $path$n
+  set mm $path$m
+  set errn [catch {set ngspice::ngspice_data($nn)} resn]
+  if {$errn} {
+    set nn v(${path}${n})
+    set errn [catch {set ngspice::ngspice_data($nn)} resn]
+  }
+  set errm [catch {set ngspice::ngspice_data($mm)} resm]
+  if {$errm} {
+    set mm v(${path}${m})
+    set errm [catch {set ngspice::ngspice_data($mm)} resm]
+  }
+  if { $errn  || $errm} {
+    set res {?}
+  }
+  return $res
+}
+
+
+proc ngspice::get_voltage {n} {
+  global path graph_raw_level
+  set path [string range [xschem get sch_path] 1 end]
+  # skip hierarchy components above the level where raw file has been loaded. 
+  # node path names to look up in raw file begin from there.
+  set skip 0
+  while { $skip < $graph_raw_level } { 
+    regsub {^[^.]*\.} $path {} path
+    incr skip
+  }
+  set n [string tolower $n]
+  # puts "ngspice::get_voltage: path=$path n=$n"
+  set node $path$n
+  set err [catch {set ngspice::ngspice_data($node)} res]
+  if {$err} {
+    set node v(${path}${n})
+    # puts "ngspice::get_voltage: trying $node"
+    set err [catch {set ngspice::ngspice_data($node)} res]
+  }
+  if { $err } {
+    set res {?}
+  }
+  return $res
+}
+
+proc ngspice::get_node {n} {
+  global path graph_raw_level
+  set path [string range [xschem get sch_path] 1 end]
+  # skip hierarchy components above the level where raw file has been loaded. 
+  # node path names to look up in raw file begin from there.
+  set skip 0
+  while { $skip < $graph_raw_level } { 
+    regsub {^[^.]*\.} $path {} path
+    incr skip
+  }
+  set n [string tolower $n]
+  # n may contain $path, so substitute its value
+  set n [ subst -nocommand $n ]
+  set err [catch {set ngspice::ngspice_data($n)} res]
+  if { $err } { 
+    set res {?}
+  }
+  return $res
+}
+
+## end ngspice:: functions
 
 proc sim_is_ngspice {} {
   global sim
@@ -1708,7 +1859,7 @@ proc graph_edit_properties {n} {
   button .graphdialog.center.left.add -text Add -command {
     graph_add_nodes; graph_update_nodelist
   }
-  listbox .graphdialog.center.left.list1 -width 20 -height 10 -selectmode extended \
+  listbox .graphdialog.center.left.list1 -width 20 -height 5 -selectmode extended \
      -yscrollcommand {.graphdialog.center.left.yscroll set} \
      -xscrollcommand {.graphdialog.center.left.xscroll set}
   scrollbar .graphdialog.center.left.yscroll -command {.graphdialog.center.left.list1 yview}
@@ -1717,13 +1868,13 @@ proc graph_edit_properties {n} {
   grid .graphdialog.center.left.list1 - .graphdialog.center.left.yscroll -sticky nsew
   grid .graphdialog.center.left.xscroll - -sticky nsew
   grid rowconfig .graphdialog.center.left 0 -weight 0
-  grid rowconfig .graphdialog.center.left 1 -weight 1 -minsize 100
+  grid rowconfig .graphdialog.center.left 1 -weight 1 -minsize 2c
   grid columnconfig .graphdialog.center.left 0 -weight 1
   grid columnconfig .graphdialog.center.left 1 -weight 1
 
   # center right frame
   label .graphdialog.center.right.lab1 -text {Signals in graph}
-  text .graphdialog.center.right.text1 -wrap none -width 50 -height 10 -bg grey70 -fg black \
+  text .graphdialog.center.right.text1 -wrap none -width 50 -height 5 -bg grey70 -fg black \
      -insertbackground grey40 -exportselection 1 \
      -yscrollcommand {.graphdialog.center.right.yscroll set} \
      -xscrollcommand {.graphdialog.center.right.xscroll set}
@@ -1734,7 +1885,7 @@ proc graph_edit_properties {n} {
   grid .graphdialog.center.right.text1 - .graphdialog.center.right.yscroll -sticky nsew
   grid .graphdialog.center.right.xscroll - -sticky nsew
   grid rowconfig .graphdialog.center.right 0 -weight 0
-  grid rowconfig .graphdialog.center.right 1 -weight 1 -minsize 100
+  grid rowconfig .graphdialog.center.right 1 -weight 1 -minsize 3c
   grid columnconfig .graphdialog.center.right 0 -weight 1
   grid columnconfig .graphdialog.center.right 1 -weight 1
 
@@ -1796,14 +1947,14 @@ proc graph_edit_properties {n} {
 
   # top2 frame
   label .graphdialog.top2.labunitx -text {X units}
-  spinbox .graphdialog.top2.unitx -values {p n u m 1 k M G} -width 2 \
+  spinbox .graphdialog.top2.unitx -values {f p n u m 1 k M G T} -width 2 \
    -command {
       xschem setprop rect 2 $graph_selected unitx [.graphdialog.top2.unitx get]
       xschem draw_graph $graph_selected
     }
 
   label .graphdialog.top2.labunity -text {  Y units}
-  spinbox .graphdialog.top2.unity -values {p n u m 1 k M G} -width 2 \
+  spinbox .graphdialog.top2.unity -values {f p n u m 1 k M G T} -width 2 \
    -command {
       xschem setprop rect 2 $graph_selected unity [.graphdialog.top2.unity get]
       xschem draw_graph $graph_selected
@@ -2120,7 +2271,7 @@ proc is_xschem_file {f} {
   return $ret
 }
 
-
+# "xschem hash_string" in scheduler.c is faster
 proc hash_string {s} {
   set hash 5381
   set len [string length $s]
@@ -2136,22 +2287,17 @@ proc hash_string {s} {
 namespace eval c_toolbar {
   # Create a variable inside the namespace
   variable c_t
-  set c_t(w) .load.recent
-  set c_t(hash) [hash_string $XSCHEM_LIBRARY_PATH]
-  
-  proc create {} {
-    variable c_t 
-    if { ![info exists c_t(n)]} {
-      set c_t(n) 30
-      set c_t(top) 0
-      for {set i 0} {$i < $c_t(n)} {incr i} {
-        set c_t($i,text) {}
-        set c_t($i,command) {}
-        set c_t($i,file) {}
-      }
-    }
+  variable i
+  set c_t(w) .load.l.recent
+  set c_t(hash) [xschem hash_string $XSCHEM_LIBRARY_PATH]
+  set c_t(n) 25
+  set c_t(top) 0
+  for {set i 0} {$i < $c_t(n)} {incr i} {
+    set c_t($i,text) {}
+    set c_t($i,command) {}
+    set c_t($i,file) {}
   }
-
+  
   proc cleanup {} {
     variable c_t 
     if {![info exists c_t(n)]} return
@@ -2186,7 +2332,6 @@ namespace eval c_toolbar {
   proc display {} {
     variable c_t
     if { [winfo exists $c_t(w)]} {
-      create
       set w $c_t(w)
       set n $c_t(n)
       cleanup
@@ -2195,11 +2340,11 @@ namespace eval c_toolbar {
         destroy $w.b$i
       }
       set i $c_t(top)
-      button $w.title -text Recent -pady 0 -padx 0 -width 13 -state disabled -disabledforeground black \
+      button $w.title -text Recent -pady 0 -padx 0 -width 7 -state disabled -disabledforeground black \
         -background grey60 -highlightthickness 0 -borderwidth 0 -font {TkDefaultFont 12 bold}
       pack $w.title -side top -fill x
       while {1} {
-        button $w.b$i -text $c_t($i,text)  -pady 0 -padx 0 -command $c_t($i,command) -width 13
+        button $w.b$i -text $c_t($i,text)  -pady 0 -padx 0 -command $c_t($i,command) -width 7
         pack $w.b$i -side top -fill x
         set i [expr {($i + 1) % $n}]
         if { $i == $c_t(top) } break
@@ -2209,7 +2354,6 @@ namespace eval c_toolbar {
 
   proc add {f} {
     variable c_t
-    create
     for {set i 0} {$i < $c_t(n)} {incr i} {
       if {  $c_t($i,file) eq $f } { return 0}
     }
@@ -2217,10 +2361,7 @@ namespace eval c_toolbar {
     set ret 1
     set i [expr { ($c_t(top)-1) % $c_t(n) } ];# last element
     set c_t($i,file) $f
-    set c_t($i,command) "
-      xschem abort_operation
-      xschem place_symbol {$f}
-    "
+    set c_t($i,command) "xschem abort_operation; myload_display_preview {$f}; xschem place_symbol {$f} "
     set c_t($i,text)  [file tail [file rootname $f]]
     set c_t(top) $i
     if {$ret} {write_recent_file}
@@ -2298,12 +2439,14 @@ proc myload_set_home {dir} {
 }
 
 proc setglob {dir} {
-      global globfilter myload_files2
+      global myload_globfilter myload_files2
       set myload_files2 [lsort [glob -nocomplain -directory $dir -tails -type d .* *]]
-      if { $globfilter eq {*}} {
-        set myload_files2 ${myload_files2}\ [lsort [glob -nocomplain -directory $dir -tails -type {f} .* $globfilter]]
+      if { $myload_globfilter eq {*}} {
+        set myload_files2 ${myload_files2}\ [lsort [
+           glob -nocomplain -directory $dir -tails -type {f} .* $myload_globfilter]]
       } else {
-        set myload_files2 ${myload_files2}\ [lsort [glob -nocomplain -directory $dir -tails -type {f} $globfilter]]
+        set myload_files2 ${myload_files2}\ [lsort [
+           glob -nocomplain -directory $dir -tails -type {f} $myload_globfilter]]
       }
 }
 
@@ -2351,8 +2494,8 @@ proc myload_getresult {loadfile confirm_overwrt} {
         }
       }
     }
-    set myload_type [is_xschem_file "$myload_dir1/$myload_retval"]
-    if { $myload_type eq {0}  } {
+    set type [is_xschem_file "$myload_dir1/$myload_retval"]
+    if { $type eq {0}  } {
       set answer [
         tk_messageBox -message "$myload_dir1/$myload_retval does not seem to be an xschem file...\nContinue?" \
          -icon warning -parent [xschem get topwindow] -type yesno]
@@ -2362,7 +2505,7 @@ proc myload_getresult {loadfile confirm_overwrt} {
       } else {
         return "$myload_dir1/$myload_retval"
       }
-    } elseif { $myload_type ne {SYMBOL} && ($myload_ext eq {.sym}) } {
+    } elseif { $type ne {SYMBOL} && ($myload_ext eq {*.sym}) } {
       set answer [
         tk_messageBox -message "$myload_dir1/$myload_retval does not seem to be a SYMBOL file...\nContinue?" \
            -icon warning -parent [xschem get topwindow] -type yesno]
@@ -2380,6 +2523,22 @@ proc myload_getresult {loadfile confirm_overwrt} {
   }
 }
 
+proc myload_display_preview {f} {
+  set type [is_xschem_file $f]
+  if { $type ne {0}  } {
+    ### update
+    if { [winfo exists .load] } {
+      .load.l.paneright.draw configure -background {}
+      xschem preview_window draw .load.l.paneright.draw "$f"
+      bind .load.l.paneright.draw <Expose> [subst {xschem preview_window draw .load.l.paneright.draw "$f"}]
+      
+    }
+  } else {
+    bind .load.l.paneright.draw <Expose> {}
+    .load.l.paneright.draw configure -background white
+  }
+}
+
 # global_initdir: name of global variable containing the initial directory
 # loadfile: set to 0 if calling for saving instead of loading a file
 #           set to 2 for non blocking operation (symbol insertion)
@@ -2389,16 +2548,16 @@ proc myload_getresult {loadfile confirm_overwrt} {
 proc load_file_dialog {{msg {}} {ext {}} {global_initdir {INITIALINSTDIR}} 
      {loadfile {1}} {confirm_overwrt {1}} {initialf {}}} {
   global myload_index1 myload_files2 myload_files1 myload_retval myload_dir1 pathlist OS
-  global myload_default_geometry myload_sash_pos myload_yview tcl_version globfilter myload_dir2
-  global save_initialfile myload_loadfile myload_ext
+  global myload_default_geometry myload_sash_pos myload_yview tcl_version myload_globfilter myload_dir2
+  global myload_save_initialfile myload_loadfile myload_ext
 
   if { [winfo exists .load] } {
     .load.buttons_bot.cancel invoke
   }
   set myload_loadfile $loadfile
   set myload_ext $ext
-  set save_initialfile $initialf
-  set globfilter *
+  set myload_globfilter $ext
+  set myload_save_initialfile $initialf
   set myload_retval {} 
   upvar #0 $global_initdir initdir
   if { $loadfile != 2} {xschem set semaphore [expr {[xschem get semaphore] +1}]}
@@ -2410,8 +2569,8 @@ proc load_file_dialog {{msg {}} {ext {}} {global_initdir {INITIALINSTDIR}}
     set myload_index1 0
   }
   set_ne myload_files2 {}
-  if { $loadfile == 2} {frame .load.recent}
-  panedwindow  .load.l -orient horizontal
+  panedwindow  .load.l -orient horizontal -height 8c
+  if { $loadfile == 2} {frame .load.l.recent}
   frame .load.l.paneleft
   eval [subst {listbox .load.l.paneleft.list -listvariable myload_files1 -width 20 -height 12 \
     -yscrollcommand ".load.l.paneleft.yscroll set" -selectmode browse \
@@ -2432,14 +2591,14 @@ proc load_file_dialog {{msg {}} {ext {}} {global_initdir {INITIALINSTDIR}}
     if { $myload_sel ne {} } {
       set myload_dir1 [abs_sym_path [.load.l.paneleft.list get $myload_sel]]
       set myload_index1 $myload_sel
-      set globfilter *
-      if {$save_initialfile eq {}} {.load.buttons_bot.entry delete 0 end}
+      set myload_globfilter $myload_ext
+      if {$myload_save_initialfile eq {}} {.load.buttons_bot.entry delete 0 end}
       setglob $myload_dir1
       myload_set_colors2
     }
   }
   frame .load.l.paneright
-  frame .load.l.paneright.draw -background white -width 200 -height 200
+  frame .load.l.paneright.draw -background white -height 3.8c
   listbox .load.l.paneright.list  -listvariable myload_files2 -width 20 -height 12\
     -yscrollcommand ".load.l.paneright.yscroll set" -selectmode browse \
     -xscrollcommand ".load.l.paneright.xscroll set" -exportselection 0
@@ -2450,6 +2609,10 @@ proc load_file_dialog {{msg {}} {ext {}} {global_initdir {INITIALINSTDIR}}
   pack  .load.l.paneright.xscroll -side bottom -fill x
   pack  .load.l.paneright.list -side bottom  -fill both -expand true
 
+  if { $loadfile == 2} {
+    .load.l  add .load.l.recent -minsize 30
+    c_toolbar::display
+  }
   .load.l  add .load.l.paneleft -minsize 40
   .load.l  add .load.l.paneright -minsize 40
   # .load.l paneconfigure .load.l.paneleft -stretch always
@@ -2486,21 +2649,21 @@ proc load_file_dialog {{msg {}} {ext {}} {global_initdir {INITIALINSTDIR}}
   }
   label .load.buttons_bot.label  -text {  File/Search:}
   entry .load.buttons_bot.entry
-  if { $save_initialfile ne {} } { 
-    .load.buttons_bot.entry insert 0 $save_initialfile
+  if { $myload_save_initialfile ne {} } { 
+    .load.buttons_bot.entry insert 0 $myload_save_initialfile
   }
   bind .load.buttons_bot.entry <KeyRelease> {
-    if {$save_initialfile eq {} } {
-      set globfilter  *[.load.buttons_bot.entry get]*
-      if { $globfilter eq {**} } { set globfilter * }
+    if {$myload_save_initialfile eq {} } {
+      set myload_globfilter  *[.load.buttons_bot.entry get]*
+      if { $myload_globfilter eq {**} } { set myload_globfilter * }
       setglob $myload_dir1
     }
   }
-  radiobutton .load.buttons_bot.all -text All -variable globfilter -value {*} \
+  radiobutton .load.buttons_bot.all -text All -variable myload_globfilter -value {*} \
      -command { setglob $myload_dir1 }
-  radiobutton .load.buttons_bot.sym -text .sym -variable globfilter -value {*.sym} \
+  radiobutton .load.buttons_bot.sym -text .sym -variable myload_globfilter -value {*.sym} \
      -command { setglob $myload_dir1 }
-  radiobutton .load.buttons_bot.sch -text .sch -variable globfilter -value {*.sch} \
+  radiobutton .load.buttons_bot.sch -text .sch -variable myload_globfilter -value {*.sch} \
      -command { setglob $myload_dir1 }
   button .load.buttons.up -width 5 -text Up -command {load_file_dialog_up  $myload_dir1}
   label .load.buttons.mkdirlab -text { New dir: } -fg blue
@@ -2524,13 +2687,9 @@ proc load_file_dialog {{msg {}} {ext {}} {global_initdir {INITIALINSTDIR}}
   pack .load.buttons_bot.label -side left
   pack .load.buttons_bot.entry -side left -fill x -expand true
   pack .load.buttons_bot.cancel .load.buttons_bot.ok -side left
-  if { $loadfile == 2} {
-    pack .load.recent -side left -fill y
-    c_toolbar::display
-  }
+  pack .load.buttons_bot -side bottom -fill x
+  pack .load.buttons -side bottom -fill x
   pack .load.l -expand true -fill both
-  pack .load.buttons -side top -fill x
-  pack .load.buttons_bot -side top -fill x
   if { [info exists myload_default_geometry]} {
      wm geometry .load "${myload_default_geometry}"
   }
@@ -2623,24 +2782,10 @@ proc load_file_dialog {{msg {}} {ext {}} {global_initdir {INITIALINSTDIR}}
         set myload_dir1 $myload_d
         # .load.buttons_bot.entry delete 0 end
       } else {
-        set globfilter *
         .load.buttons_bot.entry delete 0 end
         .load.buttons_bot.entry insert 0 $myload_dir2
-         set myload_type [is_xschem_file $myload_dir1/$myload_dir2]
-         if { $myload_type ne {0}  } {
-	   ### update
-           if { [winfo exists .load] } {
-             .load.l.paneright.draw configure -background {}
-             xschem preview_window draw .load.l.paneright.draw "$myload_dir1/$myload_dir2"
-             bind .load.l.paneright.draw <Expose> {
-               xschem preview_window draw .load.l.paneright.draw "$myload_dir1/$myload_dir2"
-             }
-           }
-         } else {
-           bind .load.l.paneright.draw <Expose> {}
-           .load.l.paneright.draw configure -background white
-         }
-         # puts "xschem preview_window draw .load.l.paneright.draw \"$myload_dir1/$myload_dir2\""
+        myload_display_preview  $myload_dir1/$myload_dir2
+        # puts "xschem preview_window draw .load.l.paneright.draw \"$myload_dir1/$myload_dir2\""
       }
     }
     if {$myload_loadfile == 2} {
@@ -4851,33 +4996,30 @@ proc no_open_dialogs {} {
 ## "debug_var" there is only a global debug mode
 ## "xschem_server_getdata" only one tcp listener per process
 ## "bespice_server_getdata" only one tcp listener per process
+## "myload_*" only one load_file_dialog window is allowed
 
 set tctx::global_list {
-  auto_hilight autofocus_mainwindow autotrim_wires bespice_listen_port big_grid_points bus_replacement_char
-  cadgrid cadlayers cadsnap cairo_font_name
-  change_lw color_ps colors connect_by_kissing constrained_move copy_cell custom_label_prefix custom_token dark_colors
-  dark_colorscheme dim_bg dim_value disable_unique_names do_all_inst draw_grid draw_window
-  edit_prop_pos edit_prop_size editprop_sympath edit_symbol_prop_new_sel enable_dim_bg enable_stretch 
-  en_hilight_conn_inst filetmp flat_netlist fullscreen gaw_fd gaw_tcp_address globfilter
-  graph_bus graph_digital graph_logx graph_logy graph_raw_level
-  graph_sel_color graph_schname graph_selected graph_sel_wave graph_sort
-  graph_unlocked hide_empty_graphs hide_symbols hsize
-  incr_hilight infowindow_text INITIALINSTDIR INITIALLOADDIR INITIALPROPDIR INITIALTEXTDIR
-  input_line_cmd input_line_data launcher_default_program light_colors line_width 
-  live_cursor2_backannotate local_netlist_dir measure_text
-  myload_d myload_default_geometry myload_dir1 myload_dir2 myload_dir2 
-  myload_ext myload_files1 myload_files2 myload_index1 myload_loadfile
-  myload_retval myload_sash_pos myload_sel myload_type myload_yview netlist_dir netlist_show
-  netlist_type no_change_attrs noprint_libs old_selected_tok
-  only_probes path pathlist persistent_command preserve_unchanged_attrs prev_symbol ps_colors rainbow_colors
-  rawfile_loaded rcode recentfile replace_key retval retval_orig rotated_text save_initialfile search_exact
-  search_found search_schematic search_select search_value selected_tok show_hidden_texts show_infowindow
-  show_pin_net_names simconf_default_geometry simconf_vpos simulate_bg
-  spiceprefix split_files svg_colors svg_font_name symbol symbol_width sym_txt tclcmd_txt tclstop
-  text_line_default_geometry textwindow_fileid textwindow_filename textwindow_w tmp_bus_char 
-  toolbar_horiz toolbar_list toolbar_visible top_subckt transparent_svg undo_type
-  use_label_prefix use_lab_wire user_wants_copy_cell verilog_2001 verilog_bitblast
-  viewdata_fileid viewdata_filename viewdata_w vsize xschem_libs xschem_listen_port
+  INITIALINSTDIR INITIALLOADDIR INITIALPROPDIR INITIALTEXTDIR auto_hilight autofocus_mainwindow
+  autotrim_wires bespice_listen_port big_grid_points bus_replacement_char cadgrid cadlayers
+  cadsnap cairo_font_name change_lw color_ps colors connect_by_kissing constrained_move
+  copy_cell custom_label_prefix custom_token dark_colors dark_colorscheme dim_bg dim_value
+  disable_unique_names do_all_inst draw_grid draw_window edit_prop_pos edit_prop_size
+  edit_symbol_prop_new_sel editprop_sympath en_hilight_conn_inst enable_dim_bg enable_stretch
+  filetmp flat_netlist fullscreen gaw_fd gaw_tcp_address graph_bus graph_digital graph_logx
+  graph_logy graph_raw_level graph_schname graph_sel_color graph_sel_wave graph_selected
+  graph_sort graph_unlocked hide_empty_graphs hide_symbols hsize incr_hilight infowindow_text
+  input_line_cmd input_line_data launcher_default_program light_colors line_width
+  live_cursor2_backannotate local_netlist_dir measure_text netlist_show netlist_type
+  no_change_attrs noprint_libs old_selected_tok only_probes path pathlist persistent_command
+  preserve_unchanged_attrs prev_symbol ps_colors rainbow_colors rawfile_loaded rcode recentfile
+  replace_key retval retval_orig rotated_text search_exact search_found search_schematic
+  search_select search_value selected_tok show_hidden_texts show_infowindow show_pin_net_names
+  simconf_default_geometry simconf_vpos simulate_bg spiceprefix split_files svg_colors
+  svg_font_name sym_txt symbol symbol_width tclcmd_txt tclstop text_line_default_geometry
+  textwindow_fileid textwindow_filename textwindow_w tmp_bus_char toolbar_horiz toolbar_list
+  toolbar_visible top_subckt transparent_svg undo_type use_lab_wire use_label_prefix
+  user_wants_copy_cell verilog_2001 verilog_bitblast viewdata_fileid viewdata_filename viewdata_w
+  vsize xschem_libs xschem_listen_port
 }
 
 ## list of global arrays to save/restore on context switching
@@ -5177,6 +5319,10 @@ proc build_widgets { {topwin {} } } {
   $topwin.menubar.file.menu add command -label "New empty Symbol window" -accelerator {Alt+Shift+N} \
     -command {
       xschem new_symbol_window
+    }
+  $topwin.menubar.file.menu add command -label "Component browser" -accelerator {Shift-Ins, Ctrl-I} \
+    -command {
+      load_file_dialog {Insert symbol} *.sym INITIALINSTDIR 2
     }
   $topwin.menubar.file.menu add command -label "Open" -command "xschem load" -accelerator {Ctrl+O}
   $topwin.menubar.file.menu add cascade -label "Open recent" -menu $topwin.menubar.file.menu.recent
@@ -5522,6 +5668,8 @@ proc build_widgets { {topwin {} } } {
      -command "xschem check_unique_names 0"  -accelerator {#} 
   $topwin.menubar.hilight.menu add command -label {Rename duplicate instance names} \
      -command "xschem check_unique_names 1" -accelerator {Ctrl+#}
+  $topwin.menubar.hilight.menu add command -label {Select overlapped instances} \
+     -command "xschem warning_overlapped_symbols 1; xschem redraw" -accelerator {}
   $topwin.menubar.hilight.menu add command -label {Propagate Highlight selected net/pins} \
      -command "xschem hilight drill" -accelerator {Ctrl+Shift+K}
   $topwin.menubar.hilight.menu add checkbutton -label "Increment Hilight Color" -variable incr_hilight
@@ -5573,10 +5721,21 @@ proc build_widgets { {topwin {} } } {
   $topwin.menubar.simulation.menu add checkbutton -label "Hide graphs if no spice data loaded" \
      -variable hide_empty_graphs -command {xschem redraw}
   $topwin.menubar.simulation.menu add checkbutton -variable rawfile_loaded \
-     -label {Load/Unload ngspice .raw file} -command {
+     -label {Load/Unload spice .raw file} -command {
      xschem raw_read $netlist_dir/[file tail [file rootname [xschem get current_name]]].raw
   }
   $topwin.menubar.simulation.menu add command -label {Add waveform graph} -command {xschem add_graph}
+  $topwin.menubar.simulation.menu add command -label {Add waveform reload launcher} -command {
+    if { [file exists [abs_sym_path devices/launcher.sym]] } {
+      xschem place_symbol devices/launcher.sym "name=h5\ndescr=\"load waves\" 
+tclcommand=\"xschem raw_read \$netlist_dir/[file tail [file rootname [xschem get current_name]]].raw tran\"
+"
+    } else {
+      xschem place_symbol launcher.sym "name=h5\ndescr=\"load waves\" 
+tclcommand=\"xschem raw_read \$netlist_dir/[file tail [file rootname [xschem get current_name]]].raw tran\"
+"
+    }
+  }
   $topwin.menubar.simulation.menu add checkbutton -label "Live annotate probes with 'b' cursor" \
          -variable live_cursor2_backannotate 
   $topwin.menubar.simulation.menu add command -label "Annotate Operating Point into schematic" \
@@ -5850,7 +6009,7 @@ if { ![info exists dircolor] } {
   set_ne dircolor(/share/doc/xschem/) {#338844}
 }
 
-set_ne globfilter {*}
+set_ne myload_globfilter {*}
 ## list of tcl procedures to load at end of xschem.tcl
 set_ne tcl_files {}
 set_ne netlist_dir "$USER_CONF_DIR/simulations"

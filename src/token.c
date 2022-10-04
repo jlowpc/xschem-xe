@@ -1462,14 +1462,15 @@ void print_verilog_param(FILE *fd, int symbol)
  int quote=0;
  int escape=0;
  int token_number=0;
+ char *extra = NULL;
 
  my_strdup(479, &template, xctx->sym[symbol].templ); /* 20150409 20171103 */
- my_strdup(480, &generic_type, get_tok_value(xctx->sym[symbol].prop_ptr,"generic_type",0));
  if( !template || !(template[0]) )  {
    my_free(1006, &template);
-   my_free(1007, &generic_type);
    return;
  }
+ my_strdup(480, &generic_type, get_tok_value(xctx->sym[symbol].prop_ptr,"generic_type",0));
+ my_strdup(1558, &extra, get_tok_value(xctx->sym[symbol].prop_ptr,"extra",0) );
  dbg(2, "print_verilog_param(): symbol=%d template=%s \n", symbol, template);
 
  s=template;
@@ -1511,9 +1512,8 @@ void print_verilog_param(FILE *fd, int symbol)
 
    if(value[0] != '\0') /* token has a value */
    {
-    if(token_number>1)
+    if(token_number>1 && (!extra || !strstr(extra, token)))
     {
-
       /* 20080915 put "" around string params */
       if( !generic_type || strcmp(get_tok_value(generic_type,token, 0), "time")  ) {
         if( generic_type && !strcmp(get_tok_value(generic_type,token, 0), "string")  ) {
@@ -1536,6 +1536,7 @@ void print_verilog_param(FILE *fd, int symbol)
  my_free(1009, &generic_type);
  my_free(1010, &value);
  my_free(1011, &token);
+ my_free(1007, &extra);
 }
 
 
@@ -1560,7 +1561,7 @@ void print_tedax_subckt(FILE *fd, int symbol)
 }
 
 
-void print_spice_subckt(FILE *fd, int symbol)
+void print_spice_subckt_nodes(FILE *fd, int symbol)
 {
  int i=0, multip;
  const char *str_ptr=NULL;
@@ -1646,7 +1647,7 @@ void print_spice_subckt(FILE *fd, int symbol)
        if(!strcmp(get_tok_value(prop, "name",0), token + 2)) break;
      }
      if(i<no_of_pins && strcmp(get_tok_value(prop,"spice_ignore",0), "true")) {
-       fprintf(fd, "%s", expandlabel(token+2, &multip));
+       fprintf(fd, "%s ", expandlabel(token+2, &multip));
      }
    }
    /* reference by pin number instead of pin name, allows faster lookup of the attached net name 20180911 */
@@ -1663,9 +1664,12 @@ void print_spice_subckt(FILE *fd, int symbol)
     * specified by the format string. The 'extra' attribute is no more used to print extra nodes
     * in spice_block_netlist(). */
    else if(token[0] == '@') { /* given previous if() conditions not followed by @ or # */
-     fprintf(fd, "%s ",  token + 1);
+     /* if token not followed by white space it is not an extra node */
+     if( ( (space  || c == '%' || c == '@') && !escape ) ) {
+       fprintf(fd, "%s ",  token + 1);
+     }
    }
-   if(c!='%' && c!='@' && c!='\0' ) fputc(c,fd);
+   /* if(c!='%' && c!='@' && c!='\0' ) fputc(c,fd); */ 
    if(c == '@' || c =='%') s--;
    state=TOK_BEGIN;
   }
@@ -2430,21 +2434,17 @@ static void print_verilog_primitive(FILE *fd, int inst) /* netlist switch level 
     {                                    /* and node number: m1 n1 m2 n2 .... */
      for(i=0;i<no_of_pins;i++)
      {
-       char *prop = (xctx->inst[inst].ptr + xctx->sym)->rect[PINLAYER][i].prop_ptr;
-       if(strcmp(get_tok_value(prop, "verilog_ignore",0), "true")) {
-         str_ptr =  net_name(inst,i, &multip, 0, 1);
-         fprintf(fd, "----pin(%s) ", str_ptr);
-       }
+       str_ptr =  net_name(inst,i, &multip, 0, 1);
+       fprintf(fd, "----pin(%s) ", str_ptr);
+       if(i < no_of_pins - 1) fprintf(fd, " , ");
      }
     }
     else if(token[0]=='@' && token[1]=='@') {    /* recognize single pins 15112003 */
      for(i=0;i<no_of_pins;i++) {
       char *prop = (xctx->inst[inst].ptr + xctx->sym)->rect[PINLAYER][i].prop_ptr;
       if(!strcmp( get_tok_value(prop,"name",0), token+2)) {
-        if(strcmp(get_tok_value(prop, "verilog_ignore",0), "true")) {
-          str_ptr =  net_name(inst,i, &multip, 0, 1);
-          fprintf(fd, "----pin(%s) ", str_ptr);
-        }
+        str_ptr =  net_name(inst,i, &multip, 0, 1);
+        fprintf(fd, "----pin(%s) ", str_ptr);
         break;
       }
      }
@@ -2453,13 +2453,8 @@ static void print_verilog_primitive(FILE *fd, int inst) /* netlist switch level 
     else if(token[0]=='@' && token[1]=='#') {
       int pin_number = atoi(token+2);
       if(pin_number < no_of_pins) {
-        const char *vi;
-        char *prop = (xctx->inst[inst].ptr + xctx->sym)->rect[PINLAYER][pin_number].prop_ptr;
-        vi = get_tok_value(prop,"verilog_ignore",0);
-        if(strcmp(vi, "true")) {
-          str_ptr =  net_name(inst,pin_number, &multip, 0, 1);
-          fprintf(fd, "----pin(%s) ", str_ptr);
-        }
+        str_ptr =  net_name(inst,pin_number, &multip, 0, 1);
+        fprintf(fd, "----pin(%s) ", str_ptr);
       }
     }
     else if(!strncmp(token,"@tcleval", 8)) {
@@ -2516,7 +2511,8 @@ void print_verilog_element(FILE *fd, int inst)
  int no_of_pins=0;
  int  tmp1 = 0;
  register int c, state=TOK_BEGIN, space;
- char *value=NULL,  *token=NULL;
+ char *value=NULL,  *token=NULL, *extra = NULL, *v_extra = NULL;
+ char *extra_ptr, *saveptr1, *extra_token;
  size_t sizetok=0, sizeval=0;
  size_t token_pos=0, value_pos=0;
  int quote=0;
@@ -2527,16 +2523,18 @@ void print_verilog_element(FILE *fd, int inst)
   print_verilog_primitive(fd, inst);
   return;
  }
- my_strdup(506, &template,
-     (xctx->inst[inst].ptr + xctx->sym)->templ);
 
  my_strdup(507, &name,xctx->inst[inst].instname);
  if(!name) my_strdup(3, &name, get_tok_value(template, "name", 0));
  if(name==NULL) {
-   my_free(1040, &template);
    my_free(1041, &name);
    return;
  }
+ /* verilog_extra is the list of additional nodes passed as attributes */
+ my_strdup(1562, &v_extra, get_tok_value((xctx->inst[inst].ptr + xctx->sym)->prop_ptr, "verilog_extra", 0));
+ /* extra is the list of attributes NOT to consider as instance parameters */
+ my_strdup(1559, &extra, get_tok_value((xctx->inst[inst].ptr + xctx->sym)->prop_ptr, "extra", 0));
+ my_strdup(506, &template, (xctx->inst[inst].ptr + xctx->sym)->templ);
  no_of_pins= (xctx->inst[inst].ptr + xctx->sym)->rects[PINLAYER];
 
  /* 20080915 use generic_type property to decide if some properties are strings, see later */
@@ -2582,7 +2580,8 @@ void print_verilog_element(FILE *fd, int inst)
    value[value_pos]='\0';
    value_pos=0;
    get_tok_value(template, token, 0);
-   if(strcmp(token, "name") && xctx->tok_size) {
+   dbg(1, "token=%s, extra=%s\n", token, extra);
+   if(strcmp(token, "name") && xctx->tok_size && (!extra || !strstr(extra, token))) {
      if(value[0] != '\0') /* token has a value */
      {
        if(strcmp(token,"spice_ignore") && strcmp(token,"vhdl_ignore") && strcmp(token,"tedax_ignore")) {
@@ -2633,6 +2632,22 @@ void print_verilog_element(FILE *fd, int inst)
      }
    }
  }
+
+ if(v_extra) {
+   const char *val;
+   for(extra_ptr = v_extra; ; extra_ptr=NULL) {
+     extra_token=my_strtok_r(extra_ptr, " ", "", &saveptr1);
+     if(!extra_token) break;
+
+     val = get_tok_value(xctx->inst[inst].prop_ptr, extra_token, 0);
+     if(!val[0]) val = get_tok_value( (xctx->inst[inst].ptr + xctx->sym)->prop_ptr, extra_token, 0);
+     if(tmp) fprintf(fd,"\n");
+     fprintf(fd, "  ?%d %s %s ", 1, extra_token, val);
+     tmp = 1;
+   }
+ }
+
+
  fprintf(fd, "\n);\n\n");
  dbg(2, "print_verilog_element(): ------- end ------ \n");
  my_free(1042, &name);
@@ -2640,6 +2655,8 @@ void print_verilog_element(FILE *fd, int inst)
  my_free(1044, &template);
  my_free(1045, &value);
  my_free(1046, &token);
+ my_free(1560, &extra);
+ my_free(1567, &v_extra);
 }
 
 
@@ -3029,7 +3046,7 @@ const char *translate(int inst, const char* s)
          size_t len;
          int idx;
          double val;
-         char valstr[120];
+         const char *valstr;
          if(path) {
            int skip = 0;
            /* skip path components that are above the level where raw file was loaded */
@@ -3050,15 +3067,13 @@ const char *translate(int inst, const char* s)
              val = xctx->graph_values[idx][xctx->graph_annotate_p];
            }
            if(idx < 0) {
-              my_snprintf(valstr, S(valstr), "");
-           } else if( fabs(val) < 1.0e-5) {
-             my_snprintf(valstr, S(valstr), "0");
-           } else if( fabs(val) < 1.0e-3 && val != 0.0) {
-             my_snprintf(valstr, S(valstr), "%.4e", val);
+             valstr = "";
+             xctx->tok_size = 0;
+             len = 0;
            } else {
-             my_snprintf(valstr, S(valstr), "%.4g", val);
+             valstr = dtoa_eng(val);
+             len = xctx->tok_size;
            }
-           len = strlen(valstr);
            if(len) {
              STR_ALLOC(&result, len + result_pos, &size);
              memcpy(result+result_pos, valstr, len+1);
@@ -3083,7 +3098,7 @@ const char *translate(int inst, const char* s)
          size_t len;
          int idx1, idx2;
          double val = 0.0, val1 = 0.0, val2 = 0.0;
-         char valstr[120];
+         const char *valstr;
          if(path) {
            int skip = 0;
            /* skip path components that are above the level where raw file was loaded */
@@ -3116,15 +3131,13 @@ const char *translate(int inst, const char* s)
            }
            val = val1 - val2;
            if(idx1 < 0 || idx2 < 0) {
-              my_snprintf(valstr, S(valstr), "");
-           } else if( fabs(val) < 1.0e-5) {
-             my_snprintf(valstr, S(valstr), "0");
-           } else if( fabs(val) < 1.0e-3 && val != 0.0) {
-             my_snprintf(valstr, S(valstr), "%.4e", val);
+             valstr = "";
+             xctx->tok_size = 0;
+             len = 0;
            } else {
-             my_snprintf(valstr, S(valstr), "%.4g", val);
+             valstr = dtoa_eng(val);
+             len = xctx->tok_size;
            }
-           len = strlen(valstr);
            if(len) {
              STR_ALLOC(&result, len + result_pos, &size);
              memcpy(result+result_pos, valstr, len+1);
@@ -3148,7 +3161,7 @@ const char *translate(int inst, const char* s)
        size_t len;
        int idx;
        double val;
-       char valstr[120];
+       const char *valstr;
        if(path) {
          int skip = 0;
          /* skip path components that are above the level where raw file was loaded */
@@ -3181,13 +3194,13 @@ const char *translate(int inst, const char* s)
            val = xctx->graph_values[idx][xctx->graph_annotate_p];
          }
          if(idx < 0) {
-            my_snprintf(valstr, S(valstr), "");
-         } else if( fabs(val) < 1.0e-3 && val != 0.0) {
-           my_snprintf(valstr, S(valstr), "%.4e", val);
+           valstr = "";
+           xctx->tok_size = 0;
+           len = 0;
          } else {
-           my_snprintf(valstr, S(valstr), "%.4g", val);
+           valstr = dtoa_eng(val);
+           len = xctx->tok_size;
          }
-         len = strlen(valstr);
          if(len) {
            STR_ALLOC(&result, len + result_pos, &size);
            memcpy(result+result_pos, valstr, len+1);

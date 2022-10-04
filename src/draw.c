@@ -834,18 +834,14 @@ static void my_cairo_drawpoints(cairo_t *ct, int layer, XPoint *points, int npoi
     cairo_stroke(ct); /* This lines need to be here */
   }
 }
-#endif
 
-#if !defined(__unix__) && defined(HAS_CAIRO)
 static void check_cairo_drawline(void *cr, int layer, double x1, double y1, double x2, double y2, int dash)
 {
   if (cr==NULL) return;
   cairo_t *ct = (cairo_t *)cr; 
   my_cairo_drawline(cr, layer, x1, y1, x2, y2, dash);
 }
-#endif
 
-#if !defined(__unix__) && defined(HAS_CAIRO)
 static void check_cairo_drawpoints(void *cr, int layer, XPoint *points, int npoints)
 {
   if (cr==NULL) return;
@@ -883,7 +879,9 @@ void drawline(int c, int what, double linex1, double liney1, double linex2, doub
         XDrawLine(display, xctx->window, xctx->gc[c], rr[j].x1, rr[j].y1, rr[j].x2, rr[j].y2);
       if (xctx->draw_pixmap)
         XDrawLine(display, xctx->save_pixmap, xctx->gc[c], rr[j].x1, rr[j].y1, rr[j].x2, rr[j].y2);
+      #if defined(HAS_CAIRO)
       check_cairo_drawline(ct, c, rr[j].x1, rr[j].y1, rr[j].x2, rr[j].y2, 0);
+      #endif
     }
 #endif
    i=0;
@@ -922,7 +920,7 @@ void drawline(int c, int what, double linex1, double liney1, double linex2, doub
    if(dash) {
      XSetLineAttributes (display, xctx->gc[c], INT_WIDTH(xctx->lw), LineSolid, CapRound, JoinRound);
    }
-   #ifndef __unix__
+   #if !defined(__unix__) && defined(HAS_CAIRO)
    check_cairo_drawline(ct, c, x1, y1, x2, y2, dash);
    #endif
   }
@@ -946,7 +944,7 @@ void drawline(int c, int what, double linex1, double liney1, double linex2, doub
    }
    if(xctx->draw_window) XDrawLine(display, xctx->window, xctx->gc[c], (int)x1, (int)y1, (int)x2, (int)y2);
    if(xctx->draw_pixmap) XDrawLine(display, xctx->save_pixmap, xctx->gc[c], (int)x1, (int)y1, (int)x2, (int)y2);
-   #ifndef __unix__
+   #if !defined(__unix__) && defined(HAS_CAIRO)
    check_cairo_drawline(ct, c, x1, y1, x2, y2, dash);
    #endif
    XSetLineAttributes (display, xctx->gc[c], INT_WIDTH(xctx->lw), LineSolid, CapRound , JoinRound);
@@ -963,7 +961,9 @@ void drawline(int c, int what, double linex1, double liney1, double linex2, doub
        XDrawLine(display, xctx->window, xctx->gc[c], rr[j].x1, rr[j].y1, rr[j].x2, rr[j].y2);
      if (xctx->draw_pixmap)
        XDrawLine(display, xctx->save_pixmap, xctx->gc[c], rr[j].x1, rr[j].y1, rr[j].x2, rr[j].y2);
+     #if defined(HAS_CAIRO)
      check_cairo_drawline(ct, c, rr[j].x1, rr[j].y1, rr[j].x2, rr[j].y2, 0);
+     #endif
    }
 #endif
   i=0;
@@ -1685,6 +1685,7 @@ static int axis_within_range(double x, double a, double b)
 static double get_unit(const char *val)
 {
   if(!val)               return 1.0;
+  else if(val[0] == 'f') return 1e15;
   else if(val[0] == 'p') return 1e12;
   else if(val[0] == 'n') return 1e9;
   else if(val[0] == 'u') return 1e6;
@@ -1692,6 +1693,7 @@ static double get_unit(const char *val)
   else if(val[0] == 'k') return 1e-3;
   else if(val[0] == 'M') return 1e-6;
   else if(val[0] == 'G') return 1e-9;
+  else if(val[0] == 'T') return 1e-12;
   return 1.0;
 }
 
@@ -1924,7 +1926,7 @@ static void draw_graph_points(int idx, int first, int last,
     if(xctx->draw_pixmap) {
       XDrawLines(display, xctx->save_pixmap, xctx->gc[wave_col], point, poly_npoints, CoordModeOrigin);
     }
-    #ifndef __unix__
+    #if !defined(__unix__) && defined(HAS_CAIRO)
     check_cairo_drawpoints(ct, wave_col, point, poly_npoints);
     #endif
     set_thick_waves(0, wcnt, wave_col, gr);
@@ -1976,10 +1978,10 @@ static void draw_graph_grid(Graph_ctx *gr, void *ct)
     drawline(GRIDLAYER, ADD, W_X(wx),   W_Y(gr->gy1), W_X(wx),   W_Y(gr->gy1) + mark_size, 0, ct); /* axis marks */
     /* X-axis labels */
     if(gr->logx) 
-      draw_string(3, NOW, dtoa(pow(10, wx) * gr->unitx), 0, 0, 1, 0, W_X(wx), gr->y2 + mark_size + 5 * gr->txtsizex,
-                gr->txtsizex, gr->txtsizex);
+      draw_string(3, NOW, dtoa_eng(pow(10, wx) * gr->unitx), 0, 0, 1, 0, W_X(wx),
+                gr->y2 + mark_size + 5 * gr->txtsizex, gr->txtsizex, gr->txtsizex);
     else
-      draw_string(3, NOW, dtoa(wx * gr->unitx), 0, 0, 1, 0, W_X(wx), gr->y2 + mark_size + 5 * gr->txtsizex,
+      draw_string(3, NOW, dtoa_eng(wx * gr->unitx), 0, 0, 1, 0, W_X(wx), gr->y2 + mark_size + 5 * gr->txtsizex,
                 gr->txtsizex, gr->txtsizex);
   }
   /* first and last vertical box delimiters */
@@ -2007,10 +2009,10 @@ static void draw_graph_grid(Graph_ctx *gr, void *ct)
       drawline(GRIDLAYER, ADD, W_X(gr->gx1) - mark_size, W_Y(wy),   W_X(gr->gx1), W_Y(wy), 0, ct); /* axis marks */
       /* Y-axis labels */
       if(gr->logy)
-        draw_string(3, NOW, dtoa(pow(10, wy) * gr->unity), 0, 1, 0, 1, gr->x1 - mark_size - 5 * gr->txtsizey, W_Y(wy),
-                  gr->txtsizey, gr->txtsizey);
+        draw_string(3, NOW, dtoa_eng(pow(10, wy) * gr->unity), 0, 1, 0, 1, 
+                  gr->x1 - mark_size - 5 * gr->txtsizey, W_Y(wy), gr->txtsizey, gr->txtsizey);
       else 
-        draw_string(3, NOW, dtoa(wy * gr->unity), 0, 1, 0, 1, gr->x1 - mark_size - 5 * gr->txtsizey, W_Y(wy),
+        draw_string(3, NOW, dtoa_eng(wy * gr->unity), 0, 1, 0, 1, gr->x1 - mark_size - 5 * gr->txtsizey, W_Y(wy),
                   gr->txtsizey, gr->txtsizey);
     }
   }
@@ -2034,6 +2036,7 @@ void setup_graph_data(int i, const int flags, int skip, Graph_ctx *gr)
   const char *val;
   xRect *r = &xctx->rect[GRIDLAYER][i];
 
+  dbg(1, "setup_graph_data: i=%d\n", i);
   /* default values */
   gr->divx = gr->divy = 5;
   gr->subdivx = gr->subdivy = 0;
@@ -2192,7 +2195,7 @@ static void draw_cursor(double active_cursorx, double other_cursorx, int cursor_
   double xx = W_X(active_cursorx);
   double tx1, ty1, tx2, ty2, dtmp;
   int tmp;
-  char tmpstr[1024];
+  char tmpstr[100];
   double txtsize = gr->txtsizex;
   short flip = (other_cursorx > active_cursorx) ? 0 : 1;
   int xoffs = flip ? 3 : -3;
@@ -2203,7 +2206,7 @@ static void draw_cursor(double active_cursorx, double other_cursorx, int cursor_
     if(gr->unitx != 1.0)
        my_snprintf(tmpstr, S(tmpstr), "%.5g%c", gr->unitx * active_cursorx , gr->unitx_suffix);
     else
-       my_snprintf(tmpstr, S(tmpstr), "%.5g",  active_cursorx);
+       my_snprintf(tmpstr, S(tmpstr), "%s",  dtoa_eng(active_cursorx));
     text_bbox(tmpstr, txtsize, txtsize, 2, flip, 0, 0, xx + xoffs, gr->ry2-1, &tx1, &ty1, &tx2, &ty2, &tmp, &dtmp);
     filledrect(0, NOW,  tx1, ty1, tx2, ty2);
     draw_string(cursor_color, NOW, tmpstr, 2, flip, 0, 0, xx + xoffs, gr->ry2-1, txtsize, txtsize);
@@ -2213,7 +2216,7 @@ static void draw_cursor(double active_cursorx, double other_cursorx, int cursor_
 static void draw_cursor_difference(Graph_ctx *gr)
 {
   int tmp; 
-  char tmpstr[1024];
+  char tmpstr[100];
   double txtsize = gr->txtsizex;
   double tx1, ty1, tx2, ty2;
   double aa = W_X(xctx->graph_cursor1_x);
@@ -2230,7 +2233,7 @@ static void draw_cursor_difference(Graph_ctx *gr)
   if(gr->unitx != 1.0)
      my_snprintf(tmpstr, S(tmpstr), "%.4g%c", gr->unitx * diffw , gr->unitx_suffix);
   else
-     my_snprintf(tmpstr, S(tmpstr), "%.4g",  diffw);
+     my_snprintf(tmpstr, S(tmpstr), "%s",  dtoa_eng(diffw));
   text_bbox(tmpstr, txtsize, txtsize, 2, 0, 1, 0, xx, yy, &tx1, &ty1, &tx2, &ty2, &tmp, &dtmp);
   if( tx2 - tx1 < diff ) {
     draw_string(3, NOW, tmpstr, 2, 0, 1, 0, xx, yy, txtsize, txtsize);

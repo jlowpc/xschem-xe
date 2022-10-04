@@ -470,6 +470,7 @@ static void alloc_xschem_data(const char *top_path, const char *win_path)
   xctx->need_reb_sel_arr = 1;
   xctx->lastsel = 0;
   xctx->maxsel = 0;
+  xctx->hash_size = HASHSIZE;
   xctx->prep_net_structs = 0;
   xctx->prep_hi_structs = 0;
   xctx->simdata = NULL;
@@ -672,12 +673,13 @@ int compare_schematics(const char *f)
   int ret=0; /* ret==0 means no differences found */
   Xschem_ctx *save_xctx;
 
+  xctx->hash_size = HASHSIZE;
   memset(table1, 0, HASHSIZE * sizeof(Int_hashentry *));
   memset(table2, 0, HASHSIZE * sizeof(Int_hashentry *));
 
   /* set filename of schematic to compare */
   if(f == NULL) {
-    tcleval("load_file_dialog {Schematic to compare with} .sch.sym INITIALLOADDIR");
+    tcleval("load_file_dialog {Schematic to compare with} *.\\{sch,sym\\} INITIALLOADDIR");
     if(tclresult()[0]) my_strncpy(xctx->sch_to_compare, tclresult(), S(xctx->sch_to_compare));
     else my_strncpy(xctx->sch_to_compare, "", S(xctx->sch_to_compare));
   } else if(f[0] != '\0') {

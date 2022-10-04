@@ -304,6 +304,7 @@ static int read_dataset(FILE *fd, const char *type)
   int n = 0, done_header = 0, ac = 0;
   int exit_status = 0, npoints, nvars;
   int dbglev=1;
+  xctx->hash_size = HASHSIZE;
   xctx->graph_sim_type = NULL;
   dbg(1, "read_dataset(): type=%s\n", type ? type : "<NULL>");
   while((fgets(line, sizeof(line), fd)) ) {
@@ -395,6 +396,13 @@ static int read_dataset(FILE *fd, const char *type)
     else if(!strncmp(line, "No. Variables:", 14)) {
       n = sscanf(line, "No. Variables: %d", &nvars);
       dbg(dbglev, "read_dataset(): nvars=%d\n", nvars);
+
+      if(xctx->graph_datasets > 0  && xctx->graph_nvars != nvars) {
+        dbg(0, "Xschem requires all datasets to be saved with identical and same number of variables\n");
+        dbg(0, "There is a mismatch, so this and following datasets will not be read\n");
+        return 1;
+      }
+
       if(ac) nvars <<= 1;
       if(n < 1) {
         dbg(0, "read_dataset(): WAARNING: malformed raw file, aborting\n");
@@ -469,6 +477,7 @@ void free_rawfile(int dr)
   int i;
 
   int deleted = 0;
+  xctx->hash_size = HASHSIZE;
   if(xctx->graph_names) {
     deleted = 1;
     for(i = 0 ; i < xctx->graph_nvars; i++) {
@@ -599,6 +608,7 @@ int get_raw_index(const char *node)
 
 
   dbg(1, "get_raw_index(): node=%s\n", node);
+  xctx->hash_size = HASHSIZE;
   if(sch_waves_loaded() >= 0) {
     my_strncpy(inode, node, S(inode));
     strtolower(inode);
@@ -625,7 +635,7 @@ int get_raw_index(const char *node)
  * 1: store value
  * 2: retrieve value
  */
-static double ravg_store(int what , int i, int p, int last, double integ)
+static double ravg_store(int what , int i, int p, int last, double value)
 {
   static int imax = 0;
   static double **arr = NULL;
@@ -646,7 +656,7 @@ static double ravg_store(int what , int i, int p, int last, double integ)
       }
       imax = new_size;
     }
-    arr[i][p] = integ;
+    arr[i][p] = value;
   } else if(what == 2) {
     return arr[i][p];
   }
@@ -654,34 +664,41 @@ static double ravg_store(int what , int i, int p, int last, double integ)
 }
 
 #define STACKMAX 200
-#define PLUS -2
-#define MINUS -3
-#define MULT -4
-#define DIVIS -5
-#define POW -6
-#define SIN -7
-#define COS -8
-#define EXP -9
-#define LN -10
-#define LOG10 -11
-#define ABS -12
-#define SGN -13
-#define SQRT -14
-#define TAN -15
-#define INTEG -34
-#define AVG -35
-#define DERIV -36
-#define EXCH -37
-#define DUP -38
-#define RAVG -39 /* running average */
-#define DB20 -40
-#define DERIV0 -41 /* derivative to first sweep variable, regardless of specified sweep_idx */
-#define NUMBER -60
+#define SPICE_NODE 1
+#define NUMBER 2
+#define PLUS 3
+#define MINUS 4
+#define MULT 5
+#define DIVIS 6
+#define POW 7
+#define SIN 8
+#define COS 9
+#define EXP 10
+#define LN 11
+#define LOG10 12
+#define ABS 13
+#define SGN 14
+#define SQRT 15
+#define TAN 16
+#define INTEG 17
+#define AVG 18
+#define DERIV 19
+#define EXCH 20
+#define DUP 21
+#define RAVG 22 /* running average */
+#define DB20 23
+#define DERIV0 24 /* derivative to first sweep variable, regardless of specified sweep_idx */
+#define PREV 25 /* previous point */
+#define DEL 26 /* delay by an anount of sweep axis distance */
+
+#define ORDER_DERIV 1 /* 1 or 2: 1st order or 2nd order differentiation. 1st order is faster */
 
 typedef struct {
   int i;
   double d;
+  int idx; /* spice index node */
   double prevy;
+  double prevprevy;
   double prev;
   int prevp;
 } Stack1;
@@ -692,7 +709,7 @@ int plot_raw_custom_data(int sweep_idx, int first, int last, const char *expr)
   const char *n;
   char *endptr, *ntok_copy = NULL, *ntok_save, *ntok_ptr;
   Stack1 stack1[STACKMAX];
-  double stack2[STACKMAX], tmp, integ, deriv, avg;
+  double stack2[STACKMAX], tmp, result, avg;
   int stackptr1 = 0, stackptr2 = 0;
   SPICE_DATA *y = xctx->graph_values[xctx->graph_nvars]; /* custom plot data column */
   SPICE_DATA *x = xctx->graph_values[sweep_idx];
@@ -723,26 +740,46 @@ int plot_raw_custom_data(int sweep_idx, int first, int last, const char *expr)
     else if(!strcmp(n, "exp()")) stack1[stackptr1++].i = EXP;
     else if(!strcmp(n, "ln()")) stack1[stackptr1++].i = LN;
     else if(!strcmp(n, "log10()")) stack1[stackptr1++].i = LOG10;
-    else if(!strcmp(n, "integ()")) stack1[stackptr1++].i = INTEG;
+    else if(!strcmp(n, "integ()")) {
+      if(first > 0) first--;
+      stack1[stackptr1++].i = INTEG;
+    }
     else if(!strcmp(n, "avg()")) stack1[stackptr1++].i = AVG;
     else if(!strcmp(n, "ravg()")) stack1[stackptr1++].i = RAVG;
+    else if(!strcmp(n, "del()")) {
+      stack1[stackptr1++].i = DEL;
+      first = 0;
+    }
     else if(!strcmp(n, "db20()")) stack1[stackptr1++].i = DB20;
-    else if(!strcmp(n, "deriv()")) stack1[stackptr1++].i = DERIV;
-    else if(!strcmp(n, "deriv0()")) stack1[stackptr1++].i = DERIV0;
+    else if(!strcmp(n, "deriv()")) {
+      stack1[stackptr1++].i = DERIV;
+      if(first > 0) first--;
+      if(first > 0) first--;
+    }
+    else if(!strcmp(n, "deriv0()")) {
+      stack1[stackptr1++].i = DERIV0;
+      if(first > 0) first--;
+      if(first > 0) first--;
+    }
+    else if(!strcmp(n, "prev()")) {
+      stack1[stackptr1++].i = PREV;
+      if(first > 0) first--;
+    }
     else if(!strcmp(n, "exch()")) stack1[stackptr1++].i = EXCH;
     else if(!strcmp(n, "dup()")) stack1[stackptr1++].i = DUP;
-    else if( (strtod(n, &endptr)), endptr > n) {
+    else if( (strtod(n, &endptr)), endptr > n) { /* NUMBER */
       stack1[stackptr1].i = NUMBER;
       stack1[stackptr1++].d = atof_spice(n);
     }
-    else {
+    else { /* SPICE_NODE */
       idx = get_raw_index(n);
       if(idx == -1) {
         dbg(1, "plot_raw_custom_data(): no data found: %s\n", n);
         my_free(645, &ntok_copy);
         return -1; /* no data found in raw file */
       }
-      stack1[stackptr1].i = idx;
+      stack1[stackptr1].i = SPICE_NODE;
+      stack1[stackptr1].idx = idx;
       stackptr1++;
     }
     dbg(1, "  plot_raw_custom_data(): stack1= %d\n", stack1[stackptr1 - 1].i);
@@ -750,12 +787,12 @@ int plot_raw_custom_data(int sweep_idx, int first, int last, const char *expr)
   my_free(575, &ntok_copy);
   for(p = first ; p <= last; p++) {
     stackptr2 = 0;
-    for(i = 0; i < stackptr1; i++) { /* number */
-      if(stack1[i].i == NUMBER) {
+    for(i = 0; i < stackptr1; i++) {
+      if(stack1[i].i == NUMBER) { /* number */
         stack2[stackptr2++] = stack1[i].d;
       }
-      else if(stack1[i].i >=0 && stack1[i].i < xctx->graph_nvars) { /* spice node */
-        stack2[stackptr2++] =  xctx->graph_values[stack1[i].i][p];
+      else if(stack1[i].i == SPICE_NODE && stack1[i].idx < xctx->graph_nvars) { /* spice node */
+        stack2[stackptr2++] =  xctx->graph_values[stack1[i].idx][p];
       }
 
       if(stackptr2 > 1) { /* 2 argument operators */
@@ -782,25 +819,48 @@ int plot_raw_custom_data(int sweep_idx, int first, int last, const char *expr)
             }
             stackptr2--;
             break;
+          case DEL:
+            /* dbg(0, "p=%d, x[p]=%g\n", p, x[p]);  */
+            tmp = stack2[stackptr2 - 1];
+            ravg_store(1, i, p, last, stack2[stackptr2 - 2]);
+            if(fabs(x[p] - x[first]) <= tmp) {
+              result = stack2[stackptr2 - 2];
+              stack1[i].prevp = first;
+            } else {
+              double delta =  fabs(x[p] - x[stack1[i].prevp]);
+              while(stack1[i].prevp <= last && delta > tmp) {
+                stack1[i].prevp++;
+                delta = fabs(x[p] - x[stack1[i].prevp]);
+              }
+              /* choose the closest:  stack1[i].prev or stack1[i].prev - 1 */
+              if( stack1[i].prevp > 0) {
+                double delta1 =  fabs(x[p] - x[stack1[i].prevp-1]);
+                if(fabs(delta1 - tmp) < fabs(delta - tmp)) stack1[i].prevp--;
+              }
+              result =  ravg_store(2, i, stack1[i].prevp, 0, 0);
+            }
+            stack2[stackptr2 - 2] = result;
+            stackptr2--;
+            break;
           case RAVG:
             if( p == first ) {
-              integ = 0;
+              result = 0;
               stack1[i].prevy = stack2[stackptr2 - 2];
               stack1[i].prev = 0;
               stack1[i].prevp = first;
             } else {
-              integ = stack1[i].prev + (x[p] - x[p - 1]) * (stack1[i].prevy + stack2[stackptr2 - 2]) * 0.5;
+              result = stack1[i].prev + (x[p] - x[p - 1]) * (stack1[i].prevy + stack2[stackptr2 - 2]) * 0.5;
               stack1[i].prevy =  stack2[stackptr2 - 2];
-              stack1[i].prev = integ;
+              stack1[i].prev = result;
             }
-            ravg_store(1, i, p, last, integ);
+            ravg_store(1, i, p, last, result);
             
             while(stack1[i].prevp <= last && x[p] - x[stack1[i].prevp] > stack2[stackptr2 - 1]) {
               dbg(1, "%g  -->  %g\n", x[stack1[i].prevp], x[p]);
               stack1[i].prevp++;
             }
-            stack2[stackptr2 - 2] = (integ - ravg_store(2, i, stack1[i].prevp, 0, 0)) / stack2[stackptr2 - 1];
-            dbg(1, "integ=%g ravg_store=%g\n", integ,  ravg_store(2, i, stack1[i].prevp, 0, 0));
+            stack2[stackptr2 - 2] = (result - ravg_store(2, i, stack1[i].prevp, 0, 0)) / stack2[stackptr2 - 1];
+            dbg(1, "result=%g ravg_store=%g\n", result,  ravg_store(2, i, stack1[i].prevp, 0, 0));
             stackptr2--;
             break;
           case POW:
@@ -842,45 +902,121 @@ int plot_raw_custom_data(int sweep_idx, int first, int last, const char *expr)
             break;
           case INTEG: 
             if( p == first ) {
-              integ = 0;
+              result = 0;
               stack1[i].prevy = stack2[stackptr2 - 1];
               stack1[i].prev = 0;
             } else {
-              integ = stack1[i].prev + (x[p] - x[p - 1]) * (stack1[i].prevy + stack2[stackptr2 - 1]) * 0.5;
+              result = stack1[i].prev + (x[p] - x[p - 1]) * (stack1[i].prevy + stack2[stackptr2 - 1]) * 0.5;
               stack1[i].prevy =  stack2[stackptr2 - 1];
-              stack1[i].prev = integ;
+              stack1[i].prev = result;
             }
-            stack2[stackptr2 - 1] =  integ;
+            stack2[stackptr2 - 1] =  result;
             break;
+          #if ORDER_DERIV==1
           case DERIV: 
             if( p == first ) {
-              deriv = 0;
+              result = 0;
               stack1[i].prevy = stack2[stackptr2 - 1];
               stack1[i].prev = 0;
             } else {
               if((x[p] != x[p - 1])) 
-                deriv =  (stack2[stackptr2 - 1] - stack1[i].prevy) / (x[p] - x[p - 1]);
+                result =  (stack2[stackptr2 - 1] - stack1[i].prevy) / (x[p] - x[p - 1]);
               else
-                deriv = stack1[i].prev;
+                result = stack1[i].prev;
               stack1[i].prevy = stack2[stackptr2 - 1] ;
-              stack1[i].prev = deriv;
+              stack1[i].prev = result;
             }
-            stack2[stackptr2 - 1] =  deriv;
+            stack2[stackptr2 - 1] =  result;
             break;
           case DERIV0:
             if( p == first ) {
-              deriv = 0;
+              result = 0;
               stack1[i].prevy = stack2[stackptr2 - 1];
               stack1[i].prev = 0;
             } else {
               if((sweepx[p] != sweepx[p - 1]))
-                deriv =  (stack2[stackptr2 - 1] - stack1[i].prevy) / (sweepx[p] - sweepx[p - 1]);
+                result =  (stack2[stackptr2 - 1] - stack1[i].prevy) / (sweepx[p] - sweepx[p - 1]);
               else
-                deriv = stack1[i].prev;
+                result = stack1[i].prev;
               stack1[i].prevy = stack2[stackptr2 - 1] ;
-              stack1[i].prev = deriv;
+              stack1[i].prev = result;
             }
-            stack2[stackptr2 - 1] =  deriv;
+            stack2[stackptr2 - 1] =  result;
+            break;
+          #else /* second order backward differentiation formulas */
+          case DERIV:
+            if( p == first ) {
+              result = 0;
+              stack1[i].prevy = stack2[stackptr2 - 1];
+              stack1[i].prev = 0;
+            } else if(p == first + 1) {
+              if((x[p] != x[p - 1]))
+                result =  (stack2[stackptr2 - 1] - stack1[i].prevy) / (x[p] - x[p - 1]);
+              else
+                result = stack1[i].prev;
+              stack1[i].prevprevy =  stack1[i].prevy;
+              stack1[i].prevy = stack2[stackptr2 - 1] ;
+              stack1[i].prev = result;
+            } else {
+              double a = x[p - 2] - x[p];
+              double c = x[p - 1] - x[p];
+              double b = a * a / 2.0;
+              double d = c * c / 2.0;
+              double b_on_d = b / d;
+              double fa = stack1[i].prevprevy;
+              double fb = stack1[i].prevy;
+              double fc = stack2[stackptr2 - 1];
+              if(a != 0.0) 
+                result = (fa - b_on_d * fb - (1 - b_on_d) * fc ) / (a - c * b_on_d);
+              else
+                result = stack1[i].prev;
+              stack1[i].prevprevy =  stack1[i].prevy;
+              stack1[i].prevy = stack2[stackptr2 - 1] ;
+              stack1[i].prev = result;
+            }
+            stack2[stackptr2 - 1] =  result;
+            break;
+          case DERIV0:
+            if( p == first ) {
+              result = 0;
+              stack1[i].prevy = stack2[stackptr2 - 1];
+              stack1[i].prev = 0;
+            } else if(p == first + 1) {
+              if((sweepx[p] != sweepx[p - 1]))
+                result =  (stack2[stackptr2 - 1] - stack1[i].prevy) / (sweepx[p] - sweepx[p - 1]);
+              else
+                result = stack1[i].prev;
+              stack1[i].prevprevy =  stack1[i].prevy;
+              stack1[i].prevy = stack2[stackptr2 - 1] ;
+              stack1[i].prev = result;
+            } else {
+              double a = sweepx[p - 2] - sweepx[p];
+              double c = sweepx[p - 1] - sweepx[p];
+              double b = a * a / 2.0;
+              double d = c * c / 2.0;
+              double b_on_d = b / d;
+              double fa = stack1[i].prevprevy;
+              double fb = stack1[i].prevy;
+              double fc = stack2[stackptr2 - 1];
+              if(a != 0.0)
+                result = (fa - b_on_d * fb - (1 - b_on_d) * fc ) / (a - c * b_on_d);
+              else
+                result = stack1[i].prev;
+              stack1[i].prevprevy =  stack1[i].prevy;
+              stack1[i].prevy = stack2[stackptr2 - 1] ;
+              stack1[i].prev = result;
+            }
+            stack2[stackptr2 - 1] =  result;
+            break;
+          #endif
+          case PREV:
+            if(p == first) {
+              result = stack2[stackptr2 - 1];
+            } else {
+              result =  stack1[i].prev;
+            }
+            stack1[i].prev =  stack2[stackptr2 - 1];
+            stack2[stackptr2 - 1] =  result;
             break;
           case SQRT:
             stack2[stackptr2 - 1] =  sqrt(stack2[stackptr2 - 1]);
@@ -901,13 +1037,13 @@ int plot_raw_custom_data(int sweep_idx, int first, int last, const char *expr)
             stack2[stackptr2 - 1] =  exp(stack2[stackptr2 - 1]);
             break;
           case LN:
-            stack2[stackptr2 - 1] =  log(stack2[stackptr2 - 1]);
+            stack2[stackptr2 - 1] =  mylog(stack2[stackptr2 - 1]);
             break;
           case LOG10:
-            stack2[stackptr2 - 1] =  log10(stack2[stackptr2 - 1]);
+            stack2[stackptr2 - 1] =  mylog10(stack2[stackptr2 - 1]);
             break;
           case DB20:
-            stack2[stackptr2 - 1] =  20 * log10(stack2[stackptr2 - 1]);
+            stack2[stackptr2 - 1] =  20 * mylog10(stack2[stackptr2 - 1]);
             break;
           case SGN:
             stack2[stackptr2 - 1] = stack2[stackptr2 - 1] > 0.0 ? 1 : 
@@ -2080,7 +2216,7 @@ void load_schematic(int load_symbols, const char *filename, int reset_undo) /* 2
     propagate_hilights(1, 1, XINSERT_NOREPLACE);
   }
   /* warning if two symbols perfectly overlapped */
-  warning_overlapped_symbols();
+  warning_overlapped_symbols(0);
 }
 
 void clear_undo(void)
@@ -2317,6 +2453,7 @@ static void get_sym_type(const char *symname, char **type,
   FILE *fd;
   char tag[1];
   int found = 0;
+  xctx->hash_size = HASHSIZE;
   if(!strcmp(xctx->file_version,"1.0")) {
     my_strncpy(name, abs_sym_path(symname, ".sym"), S(name));
   } else {
@@ -2415,6 +2552,7 @@ static void align_sch_pins_with_sym(const char *name, int pos)
   int i, fail = 0, sym_n_pins=0;
   Int_hashentry *pintable[HASHSIZE];
 
+  xctx->hash_size = HASHSIZE;
   if ((ptr = strrchr(name, '.')) && !strcmp(ptr, ".sch")) {
     my_strncpy(symname, add_ext(name, ".sym"), S(symname));
     memset(pintable, 0, HASHSIZE * sizeof(Int_hashentry *));
@@ -3182,7 +3320,7 @@ void make_schematic_symbol_from_sel(void)
   char filename[PATH_MAX] = "";
   char name[1024]; 
 
-  my_snprintf(name, S(name), "save_file_dialog {Save file} .sch.sym INITIALLOADDIR");
+  my_snprintf(name, S(name), "save_file_dialog {Save file} *.\\{sch,sym\\} INITIALLOADDIR");
   tcleval(name);
   my_strncpy(filename, tclresult(), S(filename));
   if (!strcmp(filename, xctx->sch[xctx->currsch])) {

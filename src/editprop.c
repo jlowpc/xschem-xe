@@ -29,6 +29,12 @@ double mylog10(double x)
   else return -35;
 }
 
+double mylog(double x)
+{
+  if(x > 0) return log(x);
+  else return -35;
+}
+
 int my_strcasecmp(const char *s1, const char *s2)
 {
   while(tolower(*s1) == tolower(*s2)) {
@@ -340,6 +346,34 @@ char *dtoa(double i)
   return s;
 }
 
+char *dtoa_eng(double i)
+{
+  static char s[70];
+  size_t n;
+  int suffix = 0;
+  double absi = fabs(i);
+
+  if     (absi == 0.0)  { suffix = 0;}
+  else if(absi >=1e12)  { i /= 1e12; suffix = 'T';}
+  else if(absi >=1e9)   { i /= 1e9 ; suffix = 'G';}
+  else if(absi >=1e6)   { i /= 1e6 ; suffix = 'M';}
+  else if(absi >=1e3)   { i /= 1e3 ; suffix = 'k';}
+  else if(absi >=0.1)   { suffix = 0;}
+  else if(absi >=1e-3)  { i *= 1e3 ; suffix = 'm';}
+  else if(absi >=1e-6)  { i *= 1e6 ; suffix = 'u';}
+  else if(absi >=1e-9)  { i *= 1e9 ; suffix = 'n';}
+  else if(absi >=1e-12) { i *= 1e12; suffix = 'p';}
+  else if(absi >=1e-15) { i *= 1e15; suffix = 'f';}
+  else                  { i *= 1e18; suffix = 'a';}
+  if(suffix) {
+    n = my_snprintf(s, S(s), "%.5g%c", i, suffix);
+  } else {
+    n = my_snprintf(s, S(s), "%.5g", i);
+  }
+  if(xctx) xctx->tok_size = n;
+  return s;
+}
+
 char *dtoa_prec(double i)
 {
   static char s[70];
@@ -348,7 +382,6 @@ char *dtoa_prec(double i)
   if(xctx) xctx->tok_size = n;
   return s;
 }
-
 
 size_t my_mstrcat(int id, char **str, const char *add, ...)
 {
@@ -607,7 +640,6 @@ static void edit_rect_property(int x)
   }
   my_free(725, &oldprop);
 }
-
 
 static void edit_line_property(void)
 {
