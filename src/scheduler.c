@@ -335,7 +335,7 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
           "node=\"\"\n"
           "color=\"\"\n"
           "dataset=-1\n"
-          "unitx=u\n"
+          "unitx=1\n"
           "logx=0\n"
           "logy=0\n"
         );
@@ -758,7 +758,7 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
       if(argc >=3) {
         l = expandlabel(argv[2], &tmp);
         llen = strlen(l);
-        dbg(0, "l=%s\n", l ? l : "<NULL>");
+        dbg(1, "l=%s\n", l ? l : "<NULL>");
         result = my_malloc(378, llen + 30);
         my_snprintf(result, llen + 30, "%s %d", l, tmp);
         Tcl_SetResult(interp, result, TCL_VOLATILE);
@@ -2070,7 +2070,7 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
       int i;
       Tcl_ResetResult(interp);
       if(argc > 2 && !strcmp(argv[2], "loaded")) {
-        Tcl_SetResult(interp, (sch_waves_loaded() >= 0) ? "1" : "0", TCL_STATIC);
+        Tcl_SetResult(interp, my_itoa(sch_waves_loaded()), TCL_VOLATILE);
       } else if(xctx->graph_values) {
         /* xschem rawfile_query value v(ldcp) 123 */
         if(argc > 4 && !strcmp(argv[2], "value")) {
@@ -2098,8 +2098,7 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
           /* xschem rawfile_query index v(ldcp) */
           Int_hashentry *entry; 
           int idx;
-          xctx->hash_size = HASHSIZE;
-          entry = int_hash_lookup(xctx->graph_raw_table, argv[3], 0, XLOOKUP);
+          entry = int_hash_lookup(&xctx->graph_raw_table, argv[3], 0, XLOOKUP);
           idx = entry ? entry->value : -1;
           Tcl_SetResult(interp, my_itoa(idx), TCL_VOLATILE);
         } else if(argc > 3 && !strcmp(argv[2], "values")) {
