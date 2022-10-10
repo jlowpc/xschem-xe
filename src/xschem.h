@@ -629,6 +629,20 @@ typedef struct {
   int size;
 } Int_hashtable;
 
+/* generic pointer hash table */
+typedef struct ptr_hashentry Ptr_hashentry;
+struct ptr_hashentry
+{
+  struct ptr_hashentry *next;
+  unsigned int hash;
+  char *token;
+  void *value;
+};
+
+typedef struct {
+  Ptr_hashentry **table;
+  int size;
+} Ptr_hashtable;
 
 typedef struct node_hashentry Node_hashentry;
 struct node_hashentry
@@ -1122,6 +1136,7 @@ extern int text_bbox(const char * str,double xscale, double yscale,
 extern int get_color(int value);
 extern void incr_hilight_color(void);
 extern void hash_inst(int what, int n);
+extern void get_inst_pin_coord(int i, int j, double *x, double *y);
 extern void del_inst_table(void);
 extern void hash_wires(void);
 extern void hash_wire(int what, int n, int incremental);
@@ -1298,6 +1313,10 @@ extern void int_hash_init(Int_hashtable *hashtable, int size);
 extern void int_hash_free(Int_hashtable *hashtable);
 extern Int_hashentry *int_hash_lookup(Int_hashtable *hashtable,
        const char *token, const int value, int what);
+extern void ptr_hash_init(Ptr_hashtable *hashtable, int size);
+extern void ptr_hash_free(Ptr_hashtable *hashtable);
+extern Ptr_hashentry *ptr_hash_lookup(Ptr_hashtable *hashtable,
+       const char *token,  void * const value, int what);
 
 extern char *find_nth(const char *str, const char *sep, int n);
 extern int isonlydigit(const char *s);
