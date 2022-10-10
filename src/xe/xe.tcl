@@ -702,7 +702,7 @@ proc yxtsc_hilight_cut {cut_fn} {
       #  set pick_up_inst 0
       #} elseif ($pick_up_inst) {
       #  if { [regexp {^(\S+)} $line \1 device_name] } { 
-      #    probe_inst $device_name 0
+      #    probe_inst $device_name
       #  }
       #}
     }
@@ -1274,9 +1274,9 @@ proc yxt_see_report_win_context_menu_probe {w el mousex mousey} {
       set subckt [$w get $r,1]
       if {[info exists xe_sd_fi_inst($subckt)]} {
         set fi_inst [lindex $xe_sd_fi_inst($subckt) 0]
-        probe_inst $fi_inst 0
+        probe_inst $fi_inst
       } else {
-        probe_inst . 0
+        probe_inst .
       }
     }
     if {![string compare $data_title net]} {
@@ -1284,27 +1284,29 @@ proc yxt_see_report_win_context_menu_probe {w el mousex mousey} {
       if {[info exists xe_sd_fi_inst($subckt)]} {
         set fi_inst [lindex $xe_sd_fi_inst($subckt) 0]
         set fi_net $fi_inst.$data
+        probe_inst $fi_inst
         probe_net $fi_net
       } else {
+      probe_inst $data
         probe_net $data
       }
     }
     if {[regexp {fi_net.*} $data_title]} {
       probe_net $data
-      probe_inst $data 1
+      probe_inst $data
     }
     if {![string compare $data_title device]} {
       set subckt [$w get $r,1]
       if {[info exists xe_sd_fi_inst($subckt)]} {
         set fi_inst [lindex $xe_sd_fi_inst($subckt) 0]
         set fi_net $fi_inst.$data
-        probe_inst $fi_net 0
+        probe_inst $fi_net
       } else {
-        probe_inst $data 0
+        probe_inst $data
       }
     }
     if {![string compare $data_title fi_device]} {
-      probe_inst $data 0
+      probe_inst $data
     }
   }
 }
@@ -1522,7 +1524,7 @@ proc yxt_run_xe_dmrc {} {
 # Temporary
 ## given a hierarchical instance name x1.xamp go down in the hierarchy and 
 ## highlight the specified instance.
-proc probe_inst {device hilight_each_level} {
+proc probe_inst_old {device hilight_each_level} {
 
   xschem set no_draw 1
   # return to top level if not already there
@@ -1542,4 +1544,27 @@ proc probe_inst {device hilight_each_level} {
   }
   xschem set no_draw 0
   xschem redraw
+}
+
+proc probe_inst {path} {
+  xschem set no_draw 1
+  # return to top level if not already there
+  while { [xschem get currsch] } { xschem go_back } 
+  # recursively descend into sub-schematics
+  while { [regexp {\.} $path] } {
+    xschem unselect_all
+    set inst $path
+    regsub {\..*} $inst {} inst    ;# take 1st path component: xlev1[3].xlev2.m3 -> xlev1[3]
+    regsub {[^.]+\.} $path {} path ;# take remaining path: xlev1[3].xlev2.m3 -> xlev2.m3
+    xschem search exact 1 name $inst
+    # handle vector instances: xlev1[3:0] -> xlev1[3],xlev1[2],xlev1[1],xlev1[0]
+    # descend into the right one
+    xschem search exact 0 name $inst 
+    set inst_list [split [lindex [xschem expandlabel [lindex [xschem selected_set] 0 ] ] 0] {,}]
+    set instnum [expr {[lsearch -exact  $inst_list $inst] + 1}]
+    xschem descend $instnum
+  }
+  xschem set no_draw 0
+  xschem redraw
+  return $path
 }
