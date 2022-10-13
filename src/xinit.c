@@ -496,7 +496,8 @@ static void alloc_xschem_data(const char *top_path, const char *win_path)
     }
   }
   xctx->node_table = my_calloc(517,  HASHSIZE, sizeof(Node_hashentry *));
-  xctx->inst_table = my_calloc(1382,  HASHSIZE, sizeof(Inst_hashentry *));
+  xctx->inst_table.table = NULL;
+  xctx->inst_table.size = 0;
   xctx->hilight_table = my_calloc(1383,  HASHSIZE, sizeof(Hilight_hashentry *));
 
   xctx->inst_redraw_table = NULL;
@@ -867,6 +868,7 @@ static void xwin_exit(void)
  }
  my_free(1122, &pixdata);
  my_free(1138, &cli_opt_tcl_command);
+ my_free(1566, &cli_opt_preinit_command);
  my_free(1070, &cli_opt_tcl_post_command);
  clear_expandlabel_data();
  get_sym_template(NULL, NULL); /* clear static data in function */
@@ -1411,7 +1413,7 @@ static void create_new_tab(int *window_count, const char *fname)
   /* tcl code to create the tab button */
   my_snprintf(nn, S(nn), "%d", n);
   tclvareval(
-    "button ", ".tabs.x", nn, " -padx 2 -pady 0 -anchor nw -text Tab2 "
+    "button ", ".tabs.x", nn, " -padx 2 -pady 0 -takefocus 0 -anchor nw -text Tab2 "
     "-command \"xschem new_schematic switch_tab .x", nn, ".drw\"", NULL);
   tclvareval("bind .tabs.x",nn," <ButtonPress> {swap_tabs %X %Y press}", NULL);
   tclvareval("bind .tabs.x",nn," <ButtonRelease> {swap_tabs %X %Y release}", NULL);
@@ -2049,8 +2051,14 @@ int Tcl_AppInit(Tcl_Interp *inter)
     fprintf(errfp, "Tcl_AppInit(): failure creating %s\n", user_conf_dir);
     Tcl_Exit(EXIT_FAILURE);
    }
- }
+ 
+}
 
+ /* Execute tcl script given on command line with --preinit, before sourcing xschemrc */
+ if(cli_opt_preinit_command) {
+   tcleval(cli_opt_preinit_command);
+ }
+ 
  /*                         */
  /*    SOURCE xschemrc file */
  /*                         */

@@ -44,19 +44,23 @@ unsigned int hash_file(const char *f, int skip_path_lines)
   size_t n;
   int cr = 0;
   unsigned int h=5381;
-  char line[4096];
+  char *line = NULL;
   fd = fopen(f, "r"); /* windows won't return \r in the lines and we chop them out anyway in the code */
   if(fd) {
-    while( fgets(line, sizeof(line), fd) ) {
+    while((line = my_fgets(fd))) {
       /* skip lines of type: '** sch_path: ...' or '-- sch_path: ...' or '// sym_path: ...' */
-      if(skip_path_lines) {
-        if(!strncmp(line+2, " sch_path: ", 11) || !strncmp(line+2, " sym_path: ", 11) ) continue;
+      if(skip_path_lines && strlen(line) > 14) {
+        if(!strncmp(line+2, " sch_path: ", 11) || !strncmp(line+2, " sym_path: ", 11) ) {
+          my_free(1388, &line);
+          continue;
+        }
       }
       n = strlen(line);
       for(i = 0; i < n; i++) {
         /* skip CRs so hashes will match on unix / windows */
         if(line[i] == '\r') {
           cr = 1;
+          my_free(1519, &line);
           continue;
         } else if(line[i] == '\n' && cr) {
           cr = 0;
@@ -66,6 +70,7 @@ unsigned int hash_file(const char *f, int skip_path_lines)
         }
         h += (h << 5) + (unsigned char)line[i];
       }
+      my_free(1545, &line);
     }
     if(cr) h += (h << 5) + '\r'; /* file ends with \r not followed by \n: keep it */
     fclose(fd);
@@ -673,7 +678,7 @@ void clear_drawing(void)
   xctx->polygons[i] = 0;
  }
  dbg(1, "clear drawing(): deleted data structures, now deleting hash\n");
- clear_instance_hash();
+ int_hash_free(&xctx->inst_table);
 }
 
 void enable_layers(void)
@@ -1043,7 +1048,7 @@ int place_symbol(int pos, const char *symbol_name, double x, double y, short rot
   xctx->inst[n].node=NULL;
   xctx->inst[n].prop_ptr=NULL;
   dbg(1, "place_symbol() :all inst_ptr members set\n");  /*  03-02-2000 */
-  if(first_call) hash_all_names(n);
+  if(first_call) hash_all_names();
   if(inst_props) {
     new_prop_string(n, inst_props,!first_call, tclgetboolvar("disable_unique_names")); /*  20171214 first_call */
   }
@@ -1556,7 +1561,7 @@ void calc_drawing_bbox(xRect *boundbox, int selected)
       entry=bus_hilight_hash_lookup(xctx->inst[i].lab, 0, XLOOKUP );
       if(entry) found = 1;
     }
-    else if( xctx->inst[i].color != -10000 ) {
+    if(!found &&  xctx->inst[i].color != -10000 ) {
       found = 1;
     }
     if(!found) continue;

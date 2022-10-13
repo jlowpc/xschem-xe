@@ -740,6 +740,7 @@ typedef struct {
   int dataset;
   int hilight_wave; /* wave index */
   int logx, logy;
+  int rainbow; /* draw multiple datasets with incrementing colors */
 } Graph_ctx;
 
 typedef struct {
@@ -832,7 +833,7 @@ typedef struct {
   int cur_undo_ptr;
   int tail_undo_ptr;
   int head_undo_ptr;
-  Inst_hashentry **inst_table;
+  Int_hashtable inst_table;
   Node_hashentry **node_table;
   Hilight_hashentry **hilight_table;
 
@@ -1038,6 +1039,7 @@ extern char cli_opt_netlist_dir[PATH_MAX];
 extern char cli_opt_filename[PATH_MAX];
 extern int cli_opt_no_readline;
 extern char *cli_opt_tcl_command;
+extern char *cli_opt_preinit_command;
 extern char *cli_opt_tcl_post_command;
 extern int cli_opt_do_print;
 extern int cli_opt_do_netlist;
@@ -1098,6 +1100,8 @@ extern const char *get_file_path(char *f);
 extern int save(int confirm);
 extern void save_ascii_string(const char *ptr, FILE *fd, int newline);
 extern Hilight_hashentry *bus_hilight_hash_lookup(const char *token, int value, int what) ;
+/* wrapper function to hash highlighted instances, avoid clash with net names */
+extern Hilight_hashentry *inst_hilight_hash_lookup(const char *token, int value, int what);
 extern Hilight_hashentry *hilight_lookup(const char *token, int value, int what);
 extern int search(const char *tok, const char *val, int sub, int sel);
 extern int process_options(int argc, char **argv);
@@ -1302,8 +1306,6 @@ extern void init_wire_iterator(Iterator_ctx *ctx, double x1, double y1, double x
 extern Wireentry *wire_iterator_next(Iterator_ctx *ctx);
 extern void check_unique_names(int rename);
 
-extern void clear_instance_hash();
-
 extern unsigned int str_hash(const char *tok);
 extern void str_hash_free(Str_hashtable *hashtable);
 extern Str_hashentry *str_hash_lookup(Str_hashtable *hashtable,
@@ -1334,6 +1336,7 @@ extern size_t my_snprintf(char *str, size_t size, const char *fmt, ...);
 extern size_t my_strdup(int id, char **dest, const char *src);
 extern void my_strndup(int id, char **dest, const char *src, size_t n);
 extern size_t my_strdup2(int id, char **dest, const char *src);
+extern char *my_fgets(FILE *fd);
 extern char *my_strtok_r(char *str, const char *delim, const char *quote, char **saveptr);
 extern int my_strncpy(char *d, const char *s, size_t n);
 extern int my_strcasecmp(const char *s1, const char *s2);
@@ -1345,7 +1348,7 @@ extern char* strtoupper(char* s);
 extern void *my_malloc(int id, size_t size);
 extern void my_realloc(int id, void *ptr,size_t size);
 extern void *my_calloc(int id, size_t nmemb, size_t size);
-extern void my_free(int id, void *ptr);
+extern char *my_free(int id, void *ptr);
 extern size_t my_strcat(int id, char **, const char *);
 extern size_t my_mstrcat(int id, char **str, const char *append_str, ...);
 extern char *my_itoa(int i);
@@ -1360,7 +1363,7 @@ extern double ceil_to_n_digits(double x, int n);
 extern const char *subst_token(const char *s, const char *tok, const char *new_val);
 extern void new_prop_string(int i, const char *old_prop,int fast, int dis_uniq_names);
 extern void hash_name(char *token, int remove);
-extern void hash_all_names(int n);
+extern void hash_all_names(void);
 extern void symbol_bbox(int i, double *x1,double *y1, double *x2, double *y2);
 /* extern char *escape_chars(char *dest, const char *source, int size); */
 

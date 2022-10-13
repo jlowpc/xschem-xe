@@ -57,6 +57,22 @@ int my_strncasecmp(const char *s1, const char *s2, size_t n)
   return tolower(*s1) - tolower(*s2);
 }
 
+/* caller should free allocated storage for s */
+char *my_fgets(FILE *fd)
+{
+  enum { SIZE = 1024 };
+  char buf[SIZE];
+  char *s = NULL;
+  size_t len;
+
+  while(fgets(buf, SIZE, fd)) {
+    my_strcat(425, &s, buf);
+    len = strlen(buf);
+    if(buf[len - 1] == '\n') break;
+  }
+  return s;
+}
+
 /* split a string into tokens like standard strtok_r,
  * if quote string is not empty any character matching quote is considered a quoting
  * character, removed from input and all characters before next quote are considered
@@ -299,15 +315,20 @@ double atof_spice(const char *s)
   int n;
   double a = 0.0, mul=1.0;
   char lower_s[100];
+  char suffix[100];
   const char *p;
 
   if(!s) return 0.0;
   my_strncpy(lower_s, s, S(lower_s));
   strtolower(lower_s);
-  n = sscanf(lower_s, "%lf", &a);
-  if(n == 1) {
-    p = strpbrk(lower_s, "tgmkunpfa");
-    if(!p) mul = 1.0;
+  n = sscanf(lower_s, "%lf%s", &a, suffix);
+  if(n == 0) {
+    return 0.0;
+  } else if(n == 1) {
+    mul = 1.0;
+  } else {
+    p = strpbrk(suffix, "tgmkunpfa");
+    if(p != suffix ) mul = 1.0;
     else if(*p == 't') mul=1e12;
     else if(*p == 'g') mul=1e9;
     else if(*p == 'm') {
@@ -510,7 +531,7 @@ void my_realloc(int id, void *ptr,size_t size)
 
 }
 
-void my_free(int id, void *ptr)
+char *my_free(int id, void *ptr)
 {
  if(*(void **)ptr) {
    free(*(void **)ptr);
@@ -519,6 +540,7 @@ void my_free(int id, void *ptr)
  } else {
    dbg(3, "\n--> my_free(%d,): trying to free NULL pointer\n", id);
  }
+ return NULL;
 }
 
 /* n characters at most are copied, *d will be always NUL terminated if *s does
@@ -1186,7 +1208,7 @@ static void update_symbol(const char *result, int x)
       my_strdup(89, &ptr,subst_token(xctx->inst[*ii].prop_ptr, "name", name) );
                      /* set name of current inst */
       if(!pushed) { xctx->push_undo(); pushed=1;}
-      if(!k) hash_all_names(*ii);
+      if(!k) hash_all_names();
       new_prop_string(*ii, ptr, k, tclgetboolvar("disable_unique_names")); /* set new prop_ptr */
     } else {
       my_strdup2(367, &xctx->inst[*ii].instname, "");

@@ -458,8 +458,8 @@ void draw_symbol(int what,int c, int n,int layer,short tmp_flip, short rot,
           (                                     /* ... and inst is hilighted ...          */
             IS_LABEL_SH_OR_PIN(type) && xctx->inst[n].node && xctx->inst[n].node[0] &&
             bus_hilight_hash_lookup(xctx->inst[n].node[0], 0, XLOOKUP )
-          ) || ( !IS_LABEL_SH_OR_PIN(type) && (xctx->inst[n].color != -10000)) )) {
-      xctx->inst[n].flags|=1;                    /* ... then SKIP instance now and for following layers */
+          ) || (/* !IS_LABEL_SH_OR_PIN(type) && */ (xctx->inst[n].color != -10000)) )) {
+      xctx->inst[n].flags|=1;      /* ... then SKIP instance now and for following layers */
       return;
     }
     else if(!xctx->only_probes && (xctx->inst[n].x2 - xctx->inst[n].x1) * xctx->mooz < 3 &&
@@ -1665,8 +1665,8 @@ static double axis_start(double n, double delta, int div)
   if(delta == 0.0) return n;
   /* if user wants only one division, just do what user asks */
   if(div == 1) return n;
-  if(delta < 0.0) return floor(n / delta) * delta;
-  return ceil(n / delta) * delta;
+  if(delta < 0.0) return ceil(n / delta) * delta;
+  return floor(n / delta) * delta;
 }
 
 static int axis_end(double x, double delta, double b)
@@ -1676,10 +1676,13 @@ static int axis_end(double x, double delta, double b)
   return x < b + delta / 100000.0;
 }
 
-static int axis_within_range(double x, double a, double b)
+static int axis_within_range(double x, double a, double b, double delta, int subdiv)
 {
-  if(a < b) return x >= a;
-  return x <= a;
+  double eps;
+  if(subdiv == 0) subdiv = 1;
+  eps = delta / (double) subdiv / 100.0;
+  if(a < b) return x >= a - eps;
+  return x <= a + eps;
 }
 
 static double get_unit(const char *val)
@@ -1967,11 +1970,11 @@ static void draw_graph_grid(Graph_ctx *gr, void *ct)
         subwx = wx + deltax * mylog10(1.0 + (double)k * 9.0 / ((double)gr->subdivx + 1.0)); 
       else
         subwx = wx + deltax * (double)k / ((double)gr->subdivx + 1.0);
-      if(!axis_within_range(subwx, gr->gx1, gr->gx2)) continue;
+      if(!axis_within_range(subwx, gr->gx1, gr->gx2, deltax, gr->subdivx)) continue;
       if(axis_end(subwx, deltax, gr->gx2)) break;
       drawline(GRIDLAYER, ADD, W_X(subwx),   W_Y(gr->gy2), W_X(subwx),   W_Y(gr->gy1), (int)dash_sizey, ct);
     }
-    if(!axis_within_range(wx, gr->gx1, gr->gx2)) continue;
+    if(!axis_within_range(wx, gr->gx1, gr->gx2, deltax, gr->subdivx)) continue;
     if(axis_end(wx, deltax, gr->gx2)) break;
     /* swap order of gy1 and gy2 since grap y orientation is opposite to xorg orientation */
     drawline(GRIDLAYER, ADD, W_X(wx),   W_Y(gr->gy2), W_X(wx),   W_Y(gr->gy1), (int)dash_sizey, ct);
@@ -1999,11 +2002,11 @@ static void draw_graph_grid(Graph_ctx *gr, void *ct)
           subwy = wy + deltay * mylog10(1.0 + (double)k * 9.0 / ((double)gr->subdivy + 1.0));
         else
           subwy = wy + deltay * (double)k / ((double)gr->subdivy + 1.0);
-        if(!axis_within_range(subwy, gr->gy1, gr->gy2)) continue;
+        if(!axis_within_range(subwy, gr->gy1, gr->gy2, deltay, gr->subdivy)) continue;
         if(axis_end(subwy, deltay, gr->gy2)) break;
         drawline(GRIDLAYER, ADD, W_X(gr->gx1), W_Y(subwy),   W_X(gr->gx2), W_Y(subwy), (int)dash_sizex, ct);
       }
-      if(!axis_within_range(wy, gr->gy1, gr->gy2)) continue;
+      if(!axis_within_range(wy, gr->gy1, gr->gy2, deltay, gr->subdivy)) continue;
       if(axis_end(wy, deltay, gr->gy2)) break;
       drawline(GRIDLAYER, ADD, W_X(gr->gx1), W_Y(wy),   W_X(gr->gx2), W_Y(wy), (int)dash_sizex, ct);
       drawline(GRIDLAYER, ADD, W_X(gr->gx1) - mark_size, W_Y(wy),   W_X(gr->gx1), W_Y(wy), 0, ct); /* axis marks */
@@ -2042,6 +2045,7 @@ void setup_graph_data(int i, const int flags, int skip, Graph_ctx *gr)
   gr->subdivx = gr->subdivy = 0;
   gr->logx = gr->logy = 0;
   gr->digital = 0;
+  gr->rainbow = 0;
 
   if(!skip) {
     gr->gx1 = 0;
@@ -2108,6 +2112,8 @@ void setup_graph_data(int i, const int flags, int skip, Graph_ctx *gr)
   val = get_tok_value(r->prop_ptr,"divy",0);
   if(val[0]) gr->divy = atoi(val);
   if(gr->divy < 1) gr->divy = 1;
+  val = get_tok_value(r->prop_ptr,"rainbow",0);
+  if(val[0] == '1') gr->rainbow = 1;
   val = get_tok_value(r->prop_ptr,"logx",0);
   if(val[0] == '1') gr->logx = 1;
   val = get_tok_value(r->prop_ptr,"logy",0);
@@ -2708,10 +2714,11 @@ int find_closest_wave(int i, Graph_ctx *gr)
  * 2: draw x-cursor1
  * 4: draw x-cursor2
  * 8: all drawing, if not set do only XCopyArea / x-cursor if specified
+ * ct is a pointer used in windows for cairo
  */
 void draw_graph(int i, const int flags, Graph_ctx *gr, void *ct)
 {
-  int wave_color = 4;
+  int wc = 4, wave_color;
   char *node = NULL, *color = NULL, *sweep = NULL;
   int sweep_idx = 0;
   int n_nodes; /* number of variables to display in a single graph */
@@ -2762,16 +2769,16 @@ void draw_graph(int i, const int flags, Graph_ctx *gr, void *ct)
       stok = my_strtok_r(sptr, "\t\n ", "\"", &saves);
       nptr = cptr = sptr = NULL;
       dbg(1, "ntok=%s ctok=%s\n", ntok, ctok? ctok: "NULL");
-      if(ctok && ctok[0]) wave_color = atoi(ctok);
-      if(wave_color < 0) wave_color = 4;
-      if(wave_color >= cadlayers) wave_color = cadlayers - 1;
+      if(ctok && ctok[0]) wc = atoi(ctok);
+      if(wc < 0) wc = 4;
+      if(wc >= cadlayers) wc = cadlayers - 1;
       if(stok && stok[0]) {
         sweep_idx = get_raw_index(stok);
         if( sweep_idx == -1) {
           sweep_idx = 0;
         }
       }
-      draw_graph_variables(wcnt, wave_color, n_nodes, sweep_idx, flags, ntok, stok, bus_msb, gr);
+      draw_graph_variables(wcnt, wc, n_nodes, sweep_idx, flags, ntok, stok, bus_msb, gr);
       /* if ntok following possible 'alias;' definition contains spaces --> custom data plot */
       idx = -1;
       expression = 0;
@@ -2814,6 +2821,8 @@ void draw_graph(int i, const int flags, Graph_ctx *gr, void *ct)
           int cnt=0, wrap;
           register SPICE_DATA *gv = xctx->graph_values[sweep_idx];
   
+          if(gr->rainbow) wave_color = 4 + (wc - 4 + sweepvar_wrap) % (cadlayers - 4);
+          else wave_color = wc;
           first = -1;
           poly_npoints = 0;
           my_realloc(1401, &point, xctx->graph_npoints[dset] * sizeof(XPoint));

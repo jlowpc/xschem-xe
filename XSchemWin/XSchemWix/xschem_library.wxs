@@ -635,6 +635,12 @@
           <Component Id="cmp653D0A919716C77B0160A681BB3332EC" Guid="{C96DAE2B-0D94-4BD4-803E-8914DB2DB851}">
             <File Id="fil8C86CA039409D917D8D2709BC846BEF9" KeyPath="yes" Source="$(var.xschemLibrarySrcDir)\examples\TwoStageAmp.sch" />
           </Component>
+		  <Component Id="cmp9006ACB643F7A2C6C3634882DBF943FA" Guid="{B88F52AD-D170-496D-8FA4-21B513C11A6E}">
+			<File Id="filF1A62E77676511ECA0E3FE5EDEF8A841" KeyPath="yes" Source="$(var.xschemLibrarySrcDir)\examples\xcross.sch" />
+	  	  </Component>
+		  <Component Id="cmp30D416247CB7868426C9E8075767CD1A" Guid="{52EE3186-47F1-4EB5-9197-98C830178888}">
+			<File Id="filF5A70F7E36226A2E9F1F9AA2B0CAA833" KeyPath="yes" Source="$(var.xschemLibrarySrcDir)\examples\xcross.sym" />
+	      </Component>
           <Component Id="cmpB573F1750B3939F980B65D02B78EE0E3" Guid="{3286D1EA-EA76-4CA3-A542-E335B89FBBFD}">
             <File Id="filBCAF4D858D3BA6A0902F217004CD2351" KeyPath="yes" Source="$(var.xschemLibrarySrcDir)\examples\xnor.sch" />
           </Component>
@@ -5634,6 +5640,8 @@
       <ComponentRef Id="cmp7BBFD4FFD4BD205783E8852433FC5873" />
       <ComponentRef Id="cmp5AF7A46758E91CA41D0CD61668C9C69A" />
       <ComponentRef Id="cmp653D0A919716C77B0160A681BB3332EC" />
+	  <ComponentRef Id="cmp9006ACB643F7A2C6C3634882DBF943FA" />
+	  <ComponentRef Id="cmp30D416247CB7868426C9E8075767CD1A" />
       <ComponentRef Id="cmpB573F1750B3939F980B65D02B78EE0E3" />
       <ComponentRef Id="cmp07A884BAD56D6B1718967173C498C3C3" />
       <ComponentRef Id="cmp93CCC992DFDB8670EC1762AF056E9A71" />
