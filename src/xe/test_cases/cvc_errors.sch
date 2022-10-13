@@ -1278,7 +1278,7 @@ C {devices/vdd.sym} 2930 90 0 0 {name=l1 lab=VDD}
 C {devices/gnd.sym} 2930 540 0 0 {name=l1 lab=GND}
 C {devices/vdd.sym} 3110 210 0 0 {name=l1 lab=VDD}
 C {devices/gnd.sym} 3110 420 0 0 {name=l1 lab=GND}
-C {devices/lab_wire.sym} 3020 310 0 0 {name=l1 sig_type=std_logic lab=ok_n1}
+C {devices/lab_wire_yxt.sym} 3020 310 0 0 {name=l1 sig_type=std_logic lab=ok_n1}
 C {sky130_fd_pr/nfet3_01v8.sym} 3490 360 0 0 {name=M43
 L=0.15
 W=1
@@ -1374,7 +1374,7 @@ C {devices/vdd.sym} 3510 100 0 0 {name=l3 lab=VDD}
 C {devices/gnd.sym} 3510 550 0 0 {name=l4 lab=GND}
 C {devices/vdd.sym} 3690 220 0 0 {name=l5 lab=VDD}
 C {devices/gnd.sym} 3690 430 0 0 {name=l6 lab=GND}
-C {devices/lab_wire.sym} 3600 320 0 0 {name=l7 sig_type=std_logic lab=n2}
+C {devices/lab_wire_yxt.sym} 3600 320 0 0 {name=l7 sig_type=std_logic lab=n2}
 C {devices/vdd.sym} 3410 150 0 0 {name=l3 lab=VDD}
 C {devices/code.sym} 4230 220 0 0 {name=s1 only_toplevel=false value="
 .SUBCKT sky130_fd_sc_hd__inv_1 A VGND VNB VPB VPWR Y

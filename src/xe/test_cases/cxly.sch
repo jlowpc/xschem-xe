@@ -36,5 +36,5 @@ C {devices/opin.sym} 560 -140 0 0 {name=p3 lab=out}
 C {sky130_stdcells/inv_1.sym} 190 -120 0 0 {name=x2 VGND=vss VNB=vss VPB=vcc VPWR=vcc prefix=sky130_fd_sc_hd__ }
 C {yxt/latch.sym} 500 -70 0 0 {name=x1 vcc=vcc vss=vss}
 C {sky130_stdcells/nand2_1.sym} 330 -140 0 0 {name=x3 VGND=vss VNB=vss VPB=vcc VPWR=vcc prefix=sky130_fd_sc_hd__ }
-C {devices/lab_wire.sym} 460 -140 0 0 {name=l2 sig_type=std_logic lab=d_clk}
-C {devices/lab_wire.sym} 260 -120 0 0 {name=l4 sig_type=std_logic lab=clkb}
+C {devices/lab_wire_yxt.sym} 460 -140 0 0 {name=l2 sig_type=std_logic lab=d_clk}
+C {devices/lab_wire_yxt.sym} 260 -120 0 0 {name=l4 sig_type=std_logic lab=clkb}

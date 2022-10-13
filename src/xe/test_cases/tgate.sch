@@ -55,6 +55,6 @@ spiceprefix=X
 C {devices/ipin.sym} 190 -240 0 0 {name=p4 lab=s}
 C {devices/ipin.sym} 240 -360 1 0 {name=p2 lab=gp}
 C {devices/ipin.sym} 240 -120 3 0 {name=p3 lab=gn}
-C {devices/lab_pin.sym} 240 -290 1 1 {name=l2 sig_type=std_logic lab=vss}
-C {devices/lab_pin.sym} 240 -190 3 1 {name=l3 sig_type=std_logic lab=vcc}
+C {devices/lab_pin_yxt.sym} 240 -290 1 1 {name=l2 sig_type=std_logic lab=vss}
+C {devices/lab_pin_yxt.sym} 240 -190 3 1 {name=l3 sig_type=std_logic lab=vcc}
 C {devices/opin.sym} 290 -240 0 0 {name=p1 lab=d}

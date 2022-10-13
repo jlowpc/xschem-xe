@@ -238,21 +238,21 @@ spiceprefix=X
 }
 C {devices/ipin.sym} 170 -700 0 0 {name=p1 lab=clk}
 C {devices/opin.sym} 780 -640 0 0 {name=p2 lab=out}
-C {devices/lab_wire.sym} 620 -640 0 0 {name=l11 sig_type=std_logic lab=z}
-C {devices/lab_wire.sym} 370 -500 0 0 {name=l14 sig_type=std_logic lab=n1}
-C {devices/lab_wire.sym} 360 -400 0 0 {name=l15 sig_type=std_logic lab=n2}
-C {devices/lab_wire.sym} 540 -400 0 0 {name=l16 sig_type=std_logic lab=n3}
-C {devices/lab_wire.sym} 480 -310 0 0 {name=l19 sig_type=std_logic lab=n4}
+C {devices/lab_wire_yxt.sym} 620 -640 0 0 {name=l11 sig_type=std_logic lab=z}
+C {devices/lab_wire_yxt.sym} 370 -500 0 0 {name=l14 sig_type=std_logic lab=n1}
+C {devices/lab_wire_yxt.sym} 360 -400 0 0 {name=l15 sig_type=std_logic lab=n2}
+C {devices/lab_wire_yxt.sym} 540 -400 0 0 {name=l16 sig_type=std_logic lab=n3}
+C {devices/lab_wire_yxt.sym} 480 -310 0 0 {name=l19 sig_type=std_logic lab=n4}
 C {devices/ipin.sym} 170 -760 0 0 {name=p3 lab=D}
 C {devices/ipin.sym} 170 -780 0 0 {name=p4 lab=C}
 C {devices/ipin.sym} 170 -800 0 0 {name=p5 lab=B}
 C {devices/ipin.sym} 170 -820 0 0 {name=p6 lab=A}
-C {devices/lab_pin.sym} 340 -590 0 0 {name=l22 sig_type=std_logic lab=A}
-C {devices/lab_pin.sym} 300 -450 0 0 {name=l24 sig_type=std_logic lab=B}
-C {devices/lab_pin.sym} 300 -360 0 0 {name=l25 sig_type=std_logic lab=C}
-C {devices/lab_pin.sym} 480 -450 0 0 {name=l26 sig_type=std_logic lab=D}
-C {devices/lab_pin.sym} 480 -360 0 0 {name=l27 sig_type=std_logic lab=E}
-C {devices/lab_pin.sym} 370 -250 0 0 {name=l33 sig_type=std_logic lab=F}
+C {devices/lab_pin_yxt.sym} 340 -590 0 0 {name=l22 sig_type=std_logic lab=A}
+C {devices/lab_pin_yxt.sym} 300 -450 0 0 {name=l24 sig_type=std_logic lab=B}
+C {devices/lab_pin_yxt.sym} 300 -360 0 0 {name=l25 sig_type=std_logic lab=C}
+C {devices/lab_pin_yxt.sym} 480 -450 0 0 {name=l26 sig_type=std_logic lab=D}
+C {devices/lab_pin_yxt.sym} 480 -360 0 0 {name=l27 sig_type=std_logic lab=E}
+C {devices/lab_pin_yxt.sym} 370 -250 0 0 {name=l33 sig_type=std_logic lab=F}
 C {devices/ipin.sym} 170 -720 0 0 {name=p14 lab=F}
 C {devices/ipin.sym} 170 -740 0 0 {name=p15 lab=E}
 C {devices/code.sym} 550 -230 0 0 {name=TT_MODELS
@@ -270,17 +270,17 @@ X1 VPWR A Y VPB sky130_fd_pr__pfet_01v8_hvt w=1e+06u l=150000u
 spice_ignore=false}
 C {devices/ipin.sym} 170 -840 0 0 {name=p16 lab=vss}
 C {devices/ipin.sym} 170 -860 0 0 {name=p17 lab=vcc}
-C {devices/lab_pin.sym} 430 -700 0 1 {name=l36 sig_type=std_logic lab=vcc}
-C {devices/lab_pin.sym} 550 -720 0 0 {name=l37 sig_type=std_logic lab=vcc}
-C {devices/lab_pin.sym} 450 -590 0 1 {name=l38 sig_type=std_logic lab=vss}
-C {devices/lab_pin.sym} 400 -450 0 1 {name=l44 sig_type=std_logic lab=vss}
-C {devices/lab_pin.sym} 400 -360 0 1 {name=l45 sig_type=std_logic lab=vss}
-C {devices/lab_pin.sym} 570 -450 0 1 {name=l46 sig_type=std_logic lab=vss}
-C {devices/lab_pin.sym} 570 -360 0 1 {name=l47 sig_type=std_logic lab=vss}
-C {devices/lab_pin.sym} 470 -250 0 1 {name=l53 sig_type=std_logic lab=vss}
-C {devices/lab_pin.sym} 470 -160 0 1 {name=l55 sig_type=std_logic lab=vss}
-C {devices/lab_pin.sym} 430 -100 0 1 {name=l56 sig_type=std_logic lab=vss}
-C {devices/lab_pin.sym} 410 -760 0 0 {name=l8 sig_type=std_logic lab=vcc}
+C {devices/lab_pin_yxt.sym} 430 -700 0 1 {name=l36 sig_type=std_logic lab=vcc}
+C {devices/lab_pin_yxt.sym} 550 -720 0 0 {name=l37 sig_type=std_logic lab=vcc}
+C {devices/lab_pin_yxt.sym} 450 -590 0 1 {name=l38 sig_type=std_logic lab=vss}
+C {devices/lab_pin_yxt.sym} 400 -450 0 1 {name=l44 sig_type=std_logic lab=vss}
+C {devices/lab_pin_yxt.sym} 400 -360 0 1 {name=l45 sig_type=std_logic lab=vss}
+C {devices/lab_pin_yxt.sym} 570 -450 0 1 {name=l46 sig_type=std_logic lab=vss}
+C {devices/lab_pin_yxt.sym} 570 -360 0 1 {name=l47 sig_type=std_logic lab=vss}
+C {devices/lab_pin_yxt.sym} 470 -250 0 1 {name=l53 sig_type=std_logic lab=vss}
+C {devices/lab_pin_yxt.sym} 470 -160 0 1 {name=l55 sig_type=std_logic lab=vss}
+C {devices/lab_pin_yxt.sym} 430 -100 0 1 {name=l56 sig_type=std_logic lab=vss}
+C {devices/lab_pin_yxt.sym} 410 -760 0 0 {name=l8 sig_type=std_logic lab=vcc}
 C {sky130_fd_pr/pfet_01v8.sym} 590 -800 0 1 {name=Mfb1
 L=0.15
 W=1
@@ -295,8 +295,8 @@ sa=0 sb=0 sd=0
 model=pfet_01v8
 spiceprefix=X
 }
-C {devices/lab_pin.sym} 570 -850 0 0 {name=l2 sig_type=std_logic lab=vcc}
-C {devices/lab_pin.sym} 640 -800 0 1 {name=l3 sig_type=std_logic lab=vss}
+C {devices/lab_pin_yxt.sym} 570 -850 0 0 {name=l2 sig_type=std_logic lab=vcc}
+C {devices/lab_pin_yxt.sym} 640 -800 0 1 {name=l3 sig_type=std_logic lab=vss}
 C {sky130_fd_pr/pfet_01v8.sym} 690 -370 0 1 {name=Mfb2
 L=0.15
 W=1
@@ -311,8 +311,8 @@ sa=0 sb=0 sd=0
 model=pfet_01v8
 spiceprefix=X
 }
-C {devices/lab_pin.sym} 730 -370 0 1 {name=l4 sig_type=std_logic lab=clk}
-C {devices/lab_pin.sym} 670 -420 0 1 {name=l5 sig_type=std_logic lab=vcc}
-C {devices/lab_pin.sym} 640 -370 0 0 {name=l6 sig_type=std_logic lab=vcc}
-C {devices/lab_wire.sym} 430 -200 0 0 {name=l7 sig_type=std_logic lab=nvg}
-C {devices/lab_pin.sym} 550 -800 0 0 {name=l9 sig_type=std_logic lab=vcc}
+C {devices/lab_pin_yxt.sym} 730 -370 0 1 {name=l4 sig_type=std_logic lab=clk}
+C {devices/lab_pin_yxt.sym} 670 -420 0 1 {name=l5 sig_type=std_logic lab=vcc}
+C {devices/lab_pin_yxt.sym} 640 -370 0 0 {name=l6 sig_type=std_logic lab=vcc}
+C {devices/lab_wire_yxt.sym} 430 -200 0 0 {name=l7 sig_type=std_logic lab=nvg}
+C {devices/lab_pin_yxt.sym} 550 -800 0 0 {name=l9 sig_type=std_logic lab=vcc}
