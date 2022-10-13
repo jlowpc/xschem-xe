@@ -19,6 +19,60 @@ if {$::OS == "Windows"} {
   load xe_dmrc.so
 }
 
+proc xe::get_info {net} {  
+  global xe_net_info_dict
+  set path [string range [xschem get sch_path] 1 end]
+  set netname $path$net
+  if {[info exists xe_net_info_dict($netname)]} {
+    return $xe_net_info_dict($netname)
+  }
+  return "-"
+}
+
+proc yxt_read_net_property {} {
+  global xe_net_info_dict xe_conf_dict
+  set s [file tail [file rootname [xschem get schname]]]
+  set fn $xe_conf_dict(xe_wd)/$s.net_property
+  set fd [open $fn r]
+  set a [catch "open \"$fn\" r" fd]
+  if {$a} {
+    puts stderr "Can not open file to read info for XE $fn"
+  } else {
+    while { [gets $fd line] >=0 } {
+      if { [regexp {^#} $line] } { # comments
+        continue
+      } else {
+        set tokens [split $line { }]
+        set xe_net_info_dict([lindex $tokens 0]) [lindex $tokens 1]
+      } 
+    }
+  } 
+  close $fd
+}
+
+
+#  set n [string tolower $n]
+#  set prefix [string range $n 0 0]
+#  set path [string range [xschem get sch_path] 1 end]
+#  set n $path$n
+#  if { $path ne {} } {
+#    set n $prefix.$n
+#  }
+#  if { ![regexp $prefix {[ve]}] } {
+#    set n @$n
+#  }
+#  set n i($n)
+#  if { [regexp {\[} $n] } { set n \{$n\} }
+#  # puts "ngspice::get_current --> $n"
+#  set err [catch {set ::ngspice::ngspice_data($n)} res]
+#  if { $err } {
+#    set res {?}
+#  } else {
+#    set res [ format %.4g $res ]
+#  }
+#  # puts "$n --> $res"
+#  return $res
+
 proc yxt_clear_global {} {
   global xe_gT xe_gTFull xe_gfilter_item_ht xe_gtablewindow_visibility
   array unset xe_gT 
@@ -1477,6 +1531,7 @@ proc yxt_run_all_xe {cmd} {
   global XE_ROOT_DIR
   yxt_run_xe_lm $cmd
   yxt_run_xe_dmrc
+  yxt_read_net_property
 }
 
 

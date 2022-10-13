@@ -45,5 +45,6 @@ set xetcl_writability_lat_tgate_keeper_up_ratio 2.8
 set xetcl_writability_lat_tgate_keeper_down_ratio 2.8
 set xetcl_writability_default_keeper_up_ratio 4
 set xetcl_writability_default_keeper_down_ratio 4
-
+# State node relation check
+set xetcl_limit_series_footless_domino 0
 ####################################################
