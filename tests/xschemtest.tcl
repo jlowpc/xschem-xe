@@ -194,9 +194,9 @@ proc netlist_test {} {
     greycnt.sch             verilog    2415454714
     autozero_comp.sch       spice      1181616733
     loading.sch             vhdl       3300682141
-    mos_power_ampli.sch     spice      1004049459
+    mos_power_ampli.sch     spice      1986885043
     hierarchical_tedax.sch  tedax       998070173
-    LCC_instances.sch       spice      2610855064
+    LCC_instances.sch       spice       268038818
     pcb_test1.sch           tedax      1925087189
     test_doublepin.sch      spice        64707104
     simulate_ff.sch         spice      1321596936

@@ -645,12 +645,12 @@ static double ravg_store(int what , int i, int p, int last, double value)
   static double **arr = NULL;
   int j;
 
-  if(what == 0 && imax) {
-    for(j = 0; j < imax; j++) {
-      my_free(1512, &arr[j]);
-    }
-    my_free(1513, &arr);
-    imax = 0;
+  /* 
+  dbg(0, "ravg_store: what= %d i= %d p= %d last= %d value=%g\n",
+              what, i, p, last, value);
+  */
+  if(what == 2) {
+    return arr[i][p];
   } else if(what == 1) {
     if(i >= imax) {
       int new_size = i + 4;
@@ -661,8 +661,12 @@ static double ravg_store(int what , int i, int p, int last, double value)
       imax = new_size;
     }
     arr[i][p] = value;
-  } else if(what == 2) {
-    return arr[i][p];
+  } else if(what == 0 && imax) {
+    for(j = 0; j < imax; j++) {
+      my_free(1512, &arr[j]);
+    }
+    my_free(1513, &arr);
+    imax = 0;
   }
   return 0.0;
 }
@@ -860,11 +864,11 @@ int plot_raw_custom_data(int sweep_idx, int first, int last, const char *expr)
             ravg_store(1, i, p, last, result);
             
             while(stack1[i].prevp <= last && x[p] - x[stack1[i].prevp] > stack2[stackptr2 - 1]) {
-              dbg(1, "%g  -->  %g\n", x[stack1[i].prevp], x[p]);
+              /* dbg(1, "%g  -->  %g\n", x[stack1[i].prevp], x[p]); */
               stack1[i].prevp++;
             }
             stack2[stackptr2 - 2] = (result - ravg_store(2, i, stack1[i].prevp, 0, 0)) / stack2[stackptr2 - 1];
-            dbg(1, "result=%g ravg_store=%g\n", result,  ravg_store(2, i, stack1[i].prevp, 0, 0));
+            /* dbg(1, "result=%g ravg_store=%g\n", result,  ravg_store(2, i, stack1[i].prevp, 0, 0)); */
             stackptr2--;
             break;
           case POW:
@@ -2054,6 +2058,8 @@ int save_schematic(const char *schname) /* 20171020 added return value */
   FILE *fd;
   char name[PATH_MAX]; /* overflow safe 20161122 */
   struct stat buf;
+  xRect *rect;
+  int rects;
 
   if( strcmp(schname,"") ) my_strncpy(xctx->sch[xctx->currsch], schname, S(xctx->sch[xctx->currsch]));
   else return 0;
@@ -2076,6 +2082,9 @@ int save_schematic(const char *schname) /* 20171020 added return value */
     return 0;
   }
   unselect_all(1);
+  rects = xctx->rects[PINLAYER];
+  rect = xctx->rect[PINLAYER];
+  sort_symbol_pins(rect, rects, schname);
   write_xschem_file(fd);
   fclose(fd);
   /* update time stamp */
@@ -2730,6 +2739,42 @@ static void calc_symbol_bbox(int pos)
   xctx->sym[pos].maxy = boundbox.y2;
 }
 
+static int order_changed;
+static int pin_compare(const void *a, const void *b)
+{
+  int pinnumber_a, pinnumber_b;
+  const char *tmp;
+  int result;
+  
+  tmp = get_tok_value(((xRect *)a)->prop_ptr, "sim_pinnumber", 0);
+  pinnumber_a = tmp[0] ?  atoi(tmp) : -1;
+  tmp = get_tok_value(((xRect *)b)->prop_ptr, "sim_pinnumber", 0);
+  pinnumber_b = tmp[0] ?atoi(tmp) : -1;
+  result =  pinnumber_a < pinnumber_b ? -1 : pinnumber_a == pinnumber_b ? 0 : 1;
+  if(result >= 0) order_changed = 1;
+  return result;
+}
+
+void sort_symbol_pins(xRect *pin_array, int npins, const char *name)
+{
+  int j, do_sort = 0;
+  const char *pinnumber;
+  order_changed = 0;
+
+  if(npins > 0) do_sort = 1; /* no pins, no sort... */
+  /* do not sort if some pins don't have pinnumber attribute */
+  for(j = 0; j < npins; j++) {
+    pinnumber = get_tok_value(pin_array[j].prop_ptr, "sim_pinnumber", 0);
+    if(!pinnumber[0]) do_sort = 0;
+  }
+  if(do_sort) {
+    qsort(pin_array, npins, sizeof(xRect), pin_compare);
+    if(order_changed) {
+      dbg(1, "Symbol %s has pinnumber attributes on pins. Pins will be sorted\n", name);
+    }
+  }
+}
+
 /* Global (or static global) variables used:
  * cadlayers
  * errfp
@@ -2756,7 +2801,7 @@ int load_sym_def(const char *name, FILE *embed_fd)
 #endif
   char sympath[PATH_MAX];
   int i,c, k, poly_points;
-  char *aux_ptr=NULL;
+  char ch = 0, *aux_ptr=NULL;
   char *prop_ptr=NULL, *symtype=NULL;
   double inst_x0, inst_y0;
   short inst_rot, inst_flip;
@@ -2784,7 +2829,7 @@ int load_sym_def(const char *name, FILE *embed_fd)
   symbols = xctx->symbols;
   dbg(1, "l_s_d(): recursion_counter=%d, name=%s\n", recursion_counter, name);
   recursion_counter++;
-  dbg(1, "l_s_d(): name=%s\n", name);
+  dbg(1, "l_s_d(): loading name=%s\n", name);
   lcc=NULL;
   my_realloc(647, &lcc, (level + 1) * sizeof(Lcc));
   max_level = level + 1;
@@ -2793,9 +2838,10 @@ int load_sym_def(const char *name, FILE *embed_fd)
   } else {
     my_strncpy(sympath, abs_sym_path(name, ""), S(sympath));
   }
-  if(!embed_fd) {
+  if(!embed_fd) { /* regular symbol: open file */
     if((lcc[level].fd=fopen(sympath,fopen_read_mode))==NULL)
     {
+      /* issue warning only on top level symbol loading */
       if(recursion_counter == 1) dbg(0, "l_s_d(): Symbol not found: %s\n",sympath);
       my_snprintf(sympath, S(sympath), "%s/%s", tclgetvar("XSCHEM_SHAREDIR"), "systemlib/missing.sym");
       if((lcc[level].fd=fopen(sympath, fopen_read_mode))==NULL)
@@ -2805,11 +2851,12 @@ int load_sym_def(const char *name, FILE *embed_fd)
       }
     }
     dbg(1, "l_s_d(): fopen1(%s), level=%d, fd=%p\n",sympath, level, lcc[level].fd);
-  } else {
+  } else { /* embedded symbol (defined after instantiation within [...] ) */
     dbg(1, "l_s_d(): getting embed_fd, level=%d\n", level);
     lcc[level].fd = embed_fd;
   }
   endfile=0;
+  /* initialize data for loading a new symbol */
   for(c=0;c<cadlayers;c++)
   {
    lasta[c] = lastl[c] = lastr[c] = lastp[c] = 0;
@@ -2822,6 +2869,7 @@ int load_sym_def(const char *name, FILE *embed_fd)
   symbol[symbols].templ = NULL;
   symbol[symbols].name=NULL;
   my_strdup2(352, &symbol[symbols].name,name);
+  /* read symbol from file */
   while(1)
   {
    if(endfile && embed_fd && level == 0) break; /* ']' line encountered --> exit */
@@ -2840,7 +2888,7 @@ int load_sym_def(const char *name, FILE *embed_fd)
      continue;
    }
    incremented_level = 0;
-   switch(tag[0])
+   switch(tag[0]) /* first character of line defines type of object */
    {
     case 'v':
      load_ascii_string(&aux_ptr, lcc[level].fd);
@@ -3029,8 +3077,7 @@ int load_sym_def(const char *name, FILE *embed_fd)
        read_line(lcc[level].fd, 0);
        continue;
      }
-     if (level>0 && c == PINLAYER)  /* Don't care about pins inside SYM */
-       c = 7;
+     if (level>0 && c == PINLAYER) c = 7; /* Don't care about pins inside SYM: set on different layer */
      i=lastr[c];
      my_realloc(349, &bb[c],(i+1)*sizeof(xRect));
      if(fscanf(lcc[level].fd, "%lf %lf %lf %lf ",&bb[c][i].x1, &bb[c][i].y1,
@@ -3049,14 +3096,17 @@ int load_sym_def(const char *name, FILE *embed_fd)
      RECTORDER(bb[c][i].x1, bb[c][i].y1, bb[c][i].x2, bb[c][i].y2);
      bb[c][i].prop_ptr=NULL;
      load_ascii_string( &bb[c][i].prop_ptr, lcc[level].fd);
+     /* don't load graphs of LCC schematic instances */
+     if(strstr(get_tok_value(bb[c][i].prop_ptr, "flags", 0), "graph")) {
+       my_free(1594, &bb[c][i].prop_ptr);
+       continue;
+     }
      dbg(2, "l_s_d(): loaded rect: ptr=%lx\n", (unsigned long)bb[c]);
-
      dash = get_tok_value(bb[c][i].prop_ptr,"dash", 0);
      if( strcmp(dash, "") ) {
        int d = atoi(dash);
        bb[c][i].dash = (short)(d >= 0 ? d : 0);
-     } else
-       bb[c][i].dash = 0;
+     } else bb[c][i].dash = 0;
      bb[c][i].sel = 0;
      bb[c][i].extraptr = NULL;
      set_rect_flags(&bb[c][i]);
@@ -3068,6 +3118,7 @@ int load_sym_def(const char *name, FILE *embed_fd)
      tt[i].txt_ptr=NULL;
      tt[i].font=NULL;
      load_ascii_string(&tt[i].txt_ptr, lcc[level].fd);
+     dbg(1, "l_s_d(): txt1: level=%d tt[i].txt_ptr=%s, i=%d\n", level, tt[i].txt_ptr, i);
      if(fscanf(lcc[level].fd, "%lf %lf %hd %hd %lf %lf ",&tt[i].x0, &tt[i].y0, &tt[i].rot,
         &tt[i].flip, &tt[i].xscale, &tt[i].yscale) < 6 ) {
        fprintf(errfp,"l_s_d(): WARNING:  missing fields for Text object, ignoring\n");
@@ -3076,8 +3127,53 @@ int load_sym_def(const char *name, FILE *embed_fd)
      }
      if (level>0) {
        const char* tmp = translate2(lcc, level, tt[i].txt_ptr);
+       dbg(1, "l_s_d(): txt2: tt[i].txt_ptr=%s, i=%d\n",  tt[i].txt_ptr, i);
        rot = lcc[level].rot; flip = lcc[level].flip;
        if (tmp) my_strdup(651, &tt[i].txt_ptr, tmp);
+       dbg(1, "l_s_d(): txt3: tt[i].txt_ptr=%s, i=%d\n",  tt[i].txt_ptr, i);
+       /* allow annotation inside LCC instances. */
+       if(tt[i].txt_ptr && !strcmp(tt[i].txt_ptr, "@spice_get_voltage")) {
+         /* prop_ptr is the attribute string of last loaded LCC component */
+         const char *lab;
+         size_t new_size = 0;
+         char *path = NULL;
+         if(level > 1) { /* add parent LCC instance names (X1, Xinv etc) */
+           int i;
+           for(i = 1; i <level; i++) {
+             const char *instname = get_tok_value(lcc[i].prop_ptr, "name", 0);
+             my_strcat(1582, &path, instname);
+             my_strcat(1588, &path, ".");
+           }
+         }
+         if(path) new_size += strlen(path);
+         lab = get_tok_value(prop_ptr, "lab", 0);
+         new_size += xctx->tok_size + 21; /* @spice_get_voltage(<lab>) */
+         my_realloc(1587, &tt[i].txt_ptr, new_size);
+         my_snprintf(tt[i].txt_ptr, new_size, "@spice_get_voltage(%s%s)", path ? path : "", lab);
+         my_free(1589, &path);
+         dbg(1, " --> tt[i].txt_ptr=%s\n", tt[i].txt_ptr);
+       }
+       if(tt[i].txt_ptr && !strcmp(tt[i].txt_ptr, "@spice_get_current")) {
+         /* prop_ptr is the attribute string of last loaded LCC component */
+         const char *dev;
+         size_t new_size = 0;
+         char *path = NULL;
+         if(level > 1) { /* add parent LCC instance names (X1, Xinv etc) */
+           int i;
+           for(i = 1; i <level; i++) {
+             const char *instname = get_tok_value(lcc[i].prop_ptr, "name", 0);
+             my_strcat(1590, &path, instname);
+             my_strcat(1591, &path, "."); 
+           }
+         } 
+         if(path) new_size += strlen(path);
+         dev = get_tok_value(prop_ptr, "name", 0);
+         new_size += xctx->tok_size + 21; /* @spice_get_current(<dev>) */
+         my_realloc(1592, &tt[i].txt_ptr, new_size);
+         my_snprintf(tt[i].txt_ptr, new_size, "@spice_get_current(%s%s)", path ? path : "", dev);
+         my_free(1593, &path);
+         dbg(1, " --> tt[i].txt_ptr=%s\n", tt[i].txt_ptr);
+       } 
        ROTATION(rot, flip, 0.0, 0.0, tt[i].x0, tt[i].y0, rx1, ry1);
        tt[i].x0 = lcc[level].x0 + rx1;  tt[i].y0 = lcc[level].y0 + ry1;
        tt[i].rot = (tt[i].rot + ((lcc[level].flip && (tt[i].rot & 1)) ?
@@ -3138,15 +3234,15 @@ int load_sym_def(const char *name, FILE *embed_fd)
      ll[WIRELAYER][i].sel = 0;
      lastl[WIRELAYER]++;
      break;
-    case 'C':
+    case 'C': /* symbol is LCC: contains components */
       load_ascii_string(&symname, lcc[level].fd);
-      dbg(1, "l_s_d(): C line: symname=%s\n", symname);
       if (fscanf(lcc[level].fd, "%lf %lf %hd %hd", &inst_x0, &inst_y0, &inst_rot, &inst_flip) < 4) {
         fprintf(errfp, "l_s_d(): WARNING: missing fields for COMPONENT object, ignoring\n");
         read_line(lcc[level].fd, 0);
         continue;
       }
       load_ascii_string(&prop_ptr, lcc[level].fd);
+      dbg(1, "l_s_d() component: level=%d, sym=%s, prop_ptr = %s\n", level, symname, prop_ptr);
       if(level + 1 >=CADMAXHIER) {
         fprintf(errfp, "l_s_d(): Symbol recursively instantiating symbol: max depth reached, skipping\n");
         if(has_x) tcleval("alert_ {xSymbol recursively instantiating symbol: max depth reached, skipping} {} 1");
@@ -3154,23 +3250,20 @@ int load_sym_def(const char *name, FILE *embed_fd)
         continue;
       }
 
-      {
-        char c;
-        filepos = xftell(lcc[level].fd); /* store file pointer position to inspect next line */
-        fd_tmp = NULL;
-        read_line(lcc[level].fd, 1);
-        fscan_ret = fscanf(lcc[level].fd, " ");
-        if(fscanf(lcc[level].fd," %c",&c)!=EOF) {
-          if( c == '[') {
-            fd_tmp = lcc[level].fd;
-          }
+      filepos = xftell(lcc[level].fd); /* store file pointer position to inspect next line */
+      fd_tmp = NULL;
+      read_line(lcc[level].fd, 1);
+      fscan_ret = fscanf(lcc[level].fd, " ");
+      if(fscanf(lcc[level].fd," %c",&ch)!=EOF) {
+        if( ch == '[') {
+          fd_tmp = lcc[level].fd;
         }
-        /* get symbol type by looking into list of loaded symbols or (if not found) by
-         * opening/closing the symbol file and getting the 'type' attribute from global symbol attributes
-         * if fd_tmp set read symbol from embedded tags '[...]' */
-        get_sym_type(symname, &symtype, NULL, fd_tmp, &sym_n_pins);
-        xfseek(lcc[level].fd, filepos, SEEK_SET); /* rewind file pointer */
       }
+      /* get symbol type by looking into list of loaded symbols or (if not found) by
+       * opening/closing the symbol file and getting the 'type' attribute from global symbol attributes
+       * if fd_tmp set read symbol from embedded tags '[...]' */
+      get_sym_type(symname, &symtype, NULL, fd_tmp, &sym_n_pins);
+      xfseek(lcc[level].fd, filepos, SEEK_SET); /* rewind file pointer */
 
       dbg(1, "l_s_d(): level=%d, symname=%s symtype=%s\n", level, symname, symtype);
       if(  /* add here symbol types not to consider when loading schematic-as-symbol instances */
@@ -3271,14 +3364,14 @@ int load_sym_def(const char *name, FILE *embed_fd)
      if( tag[0] == '{' ) ungetc(tag[0], lcc[level].fd);
      read_record(tag[0], lcc[level].fd, 0);
      break;
-   }
+   } /* switch(tag[0]) */
    /* if a 'C' line was encountered and level was incremented, rest of line must be read
       with lcc[level-1].fd file pointer */
    if(incremented_level)
      read_line(lcc[level-1].fd, 0); /* discard any remaining characters till (but not including) newline */
    else
      read_line(lcc[level].fd, 0); /* discard any remaining characters till (but not including) newline */
-  }
+  } /* while(1) */
   if(!embed_fd) {
     dbg(1, "l_s_d(): fclose2, level=%d, fd=%p\n", level, lcc[0].fd);
     fclose(lcc[0].fd);
@@ -3306,7 +3399,6 @@ int load_sym_def(const char *name, FILE *embed_fd)
   /* given a .sch file used as instance in LCC schematics, order its pin
    * as in corresponding .sym file if it exists */
   align_sch_pins_with_sym(name, symbols);
-  xctx->symbols++;
   my_free(910, &prop_ptr);
   my_free(901, &lastl);
   my_free(902, &lastr);
@@ -3321,6 +3413,10 @@ int load_sym_def(const char *name, FILE *embed_fd)
   my_free(912, &symname);
   my_free(913, &symtype);
   recursion_counter--;
+  sort_symbol_pins(xctx->sym[xctx->symbols].rect[PINLAYER],
+                   xctx->sym[xctx->symbols].rects[PINLAYER],
+                   xctx->sym[xctx->symbols].name);
+  xctx->symbols++;
   return 1;
 }
 
@@ -3367,11 +3463,8 @@ void create_sch_from_sym(void)
   xRect *rct;
   FILE *fd;
   char *pindir[3] = {"in", "out", "inout"};
-  char *pinname[3] = {"devices/ipin.sym", "devices/opin.sym", "devices/iopin.sym"};
-  char *generic_pin = {"devices/generic_pin.sym"};
-  char *pinname2[3] = {"ipin.sym", "opin.sym", "iopin.sym"};
-  char *generic_pin2 = {"generic_pin.sym"};
-  int indirect;
+  char *pinname[3] = {NULL, NULL, NULL};
+  char *generic_pin = NULL;
 
   char *dir = NULL;
   char *prop = NULL;
@@ -3383,99 +3476,101 @@ void create_sch_from_sym(void)
   char *sch = NULL;
   size_t ln;
 
-  if(!stat(abs_sym_path(pinname[0], ""), &buf)) {
-    indirect=1;
-  } else {
-    indirect=0;
-  }
-  /* printf("indirect=%d\n", indirect); */
-
-  rebuild_selected_array();
-  if(xctx->lastsel > 1)  return;
-  if(xctx->lastsel==1 && xctx->sel_array[0].type==ELEMENT)
-  {
-    my_strdup2(1250, &sch,
-      get_tok_value((xctx->inst[xctx->sel_array[0].n].ptr+ xctx->sym)->prop_ptr, "schematic",0 ));
-    my_strncpy(schname, abs_sym_path(sch, ""), S(schname));
-    my_free(1251, &sch);
-    if(!schname[0]) {
-      my_strncpy(schname, add_ext(abs_sym_path(xctx->inst[xctx->sel_array[0].n].name, ""), ".sch"), S(schname));
-    }
-    if( !stat(schname, &buf) ) {
-      tclvareval("ask_save \"Create schematic file: ", schname,
-          "?\nWARNING: This schematic file already exists, it will be overwritten\"", NULL);
-      if(strcmp(tclresult(), "yes") ) {
+  my_strdup(1595, &pinname[0], tcleval("rel_sym_path [find_file ipin.sym]"));
+  my_strdup(1596, &pinname[1], tcleval("rel_sym_path [find_file opin.sym]"));
+  my_strdup(1597, &pinname[2], tcleval("rel_sym_path [find_file iopin.sym]"));
+  my_strdup(1606, &generic_pin, tcleval("rel_sym_path [find_file generic_pin.sym]"));
+  
+  if(pinname[0] && pinname[1] && pinname[2] && generic_pin) {
+    rebuild_selected_array();
+    if(xctx->lastsel > 1)  return;
+    if(xctx->lastsel==1 && xctx->sel_array[0].type==ELEMENT)
+    {
+      my_strdup2(1250, &sch,
+        get_tok_value((xctx->inst[xctx->sel_array[0].n].ptr+ xctx->sym)->prop_ptr, "schematic",0 ));
+      my_strncpy(schname, abs_sym_path(sch, ""), S(schname));
+      my_free(1251, &sch);
+      if(!schname[0]) {
+        my_strncpy(schname, add_ext(abs_sym_path(xctx->inst[xctx->sel_array[0].n].name, ""),
+             ".sch"), S(schname));
+      }
+      if( !stat(schname, &buf) ) {
+        tclvareval("ask_save \"Create schematic file: ", schname,
+            "?\nWARNING: This schematic file already exists, it will be overwritten\"", NULL);
+        if(strcmp(tclresult(), "yes") ) {
+          return;
+        }
+      }
+      if(!(fd=fopen(schname,"w")))
+      {
+        fprintf(errfp, "create_sch_from_sym(): problems opening file %s \n",schname);
+        tcleval("alert_ {file opening for write failed!} {}");
         return;
       }
-    }
-    if(!(fd=fopen(schname,"w")))
-    {
-      fprintf(errfp, "create_sch_from_sym(): problems opening file %s \n",schname);
-      tcleval("alert_ {file opening for write failed!} {}");
-      return;
-    }
-    fprintf(fd, "v {xschem version=%s file_version=%s}\n", XSCHEM_VERSION, XSCHEM_FILE_VERSION);
-    fprintf(fd, "G {}");
-    fputc('\n', fd);
-    fprintf(fd, "V {}");
-    fputc('\n', fd);
-    fprintf(fd, "E {}");
-    fputc('\n', fd);
-    fprintf(fd, "S {}");
-    fputc('\n', fd);
-    ptr = xctx->inst[xctx->sel_array[0].n].ptr+xctx->sym;
-    npin = ptr->rects[GENERICLAYER];
-    rct = ptr->rect[GENERICLAYER];
-    ypos=0;
-    for(i=0;i<npin;i++) {
-      my_strdup(356, &prop, rct[i].prop_ptr);
-      if(!prop) continue;
-      sub_prop=strstr(prop,"name=")+5;
-      if(!sub_prop) continue;
-      x=-120.0;
-      ln = 100+strlen(sub_prop);
-      my_realloc(357, &str, ln);
-      my_snprintf(str, ln, "name=g%d lab=%s", p++, sub_prop);
-      if(indirect)
-        fprintf(fd, "C {%s} %.16g %.16g %.16g %.16g ", generic_pin, x, 20.0*(ypos++), 0.0, 0.0 );
-      else
-        fprintf(fd, "C {%s} %.16g %.16g %.16g %.16g ", generic_pin2, x, 20.0*(ypos++), 0.0, 0.0 );
-      save_ascii_string(str, fd, 1);
-    } /* for(i) */
-    npin = ptr->rects[PINLAYER];
-    rct = ptr->rect[PINLAYER];
-    for(j=0;j<3;j++) {
-      if(j==1) ypos=0;
+      fprintf(fd, "v {xschem version=%s file_version=%s}\n", XSCHEM_VERSION, XSCHEM_FILE_VERSION);
+      fprintf(fd, "G {}");
+      fputc('\n', fd);
+      fprintf(fd, "V {}");
+      fputc('\n', fd);
+      fprintf(fd, "E {}");
+      fputc('\n', fd);
+      fprintf(fd, "S {}");
+      fputc('\n', fd);
+      ptr = xctx->inst[xctx->sel_array[0].n].ptr+xctx->sym;
+      npin = ptr->rects[GENERICLAYER];
+      rct = ptr->rect[GENERICLAYER];
+      ypos=0;
       for(i=0;i<npin;i++) {
-        my_strdup(358, &prop, rct[i].prop_ptr);
+        my_strdup(356, &prop, rct[i].prop_ptr);
         if(!prop) continue;
         sub_prop=strstr(prop,"name=")+5;
         if(!sub_prop) continue;
-        /* remove dir=... from prop string 20171004 */
-        my_strdup(360, &sub2_prop, subst_token(sub_prop, "dir", NULL));
-
-        my_strdup(361, &dir, get_tok_value(rct[i].prop_ptr,"dir",0));
-        if(!sub2_prop) continue;
-        if(!dir) continue;
-        if(j==0) x=-120.0; else x=120.0;
-        if(!strcmp(dir, pindir[j])) {
-          ln = 100+strlen(sub2_prop);
-          my_realloc(362, &str, ln);
-          my_snprintf(str, ln, "name=g%d lab=%s", p++, sub2_prop);
-          if(indirect)
-            fprintf(fd, "C {%s} %.16g %.16g %.16g %.16g ", pinname[j], x, 20.0*(ypos++), 0.0, 0.0);
-          else
-            fprintf(fd, "C {%s} %.16g %.16g %.16g %.16g ", pinname2[j], x, 20.0*(ypos++), 0.0, 0.0);
-          save_ascii_string(str, fd, 1);
-        } /* if() */
+        x=-120.0;
+        ln = 100+strlen(sub_prop);
+        my_realloc(357, &str, ln);
+        my_snprintf(str, ln, "name=g%d lab=%s", p++, sub_prop);
+        fprintf(fd, "C {%s} %.16g %.16g %.16g %.16g ", generic_pin, x, 20.0*(ypos++), 0.0, 0.0 );
+        save_ascii_string(str, fd, 1);
       } /* for(i) */
-    }  /* for(j) */
-    fclose(fd);
-  } /* if(xctx->lastsel...) */
-  my_free(916, &dir);
-  my_free(917, &prop);
-  my_free(919, &sub2_prop);
-  my_free(920, &str);
+      npin = ptr->rects[PINLAYER];
+      rct = ptr->rect[PINLAYER];
+      for(j=0;j<3;j++) {
+        if(j==1) ypos=0;
+        for(i=0;i<npin;i++) {
+          my_strdup(358, &prop, rct[i].prop_ptr);
+          if(!prop) continue;
+          sub_prop=strstr(prop,"name=")+5;
+          if(!sub_prop) continue;
+          /* remove dir=... from prop string 20171004 */
+          my_strdup(360, &sub2_prop, subst_token(sub_prop, "dir", NULL));
+  
+          my_strdup(361, &dir, get_tok_value(rct[i].prop_ptr,"dir",0));
+          if(!sub2_prop) continue;
+          if(!dir) continue;
+          if(j==0) x=-120.0; else x=120.0;
+          if(!strcmp(dir, pindir[j])) {
+            ln = 100+strlen(sub2_prop);
+            my_realloc(362, &str, ln);
+            my_snprintf(str, ln, "name=g%d lab=%s", p++, sub2_prop);
+            fprintf(fd, "C {%s} %.16g %.16g %.16g %.16g ", pinname[j], x, 20.0*(ypos++), 0.0, 0.0);
+            save_ascii_string(str, fd, 1);
+          } /* if() */
+        } /* for(i) */
+      }  /* for(j) */
+      fclose(fd);
+    } /* if(xctx->lastsel...) */
+    my_free(916, &dir);
+    my_free(917, &prop);
+    my_free(919, &sub2_prop);
+    my_free(920, &str);
+  } else {
+    fprintf(errfp, "create_sch_from_sym(): location of schematic pins not found\n");
+    tcleval("alert_ {create_sch_from_sym(): location of schematic pins not found} {}");
+  }
+  my_free(1602, &pinname[0]);
+  my_free(1603, &pinname[1]);
+  my_free(1604, &pinname[2]);
+  my_free(1605, &generic_pin);
 }
 
 void descend_symbol(void)

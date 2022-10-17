@@ -3199,42 +3199,99 @@ proc enter_text {textlabel {preserve_disabled disabled}} {
   return $retval
 }
 
+# will redefine puts to output into a text widget 'w'
+proc redef_puts w {
+  set ::putsw $w
+  if ![llength [info command ::tcl::puts]] {
+    rename puts ::tcl::puts
+    proc puts args {
+      set la [llength $args]
+      if {$la<1 || $la>3} {
+        error "usage: puts ?-nonewline? ?channel? string"
+      }
+      set nl \n
+      if {[lindex $args 0]=="-nonewline"} {
+        set nl ""
+        set args [lrange $args 1 end]
+      }
+      if {[llength $args]==1} {
+        set args [list stdout [join $args]] ;# (2)
+      }
+      foreach {channel s} $args break
+      #set s [join $s] ;# (1) prevent braces at leading/tailing spaces
+      if {$channel=="stdout" || $channel=="stderr"} {
+        $::putsw insert end $s$nl
+      } else {
+        set cmd ::tcl::puts
+        if {$nl==""} {lappend cmd -nonewline}
+        lappend cmd $channel $s
+        eval $cmd
+      }
+    }
+  }
+}
+
+# return key release
+proc tclcmd_shift_return2 {state} {
+  set curs [.tclcmd.t index insert]
+  .tclcmd.t delete "$curs - 1 chars" $curs
+}
+
+# return key press
+proc tclcmd_shift_return {state} {
+  .tclcmd.b.ok invoke
+}
+
+proc tclcmd_ok_button {} {
+  global tclcmd_txt
+
+  set tclcmd_txt [.tclcmd.t get 1.0 end]
+  redef_puts .tclcmd.r.r
+  catch {uplevel #0 $tclcmd_txt} res
+  rename puts {}
+  rename ::tcl::puts puts
+  if {$res != {} && [string index $res end] != "\n"} {
+    append res "\n"
+  }
+  .tclcmd.r.r insert end $res
+  .tclcmd.r.r yview moveto 1
+}
+
 # evaluate a tcl command from GUI
 proc tclcmd {} {
   global tclcmd_txt
   if {[winfo exists .tclcmd]} {
     destroy .tclcmd
-    xschem set semaphore [expr {[xschem get semaphore] -1}]
   }
-  xschem set semaphore [expr {[xschem get semaphore] +1}]
   toplevel .tclcmd -class dialog
-  label .tclcmd.txtlab -text {Enter TCL expression:}
-  label .tclcmd.result -text {Result:}
-  text .tclcmd.t -width 100 -height 8
-  text .tclcmd.r -width 100 -height 6 -yscrollcommand ".tclcmd.yscroll set" 
-  scrollbar .tclcmd.yscroll -command  ".tclcmd.r yview"
+  label .tclcmd.txtlab -text {Enter TCL expression. Shift-Return will evaluate}
+  panedwindow .tclcmd.p -orient vert
+  text .tclcmd.t -width 100 -height 3
+  frame .tclcmd.r
+  text .tclcmd.r.r -width 100 -height 8 -yscrollcommand ".tclcmd.r.yscroll set"
+  scrollbar .tclcmd.r.yscroll -command  ".tclcmd.r.r yview"
+  .tclcmd.p add .tclcmd.t .tclcmd.r
   .tclcmd.t insert 1.0 $tclcmd_txt
 
   frame .tclcmd.b
+  button .tclcmd.b.clear -text Clear -command {
+    .tclcmd.r.r delete 1.0 end
+  }
   button .tclcmd.b.close -text Close -command {
     set tclcmd_txt [.tclcmd.t get 1.0 end]
     destroy .tclcmd
-    xschem set semaphore [expr {[xschem get semaphore] -1}]
   }
-  button .tclcmd.b.ok -text Evaluate -command {
-    set tclcmd_txt [.tclcmd.t get 1.0 end]
-    set res [eval $tclcmd_txt]
-    .tclcmd.r delete 1.0 end
-    .tclcmd.r insert 1.0 $res
-  }
+  button .tclcmd.b.ok -text Evaluate -command {tclcmd_ok_button}
+  bind .tclcmd.t <Shift-KeyPress-Return> { tclcmd_shift_return %s }
+  bind .tclcmd.t <Shift-KeyRelease-Return> { tclcmd_shift_return2 %s }
   pack .tclcmd.txtlab -side top -fill x
-  pack .tclcmd.t -side top -fill  both -expand yes
-  pack .tclcmd.result -side top -fill x
   pack .tclcmd.b -side bottom -fill x
-  pack .tclcmd.yscroll -side right -fill y
-  pack .tclcmd.r -side top -fill  both -expand yes
+  pack .tclcmd.p -side top -fill  both -expand yes
+  pack .tclcmd.r.yscroll -side right -fill y
+  pack .tclcmd.r.r -side top -fill  both -expand yes
   pack .tclcmd.b.ok -side left -expand yes -fill x
   pack .tclcmd.b.close -side left -expand yes -fill x
+  pack .tclcmd.b.clear -side left -expand yes -fill x
 }
 
 proc select_layers {} {
@@ -4267,6 +4324,31 @@ proc viewdata {data {ro {}}} {
   # 20171103 insert at insertion cursor(insert tag) instead of 0.0
   $viewdata_w.text insert insert $data
   return $rcode
+}
+
+# find given file $f into $paths directories 
+# use $pathlist global search path if $paths empty
+# recursively descend directories
+proc find_file { f {paths {}} } {
+  global pathlist
+  set res {}
+  if {$paths eq {}} {set paths $pathlist}
+  foreach i $paths {
+    foreach j [glob -nocomplain -directory $i *] {
+      # puts "--> $j  $f"
+      if {[file isdirectory $j]} {
+        # puts "directory $j"
+        set res [find_file $f $j] ;# recursive call
+      } else {
+        set fname [file tail $j]
+        if {$fname == $f} {
+          set res $j
+        }
+      }
+      if {$res ne {} } {return $res}
+    }
+  }
+  return $res
 }
 
 # given an absolute path of a symbol/schematic remove the path prefix
