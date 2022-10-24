@@ -1349,35 +1349,33 @@ static void save_embedded_symbol(xSymbol *s, FILE *fd)
 static void save_inst(FILE *fd, int select_only)
 {
  int i, oldversion;
- xInstance *ptr;
+ xInstance *inst;
  char *tmp = NULL;
  int *embedded_saved = NULL;
 
- ptr=xctx->inst;
+ inst=xctx->inst;
  oldversion = !strcmp(xctx->file_version, "1.0");
  for(i=0;i<xctx->symbols;i++) xctx->sym[i].flags &=~EMBEDDED;
  embedded_saved = my_calloc(663, xctx->symbols, sizeof(int));
  for(i=0;i<xctx->instances;i++)
  {
-   if (select_only && ptr[i].sel != SELECTED) continue;
+   if (select_only && inst[i].sel != SELECTED) continue;
   fputs("C ", fd);
   if(oldversion) {
-    my_strdup2(57, &tmp, add_ext(ptr[i].name, ".sym"));
+    my_strdup2(57, &tmp, add_ext(inst[i].name, ".sym"));
     save_ascii_string(tmp, fd, 0);
     my_free(882, &tmp);
   } else {
-    save_ascii_string(ptr[i].name, fd, 0);
+    save_ascii_string(inst[i].name, fd, 0);
   }
-  fprintf(fd, " %.16g %.16g %hd %hd ",ptr[i].x0, ptr[i].y0, ptr[i].rot, ptr[i].flip );
-  save_ascii_string(ptr[i].prop_ptr,fd, 1);
-  if( embedded_saved && !embedded_saved[ptr[i].ptr] &&
-      !strcmp(get_tok_value(ptr[i].prop_ptr, "embed", 0), "true") ) {
-      /* && !(xctx->sym[ptr[i].ptr].flags & EMBEDDED)) {  */
-    embedded_saved[ptr[i].ptr] = 1;
+  fprintf(fd, " %.16g %.16g %hd %hd ",inst[i].x0, inst[i].y0, inst[i].rot, inst[i].flip );
+  save_ascii_string(inst[i].prop_ptr,fd, 1);
+  if( embedded_saved && !embedded_saved[inst[i].ptr] && inst[i].embed) {
+    embedded_saved[inst[i].ptr] = 1;
     fprintf(fd, "[\n");
-    save_embedded_symbol( xctx->sym+ptr[i].ptr, fd);
+    save_embedded_symbol( xctx->sym+inst[i].ptr, fd);
     fprintf(fd, "]\n");
-    xctx->sym[ptr[i].ptr].flags |= EMBEDDED;
+    xctx->sym[inst[i].ptr].flags |= EMBEDDED;
   }
  }
  my_free(539, &embedded_saved);
@@ -1651,6 +1649,7 @@ static void load_inst(int k, FILE *fd)
 
       dbg(2, "load_inst(): n=%d name=%s prop=%s\n", i, xctx->inst[i].name? xctx->inst[i].name:"<NULL>",
                xctx->inst[i].prop_ptr? xctx->inst[i].prop_ptr:"<NULL>");
+      xctx->inst[i].embed = !strcmp(get_tok_value(xctx->inst[i].prop_ptr, "embed", 2), "true");
       xctx->instances++;
     }
     my_free(885, &prop_ptr);
@@ -2065,7 +2064,7 @@ int save_schematic(const char *schname) /* 20171020 added return value */
   else return 0;
   dbg(1, "save_schematic(): currsch=%d name=%s\n",xctx->currsch, schname);
   dbg(1, "save_schematic(): sch[currsch]=%s\n", xctx->sch[xctx->currsch]);
-  dbg(1, "save_schematic(): abs_sym_path=%s\n", abs_sym_path(xctx->sch[xctx->currsch], ""));
+  /* dbg(1, "save_schematic(): abs_sym_path=%s\n", abs_sym_path(xctx->sch[xctx->currsch], "")); */
   my_strncpy(name, xctx->sch[xctx->currsch], S(name));
   set_modify(-1);
   if(!stat(name, &buf)) {
@@ -2269,7 +2268,7 @@ static void init_undo(void)
     /* create undo directory */
     if( !my_strdup(644, &xctx->undo_dirname, create_tmpdir("xschem_undo_") )) {
       dbg(0, "xinit(): problems creating tmp undo dir, Undo will be disabled\n");
-      dbg(0, "xinit(): Check permissions in %s\n", tclgetvar("XSCHEM_TMP_DIR"));
+      dbg(0, "init_undo(): Check permissions in %s\n", tclgetvar("XSCHEM_TMP_DIR"));
       xctx->no_undo = 1; /* disable undo */
     }
     xctx->undo_initialized = 1;
@@ -2539,7 +2538,7 @@ static void get_sym_type(const char *symname, char **type,
            if (pintable && c == PINLAYER) {
              /* hash pins to get LCC schematic have same order as corresponding symbol */
              int_hash_lookup(pintable, get_tok_value(rect.prop_ptr, "name", 0), n++, XINSERT);
-             dbg(1, "get_sym_type() : hashing %s\n", get_tok_value(rect.prop_ptr, "name", 0));
+             /* dbg(1, "get_sym_type() : hashing %s\n", get_tok_value(rect.prop_ptr, "name", 0));*/
              ++(*sym_n_pins);
            }
            break;
@@ -3129,10 +3128,10 @@ int load_sym_def(const char *name, FILE *embed_fd)
        const char* tmp = translate2(lcc, level, tt[i].txt_ptr);
        dbg(1, "l_s_d(): txt2: tt[i].txt_ptr=%s, i=%d\n",  tt[i].txt_ptr, i);
        rot = lcc[level].rot; flip = lcc[level].flip;
-       if (tmp) my_strdup(651, &tt[i].txt_ptr, tmp);
+       my_strdup2(651, &tt[i].txt_ptr, tmp);
        dbg(1, "l_s_d(): txt3: tt[i].txt_ptr=%s, i=%d\n",  tt[i].txt_ptr, i);
        /* allow annotation inside LCC instances. */
-       if(tt[i].txt_ptr && !strcmp(tt[i].txt_ptr, "@spice_get_voltage")) {
+       if(!strcmp(tt[i].txt_ptr, "@spice_get_voltage")) {
          /* prop_ptr is the attribute string of last loaded LCC component */
          const char *lab;
          size_t new_size = 0;
@@ -3153,7 +3152,7 @@ int load_sym_def(const char *name, FILE *embed_fd)
          my_free(1589, &path);
          dbg(1, " --> tt[i].txt_ptr=%s\n", tt[i].txt_ptr);
        }
-       if(tt[i].txt_ptr && !strcmp(tt[i].txt_ptr, "@spice_get_current")) {
+       if(!strcmp(tt[i].txt_ptr, "@spice_get_current")) {
          /* prop_ptr is the attribute string of last loaded LCC component */
          const char *dev;
          size_t new_size = 0;
@@ -3579,13 +3578,14 @@ void descend_symbol(void)
   FILE *fd;
   char name[PATH_MAX];
   char name_embedded[PATH_MAX];
+  int n = 0;
   rebuild_selected_array();
   if(xctx->lastsel > 1)  return;
   if(xctx->lastsel==1 && xctx->sel_array[0].type==ELEMENT) {
+    n =xctx->sel_array[0].n;
     if(xctx->modified)
     {
       int ret;
-  
       ret = save(1);
       /* if circuit is changed but not saved before descending
        * state will be inconsistent when returning, can not propagare hilights
@@ -3597,39 +3597,38 @@ void descend_symbol(void)
       if(ret == 0) clear_all_hilights();
       if(ret == -1) return; /* user cancel */
     }
-    my_snprintf(name, S(name), "%s", xctx->inst[xctx->sel_array[0].n].name);
+    my_snprintf(name, S(name), "%s", xctx->inst[n].name);
     /* dont allow descend in the default missing symbol */
-    if((xctx->inst[xctx->sel_array[0].n].ptr+ xctx->sym)->type &&
-       !strcmp( (xctx->inst[xctx->sel_array[0].n].ptr+ xctx->sym)->type,"missing")) return;
+    if((xctx->inst[n].ptr+ xctx->sym)->type &&
+       !strcmp( (xctx->inst[n].ptr+ xctx->sym)->type,"missing")) return;
   }
   else return;
-
   /* build up current hierarchy path */
-  my_strdup(363,  &str, xctx->inst[xctx->sel_array[0].n].instname);
+  my_strdup(363,  &str, xctx->inst[n].instname);
   my_strdup(364, &xctx->sch_path[xctx->currsch+1], xctx->sch_path[xctx->currsch]);
   my_strcat(365, &xctx->sch_path[xctx->currsch+1], str);
   my_strcat(366, &xctx->sch_path[xctx->currsch+1], ".");
   xctx->sch_path_hash[xctx->currsch+1] = 0;
 
   my_strdup(1518, &xctx->hier_attr[xctx->currsch].prop_ptr,
-            xctx->inst[xctx->sel_array[0].n].prop_ptr);
-
+            xctx->inst[n].prop_ptr);
+  my_strdup(1612, &xctx->hier_attr[xctx->currsch].templ,
+            get_tok_value((xctx->inst[n].ptr+ xctx->sym)->prop_ptr, "template", 0));
   xctx->sch_inst_number[xctx->currsch+1] = 1;
   my_free(921, &str);
-  xctx->previous_instance[xctx->currsch]=xctx->sel_array[0].n;
+  xctx->previous_instance[xctx->currsch]=n;
   xctx->zoom_array[xctx->currsch].x=xctx->xorigin;
   xctx->zoom_array[xctx->currsch].y=xctx->yorigin;
   xctx->zoom_array[xctx->currsch].zoom=xctx->zoom;
   ++xctx->currsch;
-  if((xctx->inst[xctx->sel_array[0].n].ptr+ xctx->sym)->flags & EMBEDDED ||
-    !strcmp(get_tok_value(xctx->inst[xctx->sel_array[0].n].prop_ptr,"embed", 0), "true")) {
+  if((xctx->inst[n].ptr+ xctx->sym)->flags & EMBEDDED || xctx->inst[n].embed) {
     /* save embedded symbol into a temporary file */
     my_snprintf(name_embedded, S(name_embedded),
       "%s/.xschem_embedded_%d_%s", tclgetvar("XSCHEM_TMP_DIR"), getpid(), get_cell_w_ext(name, 0));
     if(!(fd = fopen(name_embedded, "w")) ) {
       fprintf(errfp, "descend_symbol(): problems opening file %s \n", name_embedded);
     }
-    save_embedded_symbol(xctx->inst[xctx->sel_array[0].n].ptr+xctx->sym, fd);
+    save_embedded_symbol(xctx->inst[n].ptr+xctx->sym, fd);
     fclose(fd);
     unselect_all(1);
     remove_symbols(); /* must follow save (if) embedded */

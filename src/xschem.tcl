@@ -1251,10 +1251,7 @@ proc select_inst {fullinst {redraw 1 } } {
 }
 
 proc pin_label {} {
-  if { [file exists [abs_sym_path devices/lab_pin.sym]] } {
-    return {devices/lab_pin.sym}
-  }
-  return {lab_pin.sym}
+  return [rel_sym_path [find_file lab_pin.sym]]
 }
 
 ## given a hierarchical net name x1.xamp.netname go down in the hierarchy and 
@@ -2868,23 +2865,16 @@ proc create_pins {} {
   regsub -all {<} $retval {[} retval 
   regsub -all {>} $retval {]} retval 
   set lines [split $retval \n]
-  if { [file exists [abs_sym_path devices/ipin.sym]] } {
-    set indirect 1
-  } else {
-    set indirect 0
-  }
+  set dirprefix [file dirname [rel_sym_path [find_file ipin.sym]]]
+  if {$dirprefix == {.}} { set dirprefix {}} else {append dirprefix {/}}
+  
   # viewdata $retval
   set pcnt 0
   set y 0
   set fd [open $USER_CONF_DIR/.clipboard.sch "w"]
   foreach i $lines { 
-    if {$indirect} {
-      puts $fd "C \{[rel_sym_path devices/[lindex $i 1].sym]\} 0 [set y [expr {$y-20}]] \
+    puts $fd "C \{${dirprefix}[lindex $i 1].sym\} 0 [set y [expr {$y-20}]] \
                 0 0 \{ name=p[incr pcnt] lab=[lindex $i 0] \}"
-    } else {
-      puts $fd "C \{[rel_sym_path [lindex $i 1].sym]\} 0 [set y [expr {$y-20}]] \
-                0 0 \{ name=p[incr pcnt] lab=[lindex $i 0] \}"
-    }
   }
   close $fd
   xschem merge $USER_CONF_DIR/.clipboard.sch
@@ -2979,11 +2969,8 @@ proc add_lab_no_prefix {} {
   global env retval USER_CONF_DIR
   global filetmp
 
-  if { [file exists [abs_sym_path devices/ipin.sym]] } {
-    set indirect 1
-  } else {
-    set indirect 0
-  }
+  set dirprefix [file dirname [rel_sym_path [find_file ipin.sym]]]
+  if {$dirprefix == {.}} { set dirprefix {}} else {append dirprefix {/}}
   set retval [ read_data_nonewline $filetmp ]
   regsub -all {<} $retval {[} retval
   regsub -all {>} $retval {]} retval
@@ -2993,13 +2980,8 @@ proc add_lab_no_prefix {} {
   set y 0
   set fd [open $USER_CONF_DIR/.clipboard.sch "w"]
   foreach i $lines {
-    if {$indirect} {
-      puts $fd "C \{devices/lab_pin.sym\} 0 [set y [expr {$y+20}]] \
+    puts $fd "C \{${dirprefix}lab_pin.sym\} 0 [set y [expr {$y+20}]] \
                0 0 \{ name=p[incr pcnt] verilog_type=wire lab=[lindex $i 0] \}"
-    } else {
-      puts $fd "C \{lab_pin.sym\} 0 [set y [expr {$y+20}]] \
-               0 0 \{ name=p[incr pcnt] verilog_type=wire lab=[lindex $i 0] \}"
-    }
   }
   close $fd
   xschem merge $USER_CONF_DIR/.clipboard.sch
@@ -3009,11 +2991,8 @@ proc add_lab_prefix {} {
   global env retval USER_CONF_DIR
   global filetmp
 
-  if { [file exists [abs_sym_path devices/ipin.sym]] } {
-    set indirect 1
-  } else {
-    set indirect 0
-  }
+  set dirprefix [file dirname [rel_sym_path [find_file ipin.sym]]]
+  if {$dirprefix == {.}} { set dirprefix {}} else {append dirprefix {/}}
   set retval [ read_data_nonewline $filetmp ]
   regsub -all {<} $retval {[} retval
   regsub -all {>} $retval {]} retval
@@ -3023,13 +3002,8 @@ proc add_lab_prefix {} {
   set y 0
   set fd [open $USER_CONF_DIR/.clipboard.sch "w"]
   foreach i $lines {
-    if {$indirect} {
-      puts $fd "C \{devices/lab_pin.sym\} 0 [set y [expr {$y+20}]] \
+    puts $fd "C \{${dirprefix}lab_pin.sym\} 0 [set y [expr {$y+20}]] \
                0 0 \{ name=p[incr pcnt] verilog_type=reg lab=i[lindex $i 0] \}"
-    } else {
-      puts $fd "C \{lab_pin.sym\} 0 [set y [expr {$y+20}]] \
-               0 0 \{ name=p[incr pcnt] verilog_type=reg lab=i[lindex $i 0] \}"
-    }
   }
   close $fd
   xschem merge $USER_CONF_DIR/.clipboard.sch
@@ -3110,7 +3084,7 @@ proc select_netlist_dir { force {dir {} }} {
 
 
 proc enter_text {textlabel {preserve_disabled disabled}} {
-  global retval rcode has_cairo preserve_unchanged_attrs wm_fix
+  global retval rcode has_cairo preserve_unchanged_attrs wm_fix props
   set rcode {}
   toplevel .dialog -class Dialog
   wm title .dialog {Enter text}
@@ -3134,28 +3108,34 @@ proc enter_text {textlabel {preserve_disabled disabled}} {
 
   pack .dialog.txt -side top -fill  both -expand yes
   frame .dialog.edit
-    frame .dialog.edit.lab
-    frame .dialog.edit.entries
-    pack  .dialog.edit.lab -side left 
-    pack  .dialog.edit.entries -side left -fill x  -expand yes
-    pack .dialog.edit  -side top  -fill x 
-      if {$has_cairo } {
-        entry .dialog.edit.entries.hsize -relief sunken -textvariable vsize -width 20
-      } else {
-        entry .dialog.edit.entries.hsize -relief sunken -textvariable hsize -width 20
-      }
-      entry .dialog.edit.entries.vsize -relief sunken -textvariable vsize -width 20
-      entry .dialog.edit.entries.props -relief sunken -textvariable props -width 20 
-      pack .dialog.edit.entries.hsize .dialog.edit.entries.vsize  \
-       .dialog.edit.entries.props -side top  -fill x -expand yes
-      label .dialog.edit.lab.hlab -text "hsize:"
-      label .dialog.edit.lab.vlab -text "vsize:"
-      label .dialog.edit.lab.proplab -text "props:"
-      pack .dialog.edit.lab.hlab .dialog.edit.lab.vlab  \
-       .dialog.edit.lab.proplab -side top
+  frame .dialog.edit.hsize
+  frame .dialog.edit.vsize
+  frame .dialog.edit.props
+  pack  .dialog.edit.hsize -side bottom -expand yes -fill x 
+  pack  .dialog.edit.vsize -side bottom -expand yes -fill x 
+  pack  .dialog.edit.props -side bottom -expand yes -fill x 
+  pack .dialog.edit  -side top  -fill x 
+  if {$has_cairo } {
+    entry .dialog.edit.hsize.hsize -relief sunken -textvariable vsize -width 20
+  } else {
+    entry .dialog.edit.hsize.hsize -relief sunken -textvariable hsize -width 20
+  }
+  entry .dialog.edit.vsize.vsize -relief sunken -textvariable vsize -width 20
+  text .dialog.edit.props.props -width 70 -height 3
+  .dialog.edit.props.props insert 1.0 $props
+  label .dialog.edit.hsize.hlab -text "hsize:"
+  label .dialog.edit.vsize.vlab -text "vsize:"
+  label .dialog.edit.props.proplab -text "props:"
+  pack .dialog.edit.hsize.hlab -side left
+  pack .dialog.edit.hsize.hsize -side left -fill x -expand yes
+  pack .dialog.edit.vsize.vlab  -side left
+  pack .dialog.edit.vsize.vsize -side left -fill x -expand yes
+  pack .dialog.edit.props.proplab -side left
+  pack .dialog.edit.props.props -side left -fill x -expand yes
   frame .dialog.buttons
   button .dialog.buttons.ok -text "OK" -command  \
   {
+   set props [.dialog.edit.props.props get 1.0 {end - 1 chars}]
    set retval [.dialog.txt get 1.0 {end - 1 chars}]
    if {$has_cairo} { 
      set hsize $vsize
@@ -3193,7 +3173,7 @@ proc enter_text {textlabel {preserve_disabled disabled}} {
       .dialog.buttons.cancel invoke
     }
   }
-  bind .dialog <Control-Return> {.dialog.buttons.ok invoke}
+  bind .dialog.txt <Shift-KeyRelease-Return> {return_release %W; .dialog.buttons.ok invoke}
   #grab set .dialog
   tkwait window .dialog
   return $retval
@@ -3231,16 +3211,13 @@ proc redef_puts w {
   }
 }
 
-# return key release
-proc tclcmd_shift_return2 {state} {
-  set curs [.tclcmd.t index insert]
-  .tclcmd.t delete "$curs - 1 chars" $curs
+# return key release, used to remove last entered character
+# when binding close text-widget window to Shift-return or Control-return.
+proc return_release {window} {
+  set curs [$window index insert]
+  $window delete "$curs - 1 chars" $curs
 }
 
-# return key press
-proc tclcmd_shift_return {state} {
-  .tclcmd.b.ok invoke
-}
 
 proc tclcmd_ok_button {} {
   global tclcmd_txt
@@ -3278,12 +3255,12 @@ proc tclcmd {} {
     .tclcmd.r.r delete 1.0 end
   }
   button .tclcmd.b.close -text Close -command {
-    set tclcmd_txt [.tclcmd.t get 1.0 end]
+    set tclcmd_txt [.tclcmd.t get 1.0 {end - 1 chars}]
     destroy .tclcmd
   }
   button .tclcmd.b.ok -text Evaluate -command {tclcmd_ok_button}
-  bind .tclcmd.t <Shift-KeyPress-Return> { tclcmd_shift_return %s }
-  bind .tclcmd.t <Shift-KeyRelease-Return> { tclcmd_shift_return2 %s }
+  # bind .tclcmd.t <Shift-KeyPress-Return> { .tclcmd.b.ok invoke }
+  bind .tclcmd.t <Shift-KeyRelease-Return> {return_release %W; .tclcmd.b.ok invoke }
   pack .tclcmd.txtlab -side top -fill x
   pack .tclcmd.b -side bottom -fill x
   pack .tclcmd.p -side top -fill  both -expand yes
@@ -3473,7 +3450,6 @@ proc property_search {} {
     focus  .dialog
     bind .dialog <Escape> {.dialog.but.cancel invoke}
     bind .dialog <Return> {.dialog.but.ok invoke}
-    bind .dialog <Control-Return> {.dialog.but.ok invoke}
     grab set .dialog
     tkwait window .dialog
     xschem set semaphore [expr {[xschem get semaphore] -1}]
@@ -3591,7 +3567,6 @@ proc attach_labels_to_inst {} {
   focus  .dialog
   bind .dialog <Escape> {.dialog.but.cancel invoke}
   bind .dialog <Return> {.dialog.but.ok invoke}
-  bind .dialog <Control-Return> {.dialog.but.ok invoke}
   grab set .dialog
   tkwait window .dialog
   xschem set semaphore [expr {[xschem get semaphore] -1}]
@@ -3803,13 +3778,13 @@ proc edit_prop {txtlabel} {
   frame .dialog.f4
   label .dialog.f4.l1  -text $txtlabel
   label .dialog.f4.path  -text "Path:"
-  entry .dialog.f4.e1  -textvariable editprop_sympath -width 0 -state readonly
-  text .dialog.e1   -yscrollcommand ".dialog.yscroll set" -setgrid 1 \
+  entry .dialog.f4.symprop  -textvariable editprop_sympath -width 0 -state readonly
+  text .dialog.symprop   -yscrollcommand ".dialog.yscroll set" -setgrid 1 \
                   -xscrollcommand ".dialog.xscroll set" -wrap none
-    .dialog.e1 delete 1.0 end
-    .dialog.e1 insert 1.0 $retval
-  scrollbar .dialog.yscroll -command  ".dialog.e1 yview"
-  scrollbar .dialog.xscroll -command ".dialog.e1 xview" -orient horiz
+    .dialog.symprop delete 1.0 end
+    .dialog.symprop insert 1.0 $retval
+  scrollbar .dialog.yscroll -command  ".dialog.symprop yview"
+  scrollbar .dialog.xscroll -command ".dialog.symprop xview" -orient horiz
   frame .dialog.f1
   frame .dialog.f2
   label .dialog.f1.l2 -text "Symbol"
@@ -3824,7 +3799,7 @@ proc edit_prop {txtlabel} {
     raise .dialog .drw
   }
   button .dialog.f1.b1 -text "OK" -command   {
-    set retval [.dialog.e1 get 1.0 {end - 1 chars}]
+    set retval [.dialog.symprop get 1.0 {end - 1 chars}]
     if { $selected_tok ne {<ALL>} } {
       regsub -all {(["\\])} $retval {\\\1} retval ;#"  editor is confused by the previous quote
       set retval \"${retval}\"
@@ -3875,11 +3850,11 @@ proc edit_prop {txtlabel} {
     set a [tk_getOpenFile -parent .dialog -initialdir $INITIALPROPDIR ]
     if [string compare $a ""] {
      set INITIALPROPDIR [file dirname $a]
-     read_data_window  .dialog.e1  $a
+     read_data_window  .dialog.symprop  $a
     }
   }
   button .dialog.f1.b4 -text "Del" -command {
-    .dialog.e1 delete 1.0 end
+    .dialog.symprop delete 1.0 end
   }
   checkbutton .dialog.f2.r1 -text "No change properties" -variable no_change_attrs -state normal
   checkbutton .dialog.f2.r2 -text "Preserve unchanged props" -variable preserve_unchanged_attrs -state normal
@@ -3894,9 +3869,9 @@ proc edit_prop {txtlabel} {
   pack .dialog.f1.l2 .dialog.f1.e2 .dialog.f1.b1 .dialog.f1.b2 .dialog.f1.b3 \
        .dialog.f1.b4 .dialog.f1.b5 -side left -expand 1
   pack .dialog.f4 -side top  -anchor nw
-  #pack .dialog.f4.path .dialog.f4.e1 .dialog.f4.l1 -side left -fill x 
+  #pack .dialog.f4.path .dialog.f4.symprop .dialog.f4.l1 -side left -fill x 
   pack .dialog.f4.path -side left
-  pack .dialog.f4.e1 -side left 
+  pack .dialog.f4.symprop -side left 
   pack .dialog.f1 .dialog.f2 -side top -fill x 
   pack .dialog.f2.r1 -side left
   pack .dialog.f2.r2 -side left
@@ -3905,10 +3880,10 @@ proc edit_prop {txtlabel} {
   if { [ info tclversion] > 8.4 } { pack .dialog.f2.r5 -side left }
   pack .dialog.yscroll -side right -fill y 
   pack .dialog.xscroll -side bottom -fill x
-  pack .dialog.e1  -fill both -expand yes
-  bind .dialog <Control-Return> {.dialog.f1.b1 invoke}
+  pack .dialog.symprop  -fill both -expand yes
+  bind .dialog.symprop <Shift-KeyRelease-Return> {return_release %W;.dialog.f1.b1 invoke}
   bind .dialog <Escape> {
-    if { ![string compare $retval [.dialog.e1 get 1.0 {end - 1 chars}]] && \
+    if { ![string compare $retval [.dialog.symprop get 1.0 {end - 1 chars}]] && \
          ![string compare $symbol [ .dialog.f1.e2 get]] } {
       .dialog.f1.b2 invoke
     }
@@ -3917,9 +3892,9 @@ proc edit_prop {txtlabel} {
     bind .dialog.f2.r5 <<ComboboxSelected>> {
       if {$old_selected_tok ne $selected_tok} {
         if { $old_selected_tok eq {<ALL>} } {
-          set retval_orig [.dialog.e1 get 1.0 {end - 1 chars}]
+          set retval_orig [.dialog.symprop get 1.0 {end - 1 chars}]
         } else {
-          set retval [.dialog.e1 get 1.0 {end - 1 chars}]
+          set retval [.dialog.symprop get 1.0 {end - 1 chars}]
           regsub -all {(["\\])} $retval {\\\1} retval ;#"  editor is confused by the previous quote
           set retval \"${retval}\"
           set retval_orig [xschem subst_tok $retval_orig $old_selected_tok $retval]
@@ -3931,17 +3906,17 @@ proc edit_prop {txtlabel} {
         set retval [xschem get_tok $retval_orig $selected_tok 2]
         # regsub -all {\\?"} $retval {"} retval
       }
-      .dialog.e1 delete 1.0 end
-      .dialog.e1 insert 1.0 $retval
+      .dialog.symprop delete 1.0 end
+      .dialog.symprop insert 1.0 $retval
       set old_selected_tok $selected_tok
     }
  
     bind .dialog.f2.r5 <KeyRelease> {
       set selected_tok [.dialog.f2.r5 get]
       if { $old_selected_tok eq {<ALL>}} {
-        set retval_orig [.dialog.e1 get 1.0 {end - 1 chars}]
+        set retval_orig [.dialog.symprop get 1.0 {end - 1 chars}]
       } else {
-        set retval [.dialog.e1 get 1.0 {end - 1 chars}]
+        set retval [.dialog.symprop get 1.0 {end - 1 chars}]
         if {$retval ne {}} {
           regsub -all {(["\\])} $retval {\\\1} retval ;#"  editor is confused by the previous quote
           set retval \"${retval}\"
@@ -3954,8 +3929,8 @@ proc edit_prop {txtlabel} {
         set retval [xschem get_tok $retval_orig $selected_tok 2]
         # regsub -all {\\?"} $retval {"} retval
       }
-      .dialog.e1 delete 1.0 end
-      .dialog.e1 insert 1.0 $retval
+      .dialog.symprop delete 1.0 end
+      .dialog.symprop insert 1.0 $retval
       set old_selected_tok $selected_tok
     }
   }
@@ -4028,15 +4003,15 @@ proc text_line {txtlabel clear {preserve_disabled disabled} } {
   frame .dialog.f0
   frame .dialog.f1
   label .dialog.f0.l1  -text $txtlabel
-  text .dialog.e1 -relief sunken -bd 2 -yscrollcommand ".dialog.yscroll set" -setgrid 1 \
+  text .dialog.textinput -relief sunken -bd 2 -yscrollcommand ".dialog.yscroll set" -setgrid 1 \
        -xscrollcommand ".dialog.xscroll set" -wrap none -width 90 -height 40
-  scrollbar .dialog.yscroll -command  ".dialog.e1 yview"
-  scrollbar .dialog.xscroll -command ".dialog.e1 xview" -orient horiz
-  .dialog.e1 delete 1.0 end
-  .dialog.e1 insert 1.0 $retval
+  scrollbar .dialog.yscroll -command  ".dialog.textinput yview"
+  scrollbar .dialog.xscroll -command ".dialog.textinput xview" -orient horiz
+  .dialog.textinput delete 1.0 end
+  .dialog.textinput insert 1.0 $retval
   button .dialog.f1.b1 -text "OK" -command  \
   {
-    set retval [.dialog.e1 get 1.0 {end - 1 chars}]
+    set retval [.dialog.textinput get 1.0 {end - 1 chars}]
     if { $selected_tok ne {<ALL>} } {
       regsub -all {(["\\])} $retval {\\\1} retval ;#"  editor is confused by the previous quote
       set retval \"${retval}\"
@@ -4048,7 +4023,7 @@ proc text_line {txtlabel clear {preserve_disabled disabled} } {
   }
   button .dialog.f1.b2 -text "Cancel" -command  \
   {
-    set retval [.dialog.e1 get 1.0 {end - 1 chars}]
+    set retval [.dialog.textinput get 1.0 {end - 1 chars}]
     set rcode {}
     destroy .dialog
   }
@@ -4058,12 +4033,12 @@ proc text_line {txtlabel clear {preserve_disabled disabled} } {
     set a [tk_getOpenFile -parent .dialog -initialdir $INITIALPROPDIR ]
     if [string compare $a ""] {
      set INITIALPROPDIR [file dirname $a]
-     read_data_window  .dialog.e1  $a
+     read_data_window  .dialog.textinput  $a
     }
   }
   button .dialog.f1.b4 -text "Del" -command \
   {
-    .dialog.e1 delete 1.0 end
+    .dialog.textinput delete 1.0 end
   }
   label .dialog.f1.r4 -text {   Edit Attr:}
   if  { [ info tclversion] > 8.4} {
@@ -4085,9 +4060,9 @@ proc text_line {txtlabel clear {preserve_disabled disabled} } {
 
   pack .dialog.yscroll -side right -fill y 
   pack .dialog.xscroll -side bottom -fill x
-  pack .dialog.e1   -expand yes -fill both
+  pack .dialog.textinput   -expand yes -fill both
   bind .dialog <Escape> {
-    if ![string compare $retval [.dialog.e1 get 1.0 {end - 1 chars}]] {
+    if ![string compare $retval [.dialog.textinput get 1.0 {end - 1 chars}]] {
       .dialog.f1.b2 invoke
     }
   }
@@ -4096,9 +4071,9 @@ proc text_line {txtlabel clear {preserve_disabled disabled} } {
     bind .dialog.f1.r5 <<ComboboxSelected>> {
       if {$old_selected_tok ne $selected_tok} {
         if { $old_selected_tok eq {<ALL>} } {
-          set retval_orig [.dialog.e1 get 1.0 {end - 1 chars}]
+          set retval_orig [.dialog.textinput get 1.0 {end - 1 chars}]
         } else {
-          set retval [.dialog.e1 get 1.0 {end - 1 chars}]
+          set retval [.dialog.textinput get 1.0 {end - 1 chars}]
           regsub -all {(["\\])} $retval {\\\1} retval ;#"  editor is confused by the previous quote
           set retval \"${retval}\"
           set retval_orig [xschem subst_tok $retval_orig $old_selected_tok $retval]
@@ -4110,17 +4085,17 @@ proc text_line {txtlabel clear {preserve_disabled disabled} } {
         set retval [xschem get_tok $retval_orig $selected_tok 2]
         # regsub -all {\\?"} $retval {"} retval
       }
-      .dialog.e1 delete 1.0 end
-      .dialog.e1 insert 1.0 $retval
+      .dialog.textinput delete 1.0 end
+      .dialog.textinput insert 1.0 $retval
       set old_selected_tok $selected_tok
     }
  
     bind .dialog.f1.r5 <KeyRelease> {
       set selected_tok [.dialog.f1.r5 get]
       if { $old_selected_tok eq {<ALL>}} {
-        set retval_orig [.dialog.e1 get 1.0 {end - 1 chars}]
+        set retval_orig [.dialog.textinput get 1.0 {end - 1 chars}]
       } else {
-        set retval [.dialog.e1 get 1.0 {end - 1 chars}]
+        set retval [.dialog.textinput get 1.0 {end - 1 chars}]
         if {$retval ne {}} {
           regsub -all {(["\\])} $retval {\\\1} retval ;#"  editor is confused by the previous quote
           set retval \"${retval}\"
@@ -4133,15 +4108,15 @@ proc text_line {txtlabel clear {preserve_disabled disabled} } {
         set retval [xschem get_tok $retval_orig $selected_tok 2]
         # regsub -all {\\?"} $retval {"} retval
       }
-      .dialog.e1 delete 1.0 end
-      .dialog.e1 insert 1.0 $retval
+      .dialog.textinput delete 1.0 end
+      .dialog.textinput insert 1.0 $retval
       set old_selected_tok $selected_tok
     }
   }
-  bind .dialog <Control-Return> {.dialog.f1.b1 invoke}
+  bind .dialog.textinput <Shift-KeyRelease-Return> {return_release %W; .dialog.f1.b1 invoke}
   #tkwait visibility .dialog
   #grab set .dialog
-  #focus .dialog.e1
+  #focus .dialog.textinput
   set rcode {}   
   tkwait window .dialog
   return $rcode
@@ -5873,15 +5848,9 @@ proc build_widgets { {topwin {} } } {
   }
   $topwin.menubar.simulation.menu add command -label {Add waveform graph} -command {xschem add_graph}
   $topwin.menubar.simulation.menu add command -label {Add waveform reload launcher} -command {
-    if { [file exists [abs_sym_path devices/launcher.sym]] } {
-      xschem place_symbol devices/launcher.sym "name=h5\ndescr=\"load waves\" 
+      xschem place_symbol [rel_sym_path [find_file launcher.sym]] "name=h5\ndescr=\"load waves\" 
 tclcommand=\"xschem raw_read \$netlist_dir/[file tail [file rootname [xschem get current_name]]].raw tran\"
 "
-    } else {
-      xschem place_symbol launcher.sym "name=h5\ndescr=\"load waves\" 
-tclcommand=\"xschem raw_read \$netlist_dir/[file tail [file rootname [xschem get current_name]]].raw tran\"
-"
-    }
   }
   $topwin.menubar.simulation.menu add checkbutton -label "Live annotate probes with 'b' cursor" \
          -variable live_cursor2_backannotate 
