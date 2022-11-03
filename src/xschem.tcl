@@ -704,7 +704,7 @@ namespace eval ngspice {
 }
 
 proc ngspice::get_current {n} {
-  global path graph_raw_level
+  global graph_raw_level
   set path [string range [xschem get sch_path] 1 end]
   # skip hierarchy components above the level where raw file has been loaded. 
   # node path names to look up in raw file begin from there.
@@ -714,19 +714,31 @@ proc ngspice::get_current {n} {
     incr skip
   }
   set n [string tolower $n]
-  set prefix [string range $n 0 0]
-  #puts "ngspice::get_current: path=$path n=$n"
+  set prefix $n
+  # if xm1.rd is given get prefix (r) by removing path components (xm1.)
+  regsub {.*\.} $prefix {} prefix
+  set prefix [string range $prefix 0 0]
+  # puts "ngspice::get_current: path=$path n=$n prefix=$prefix"
   set n $path$n
-  if { ![sim_is_xyce] } {
+  set currname i
+  if { ![sim_is_xyce] } { ;# ngspice
     if {$path ne {} } {
       set n $prefix.$n
     }
     if { ![regexp $prefix {[ve]}] } {
       set n @$n
     }
+    set n i($n)
+  } else { ;# xyce
+    if { [regexp {\[i[bcedgsb]\]$} $n] } {
+      regexp {\[(i[bcesdgb])\]$} $n curr1 currname
+      if { $prefix == {d} } {set currname i}
+      regsub {\[(i[bcesdgb])\]$} $n {} n
+    }
+    regsub {\[i\]} $n {} n
+    set n $currname\($n\)
   }
-  set n i($n)
-  #puts "ngspice::get_current --> $n"
+  # puts "ngspice::get_current --> $n"
   set err [catch {set ngspice::ngspice_data($n)} res]
   if { $err } {
     set res {?}
@@ -736,7 +748,7 @@ proc ngspice::get_current {n} {
 }
 
 proc ngspice::get_diff_voltage {n m} {
-  global path graph_raw_level
+  global graph_raw_level
   set path [string range [xschem get sch_path] 1 end]
   # skip hierarchy components above the level where raw file has been loaded. 
   # node path names to look up in raw file begin from there.
@@ -767,7 +779,7 @@ proc ngspice::get_diff_voltage {n m} {
 
 
 proc ngspice::get_voltage {n} {
-  global path graph_raw_level
+  global graph_raw_level
   set path [string range [xschem get sch_path] 1 end]
   # skip hierarchy components above the level where raw file has been loaded. 
   # node path names to look up in raw file begin from there.
@@ -779,6 +791,7 @@ proc ngspice::get_voltage {n} {
   set n [string tolower $n]
   # puts "ngspice::get_voltage: path=$path n=$n"
   set node $path$n
+  # puts "ngspice::get_voltage: trying $node"
   set err [catch {set ngspice::ngspice_data($node)} res]
   if {$err} {
     set node v(${path}${n})
@@ -792,7 +805,7 @@ proc ngspice::get_voltage {n} {
 }
 
 proc ngspice::get_node {n} {
-  global path graph_raw_level
+  global graph_raw_level
   set path [string range [xschem get sch_path] 1 end]
   # skip hierarchy components above the level where raw file has been loaded. 
   # node path names to look up in raw file begin from there.
@@ -4380,8 +4393,7 @@ proc find_file  { f {paths {}} } {
 # given an absolute path of a symbol/schematic remove the path prefix
 # if file is in a library directory (a $pathlist dir)
 proc rel_sym_path {symbol} {
-  global pathlist
-
+  global OS pathlist
   set curr_dirname [xschem get current_dirname]
   set name {}
   foreach path_elem $pathlist {
@@ -4391,6 +4403,13 @@ proc rel_sym_path {symbol} {
     set pl [string length $path_elem]
     if { [string equal -length $pl $path_elem $symbol] } {
       set name [string range $symbol [expr {$pl+1}] end]
+      # When $path_elem is "C:/", string equal will match, 
+      # but $path_elem should not be removed from $name if $name 
+      # has more / for more directory levels.
+      if {$OS eq "Windows" && [regexp {^[A-Za-z]\:/$} $path_elem ] && [regexp {/} $name]} {
+           set name {}
+           continue
+      }
       break
     }
   }
@@ -4416,7 +4435,11 @@ proc abs_sym_path {fname {ext {} } } {
     ## absolute path: return as is
     if { [regexp {^[A-Za-z]\:/} $fname ] } {
       return "$fname"
-    } 
+    }
+    # network drive, return as is
+    if { [regexp {^/} $fname] } {
+      return "$fname"
+    }
   } else {
     ## absolute path: return as is
     if { [regexp {^/} $fname] } {
@@ -5141,7 +5164,7 @@ set tctx::global_list {
   textwindow_fileid textwindow_filename textwindow_w tmp_bus_char toolbar_horiz toolbar_list
   toolbar_visible top_subckt transparent_svg undo_type use_lab_wire use_label_prefix
   user_wants_copy_cell verilog_2001 verilog_bitblast viewdata_fileid viewdata_filename viewdata_w
-  vsize xschem_libs xschem_listen_port
+  vsize xschem_libs xschem_listen_port add_all_windows_drives
 }
 
 ## list of global arrays to save/restore on context switching
@@ -5928,12 +5951,33 @@ tclcommand=\"xschem raw_read \$netlist_dir/[file tail [file rootname [xschem get
   label $topwin.statusbar.8 -activebackground red -text {} 
 }
 
+proc set_initial_dirs {} {
+  global INITIALLOADDIR INITIALINSTDIR INITIALPROPDIR pathlist
+  set INITIALLOADDIR {}
+  set INITIALINSTDIR {}
+  set INITIALPROPDIR {}
+  foreach i $pathlist  {
+    if { [file exists $i] } {
+      set INITIALLOADDIR $i
+      set INITIALINSTDIR $i
+      set INITIALPROPDIR $i
+      break
+    }
+  }
+}
+
 proc set_paths {} {
-  global XSCHEM_LIBRARY_PATH env pathlist OS
+  global XSCHEM_LIBRARY_PATH env pathlist OS add_all_windows_drives
   set pathlist {}
   if { [info exists XSCHEM_LIBRARY_PATH] } {
     if {$OS == "Windows"} {
       set pathlist_orig [split $XSCHEM_LIBRARY_PATH \;]
+      if {$add_all_windows_drives} {
+        set win_vol [file volumes]
+        foreach disk $win_vol {
+          lappend pathlist_orig $disk
+        }
+      }
     } else {
       set pathlist_orig [split $XSCHEM_LIBRARY_PATH :]
     }
@@ -5947,7 +5991,10 @@ proc set_paths {} {
         lappend pathlist $i
       }
     }
+    set myload_files1 $pathlist
   }
+  # set INITIALLOADDIR INITIALINSTDIR INITIALPROPDIR as initial locations in load file dialog box
+  set_initial_dirs
 }
 
 proc print_help_and_exit {} {
@@ -5979,21 +6026,6 @@ proc set_missing_colors_to_black {} {
   foreach i {svg_colors ps_colors light_colors dark_colors} {
     if { [llength [set $i]] > $cadlayers} {
        set $i [lrange [set $i] 0 [expr {$cadlayers -1}]]
-    }
-  }
-}
-
-proc set_initial_dirs {} {
-  global INITIALLOADDIR INITIALINSTDIR INITIALPROPDIR pathlist
-  set INITIALLOADDIR {}
-  set INITIALINSTDIR {}
-  set INITIALPROPDIR {}
-  foreach i $pathlist  {
-    if { [file exists $i] } {
-      set INITIALLOADDIR $i
-      set INITIALINSTDIR $i
-      set INITIALPROPDIR $i
-      break
     }
   }
 }
@@ -6047,7 +6079,7 @@ proc set_replace_key_binding {} {
 proc source_user_tcl_files {} {
   global tcl_files
   foreach i $tcl_files {
-    uplevel #0 "source $i"
+    uplevel #0 [list source $i]
   }
 }
 
@@ -6086,6 +6118,7 @@ set OS [lindex $tcl_platform(os) 0]
 set env(LC_ALL) C
 
 # tcl variable XSCHEM_LIBRARY_PATH  should already be set in xschemrc
+set_ne add_all_windows_drives 1
 set_paths
 print_help_and_exit
 
@@ -6314,9 +6347,6 @@ set_ne copy_cell 0
 load_recent_file
 # schematic to preload in new windows 20090708
 set_ne XSCHEM_START_WINDOW {}
-
-# set INITIALLOADDIR INITIALINSTDIR INITIALPROPDIR as initial locations in load file dialog box
-set_initial_dirs
 
 set custom_token {lab}
 set search_value {}

@@ -56,6 +56,7 @@
 # append XSCHEM_LIBRARY_PATH :${xschem_doc_dir}/gschem_import/sym
 
 #### For Windows, use ; instead of :, and enclosed pathname with ""
+# append XSCHEM_LIBRARY_PATH ";//192.168.1.1/Projects/mysch"
 # append XSCHEM_LIBRARY_PATH ";${XSCHEM_SHAREDIR}/../xschem_library"
 # append XSCHEM_LIBRARY_PATH ";${XSCHEM_SHAREDIR}/../xschem_library/devices"
 # append XSCHEM_LIBRARY_PATH ";${XSCHEM_SHAREDIR}/../xschem_library/examples"
@@ -402,3 +403,11 @@ set top_subckt 1
 #### if enabled will backannotate values in schematic at cursor 'b' position
 #### in graph. Default: not enabled (0)
 # set live_cursor2_backannotate 1
+
+###########################################################################
+#### INCLUDE ALL WINDOWS DRIVES IN XSCHEM PATHS
+###########################################################################
+#### This option will not include all windows drives in xschem paths
+#### Instead, additional drives can be added using XSCHEM_LIBRARY_PATH
+#### default: 1
+# set add_all_windows_drives 0
