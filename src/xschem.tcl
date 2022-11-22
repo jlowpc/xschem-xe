@@ -2260,6 +2260,8 @@ proc save_file_dialog { msg ext global_initdir {initialf {}} {overwrt 1} } {
 }
 
 proc is_xschem_file {f} {
+  if { ![file exists $f] } { return 0 
+  } elseif { [file isdirectory $f] } { return 0 }
   set a [catch {open "$f" r} fd]
   set ret 0
   set score 0
@@ -2318,7 +2320,7 @@ namespace eval c_toolbar {
     set c_t($i,file) {}
   }
   
-  proc cleanup {} {
+proc cleanup {} {
     variable c_t 
     if {![info exists c_t(n)]} return
     set j 0
@@ -2347,9 +2349,9 @@ namespace eval c_toolbar {
       set i [expr {($i + 1) % $n} ]
       if {$i == $top} break
     }
-  }
+}
 
-  proc display {} {
+proc display {} {
     variable c_t
     if { [winfo exists $c_t(w)]} {
       set w $c_t(w)
@@ -2370,9 +2372,9 @@ namespace eval c_toolbar {
         if { $i == $c_t(top) } break
       }
     }
-  }
+}
 
-  proc add {f} {
+proc add {f} {
     variable c_t
     for {set i 0} {$i < $c_t(n)} {incr i} {
       if {  $c_t($i,file) eq $f } { return 0}
@@ -2459,12 +2461,15 @@ proc myload_set_home {dir} {
 }
 
 proc setglob {dir} {
-      global myload_globfilter myload_files2
+      global myload_globfilter myload_files2 OS
       set myload_files2 [lsort [glob -nocomplain -directory $dir -tails -type d .* *]]
       if { $myload_globfilter eq {*}} {
         set myload_files2 ${myload_files2}\ [lsort [
            glob -nocomplain -directory $dir -tails -type {f} .* $myload_globfilter]]
       } else {
+        if {$OS == "Windows"} {
+          regsub {:} $myload_globfilter {\:} myload_globfilter
+        }
         set myload_files2 ${myload_files2}\ [lsort [
            glob -nocomplain -directory $dir -tails -type {f} $myload_globfilter]]
       }
@@ -2494,49 +2499,53 @@ proc load_file_dialog_up {dir} {
 
 proc myload_getresult {loadfile confirm_overwrt} {
   global myload_dir1 myload_retval myload_ext
-  
   if { $myload_retval ne {}} {
-    if {![file exists "$myload_dir1/$myload_retval"] } {
-      return "$myload_dir1/$myload_retval"
+    if { [regexp {^https?://} $myload_retval] } {
+      set fname $myload_retval
+    } elseif { [regexp {^/} $myload_retval]} {
+      set fname $myload_retval
+    } else {
+      set fname "$myload_dir1/$myload_retval"
+    }
+    if {![file exists "$fname"] } {
+      return "$fname"
     }
     if { $loadfile == 0 } {
-      if {[file exists "$myload_dir1/$myload_retval"]} {
+      if {[file exists "$fname"]} {
         if {$confirm_overwrt == 1 } {
-          set answer [tk_messageBox -message  "Overwrite $myload_dir1/${myload_retval}?" \
-               -icon warning -parent [xschem get topwindow] -type okcancel]
+          set answer [alert_ "Overwrite $fname?" {} 0 1]
         } else {
-          set answer ok
+          set answer 1
         }
-        if {$answer eq {ok}} {
-          return "$myload_dir1/$myload_retval"
+        if {$answer eq {1}} {
+          return "$fname"
         } else { 
+          set myload_retval {}
           return {}
         }
       }
     }
-    set type [is_xschem_file "$myload_dir1/$myload_retval"]
+    set type [is_xschem_file "$fname"]
     if { $type eq {0}  } {
       set answer [
-        tk_messageBox -message "$myload_dir1/$myload_retval does not seem to be an xschem file...\nContinue?" \
-         -icon warning -parent [xschem get topwindow] -type yesno]
-      if { $answer eq "no"} {
+        alert_ "$fname does not seem to be an xschem file...\nContinue?" {} 0 1]
+      if { $answer eq {0}} {
         set myload_retval {}
         return {}
       } else {
-        return "$myload_dir1/$myload_retval"
+        return "$fname"
       }
     } elseif { $type ne {SYMBOL} && ($myload_ext eq {*.sym}) } {
       set answer [
-        tk_messageBox -message "$myload_dir1/$myload_retval does not seem to be a SYMBOL file...\nContinue?" \
-           -icon warning -parent [xschem get topwindow] -type yesno]
-      if { $answer eq "no"} {
+        alert_ "$fname does not seem to be a SYMBOL file...\nContinue?" {} 0 1]
+      if { $answer eq {0}} {
         set myload_retval {}
         return {}
       } else {
-        return "$myload_dir1/$myload_retval"
+        return "$fname"
       }
     } else {
-      return "$myload_dir1/$myload_retval"
+      return "$fname"
     }
   } else {
     return {}
@@ -2551,7 +2560,6 @@ proc myload_display_preview {f} {
       .load.l.paneright.draw configure -background {}
       xschem preview_window draw .load.l.paneright.draw "$f"
       bind .load.l.paneright.draw <Expose> [subst {xschem preview_window draw .load.l.paneright.draw "$f"}]
-      
     }
   } else {
     bind .load.l.paneright.draw <Expose> {}
@@ -2765,6 +2773,19 @@ proc load_file_dialog {{msg {}} {ext {}} {global_initdir {INITIALINSTDIR}}
   setglob $myload_dir1
   myload_set_colors2
 
+
+  if {$myload_loadfile == 2} { 
+    bind .load.buttons_bot.entry <Leave> {
+      set myload_retval  [.load.buttons_bot.entry get]
+      set r [myload_getresult 2 0]
+      # puts "r=$r myload_dir1=$myload_dir1 myload_dir2=$myload_dir2"
+      xschem abort_operation
+      if {$r ne {}} {
+        xschem place_symbol "$r"
+      }
+    }
+  }
+
   bind .load.l.paneright.list <ButtonPress> { 
     set myload_yview [.load.l.paneright.list yview]
   }
@@ -2814,7 +2835,7 @@ proc load_file_dialog {{msg {}} {ext {}} {global_initdir {INITIALINSTDIR}}
       # puts "r=$r myload_dir1=$myload_dir1 myload_dir2=$myload_dir2"
       xschem abort_operation
       if {$r ne {}} {
-        xschem place_symbol "$myload_dir1/$myload_dir2"
+        xschem place_symbol "$r"
       }
     }
   };# bind .load.l.paneright.list <<ListboxSelect>>
@@ -3787,7 +3808,7 @@ proc edit_prop {txtlabel} {
   }
   wm geometry .dialog "${edit_prop_size}+$X+$Y"
   set prev_symbol $symbol
-  set editprop_sympath [file dirname [abs_sym_path $symbol]]
+  set editprop_sympath [get_directory [abs_sym_path $symbol]]
   frame .dialog.f4
   label .dialog.f4.l1  -text $txtlabel
   label .dialog.f4.path  -text "Path:"
@@ -4135,8 +4156,9 @@ proc text_line {txtlabel clear {preserve_disabled disabled} } {
   return $rcode
 }
 
-proc alert_ {txtlabel {position +200+300} {nowait {0}}} {
-  global has_x
+proc alert_ {txtlabel {position +200+300} {nowait {0}} {yesno 0}} {
+  global has_x rcode
+  set recode 1
   if {![info exists has_x] } {return}
   toplevel .alert -class Dialog
   wm title .alert {Alert}
@@ -4148,12 +4170,27 @@ proc alert_ {txtlabel {position +200+300} {nowait {0}}} {
     wm geometry .alert "+$X+$Y"
   }
   label .alert.l1  -text $txtlabel -wraplength 700
-  button .alert.b1 -text "OK" -command  \
+  if { $yesno} {
+    set oktxt Yes
+  } else {
+    set oktxt OK
+  }
+  button .alert.b1 -text $oktxt -command  \
   {
+    set rcode 1
     destroy .alert
   } 
+  if {$yesno} {
+    button .alert.b2 -text "No" -command  \
+    {  
+      set rcode 0
+      destroy .alert
+    }  
+  }
+
   pack .alert.l1 -side top -fill x
-  pack .alert.b1 -side top -fill x
+  pack .alert.b1 -side left -fill x
+  if {$yesno} {pack .alert.b2 -side left -fill x}
   tkwait visibility .alert
   grab set .alert
   focus .alert.b1
@@ -4169,9 +4206,8 @@ proc alert_ {txtlabel {position +200+300} {nowait {0}}} {
       
     }
   }
-
   if {!$nowait} {tkwait window .alert}
-  return {}
+  return $rcode
 }
 
 proc show_infotext {} {
@@ -4389,6 +4425,53 @@ proc find_file  { f {paths {}} } {
   return $res
 }
 
+# alternative implementation of "file dirname ... "
+# that does not mess with http:// (file dirname removes double slashes)
+proc get_directory {f} {
+  if {![regexp {/} $f]} {
+    set r .
+  } else {
+    set r [regsub {/[^/]*$} $f {}]
+  }
+  return $r
+}
+
+# fetch a remote url into ${XSCHEM_TMP_DIR}/xschem_web
+proc download_url {url} {
+  global XSCHEM_TMP_DIR download_url_helper OS
+  if {![file exists ${XSCHEM_TMP_DIR}/xschem_web]} { 
+    file mkdir ${XSCHEM_TMP_DIR}/xschem_web
+  }
+  if {$OS eq "Windows"} {
+    set cmd "cmd /c \"cd ${XSCHEM_TMP_DIR}/xschem_web & $download_url_helper $url\""
+    set r [catch {eval exec $cmd } res]
+  } else {
+    set r [catch {exec sh -c "cd ${XSCHEM_TMP_DIR}/xschem_web; $download_url_helper $url"} res]
+  }
+  # puts "download_url: url=$url, exit code=$r, res=$res"
+  return $r
+}
+
+# use some heuristic to find a sub sch/sym reference in the web repository.
+proc try_download_url {dirname sch_or_sym} {
+  set url $dirname/$sch_or_sym
+  # puts "try_download_url: dirname=$dirname, sch_or_sym=$sch_or_sym"
+  set r [download_url $url]
+  if { $r!=0} {
+    # count # of directories in sch/sym reference
+    set nitems [regexp -all {/+} $sch_or_sym]
+    # puts "try_download_url: dirname=$dirname, sch_or_sym=$sch_or_sym, nitems=$nitems"
+    while { $nitems > 0} {
+      # remove one path component from dirname and try to download URL
+      set dirname [get_directory $dirname]
+      incr nitems -1
+      set url $dirname/$sch_or_sym
+      set r [download_url $url]
+      # done if url found
+      if { $r == 0 } { break } 
+    }
+  }
+}
 
 # given an absolute path of a symbol/schematic remove the path prefix
 # if file is in a library directory (a $pathlist dir)
@@ -4423,13 +4506,16 @@ proc rel_sym_path {symbol} {
 ## given a library/symbol return its absolute path
 proc abs_sym_path {fname {ext {} } } {
   global pathlist OS
-
   set  curr_dirname [xschem get current_dirname]
   ## empty: do nothing
   if {$fname eq {} } return {}
   ## add extension for 1.0 file format compatibility
   if { $ext ne {} } { 
     set fname [file rootname $fname]$ext
+  }
+  # web url: return as is
+  if { [regexp {^https?://} $fname]} { 
+     return "$fname"
   }
   if {$OS eq "Windows"} {
     ## absolute path: return as is
@@ -6116,7 +6202,6 @@ proc setup_tcp_bespice {} {
 ###
 set OS [lindex $tcl_platform(os) 0]
 set env(LC_ALL) C
-
 # tcl variable XSCHEM_LIBRARY_PATH  should already be set in xschemrc
 set_ne add_all_windows_drives 1
 set_paths
@@ -6129,6 +6214,16 @@ if {$OS == "Windows"} {
   set_ne XSCHEM_TMP_DIR [xschem get temp_dir]
 } else {
   set_ne XSCHEM_TMP_DIR {/tmp}
+}
+
+# Remove temporary location for web objects
+if {[file exists ${XSCHEM_TMP_DIR}/xschem_web] } {
+  foreach file [glob -nocomplain ${XSCHEM_TMP_DIR}/xschem_web/* ${XSCHEM_TMP_DIR}/xschem_web/.*] {
+    # skip /${XSCHEM_TMP_DIR}/xschem_web/.. and /${XSCHEM_TMP_DIR}/xschem_web/.
+    if {[regexp {/\.\.$} $file] || [regexp {/\.$} $file] } {continue}
+    file delete $file
+  } 
+  file delete ${XSCHEM_TMP_DIR}/xschem_web
 }
 
 # used in C code
@@ -6162,6 +6257,7 @@ set_ne myload_globfilter {*}
 set_ne component_browser_on_top 1
 ## list of tcl procedures to load at end of xschem.tcl
 set_ne tcl_files {}
+set_ne download_url_helper {curl -f -s -O}
 set_ne netlist_dir "$USER_CONF_DIR/simulations"
 # this global exists only for netlist_type radiobuttons, don't use, use [xschem] subcommand to get/set values
 # it is also used in xschemrc to set initial netlist type.
