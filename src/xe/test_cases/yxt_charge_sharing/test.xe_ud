@@ -13,4 +13,5 @@ use_lower_case_m_as_prefix_in_flattened_xtor_name=1
 
 [parse_spi]
 xtor_size_scale_factor=1e-6
+process_additional_xtor_parameters = 1
 

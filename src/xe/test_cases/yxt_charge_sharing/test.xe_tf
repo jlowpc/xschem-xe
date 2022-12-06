@@ -14,6 +14,7 @@ default_mf_finfet_sd_edge_cap1 = 8
 !default_mf_weffT = 1.0
 vt_rank = medium
 additional_param_names = linear nf nrd nrs sa sb sd mult
+subcktcall_in_netlist=1
 
 [def_xtor_model]
 model=pmos sky130_fd_pr__pfet_01v8_hvt
@@ -31,6 +32,7 @@ default_mf_finfet_sd_edge_cap1 = 8
 !default_mf_weffT = 1.0
 vt_rank = medium
 additional_param_names = linear nf nrd nrs sa sb sd mult
+subcktcall_in_netlist=1
 
 [def_xtor_model]
 model=nmos sky130_fd_pr__nfet_01v8
@@ -48,6 +50,7 @@ default_mf_finfet_sd_edge_cap1 = 8
 !default_mf_weffT = 1.0
 vt_rank = medium
 additional_param_names = linear nf nrd nrs sa sb sd mult
+subcktcall_in_netlist=1
 
 [def_diode_model]
 model = sky130_fd_pr__diode_pw2nd_05v5
@@ -61,6 +64,3 @@ model = sky130_fd_pr__res_generic_po
 [def_resistor_model]
 model = sky130_fd_pr__res_generic_po
 
-[rail]
-supply=vcc 1.8
-ground=vss
