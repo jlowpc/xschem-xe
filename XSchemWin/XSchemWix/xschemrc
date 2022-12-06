@@ -336,7 +336,8 @@ set editor {notepad.exe}
 #### list of tcl files to preload.
 # lappend tcl_files ${XSCHEM_SHAREDIR}/change_index.tcl
 # lappend tcl_files ${XSCHEM_SHAREDIR}/ngspice_backannotate.tcl
-lappend tcl_files ${XSCHEM_SHAREDIR}/xe/xe.tcl
+lappend tcl_files ${XSCHEM_SHAREDIR}/xe/xe_web.tcl
+#lappend tcl_files ${XSCHEM_SHAREDIR}/xe/xe.tcl
 
 ###########################################################################
 #### WEB URL DOWNLOAD HELPER APPLICATION
