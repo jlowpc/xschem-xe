@@ -8,9 +8,7 @@
 #  the Free Software Foundation; either version 2 of the License, or
 #  (at your option) any later version.
 #
-#  Copyright (C) 2020 YX Technologies, Inc.
-
-package require Tktable
+#  Copyright (C) 2022 YX Technologies, Inc.
 
 if {$::OS == "Windows"} {
   load xe_dmrc.dll
@@ -91,12 +89,15 @@ set xe_cm_wcounter 1
 set XE_ROOT_DIR $XSCHEM_SHAREDIR/XE
 
 # Add XE Menu to Xschem's main Menu
-menubutton .menubar.xe -text "XE"  -menu .menubar.xe.menu
-menu .menubar.xe.menu -tearoff 0
-.menubar.xe.menu add command -label "Configure XE" -command "yxt_configure_xe_win_select_dir 0"   
-.menubar.xe.menu add command -label "See Report" -command "yxt_see_report_win_context_menu {XE Reports}"
-.menubar.xe.menu add command -label "XE-SC" -command "yxtsc_win_update_change"
-pack .menubar.xe -side left
+if {[info exists has_x]} {
+  package require Tktable
+  menubutton .menubar.xe -text "XE"  -menu .menubar.xe.menu
+  menu .menubar.xe.menu -tearoff 0
+  .menubar.xe.menu add command -label "Configure XE" -command "yxt_configure_xe_win_select_dir 0"   
+  .menubar.xe.menu add command -label "See Report" -command "yxt_see_report_win_context_menu {XE Reports}"
+  .menubar.xe.menu add command -label "XE-SC" -command "yxtsc_win_update_change"
+  pack .menubar.xe -side left
+}
 
 ###############################################
 # TBD: TO BE REMOVED ONCE TCL IS SETUP
@@ -140,6 +141,15 @@ proc yxt_load {} {
 }
 
 proc yxt_configure_xe_win_select_dir {window} {
+  global xe_conf_dict xe_wd_interim INITIALINSTDIR
+  if {[info exists xe_conf_dict(xe_wd)]} {
+    set xe_wd_interim [tk_chooseDirectory -initialdir $xe_wd_interim -parent $window -title {Select XE Working DIR} -mustexist false]
+  } else {
+    set xe_wd_interim [tk_chooseDirectory -initialdir $INITIALINSTDIR -parent $window -title {Select XE Working DIR} -mustexist false]
+  }
+}
+
+proc yxt_configure_xe_win_select_dir_select_dir {window} {
   global xe_conf_dict xe_wd_interim INITIALINSTDIR
   if {[info exists xe_conf_dict(xe_wd)]} {
     set xe_wd_interim [tk_chooseDirectory -initialdir $xe_wd_interim -parent $window -title {Select XE Working DIR} -mustexist false]

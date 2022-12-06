@@ -8,9 +8,8 @@
 #  the Free Software Foundation; either version 2 of the License, or
 #  (at your option) any later version.
 #
-#  Copyright (C) 2020 YX Technologies, Inc.
+#  Copyright (C) 2022 YX Technologies, Inc.
 
-package require Tktable
 package require json
 
 if {$::OS == "Windows"} {
@@ -20,14 +19,17 @@ if {$::OS == "Windows"} {
   load xe_dmrc.so
 }
 
-proc xe::get_info {net} {  
+proc xe::get_info {netname} {  
   global xe_net_info_dict
-  set path [string range [xschem get sch_path] 1 end]
-  set netname $path$net
+  #set path [string range [xschem get sch_path] 1 end]
+  #puts "get_info path=$path net=$net"
+  #set netname $path$net
+  #return $netname
+  #puts "netname = $netname"
   if {[info exists xe_net_info_dict($netname)]} {
     return $xe_net_info_dict($netname)
   }
-  return "-"
+  return ""
 }
 
 proc yxt_read_net_property {} {
@@ -87,14 +89,18 @@ global XSCHEM_SHAREDIR sim XE_ROOT_DIR
 yxt_clear_global
 set xe_cm_wcounter 1
 set XE_ROOT_DIR $XSCHEM_SHAREDIR/XE
+source $XE_ROOT_DIR/xewebrc
 
 # Add XE Menu to Xschem's main Menu
-menubutton .menubar.xe -text "XE"  -menu .menubar.xe.menu
-menu .menubar.xe.menu -tearoff 0
-.menubar.xe.menu add command -label "Configure XE" -command "yxt_configure_xe_win_select_dir 0"   
-.menubar.xe.menu add command -label "See Report" -command "yxt_see_report_win_context_menu {XE Reports}"
-.menubar.xe.menu add command -label "XE-SC" -command "yxtsc_win_update_change"
-pack .menubar.xe -side left
+if {[info exists has_x]} {
+  package require Tktable
+  menubutton .menubar.xe -text "XE"  -menu .menubar.xe.menu
+  menu .menubar.xe.menu -tearoff 0
+  .menubar.xe.menu add command -label "Configure XE" -command "yxt_configure_xe_win_select_dir 0"   
+  .menubar.xe.menu add command -label "See Report" -command "yxt_see_report_win_context_menu {XE Reports}"
+  .menubar.xe.menu add command -label "XE-SC" -command "yxtsc_win_update_change"
+  pack .menubar.xe -side left
+}
 
 ###############################################
 # TBD: TO BE REMOVED ONCE TCL IS SETUP
@@ -138,6 +144,15 @@ proc yxt_load {} {
 }
 
 proc yxt_configure_xe_win_select_dir {window} {
+  global xe_conf_dict xe_wd_interim INITIALINSTDIR
+  if {[info exists xe_conf_dict(xe_wd)]} {
+    set xe_wd_interim [tk_chooseDirectory -initialdir $xe_wd_interim -parent $window -title {Select XE Working DIR} -mustexist false]
+  } else {
+    set xe_wd_interim [tk_chooseDirectory -initialdir $INITIALINSTDIR -parent $window -title {Select XE Working DIR} -mustexist false]
+  }
+}
+
+proc yxt_configure_xe_win_select_dir_select_dir {window} {
   global xe_conf_dict xe_wd_interim INITIALINSTDIR
   if {[info exists xe_conf_dict(xe_wd)]} {
     set xe_wd_interim [tk_chooseDirectory -initialdir $xe_wd_interim -parent $window -title {Select XE Working DIR} -mustexist false]
@@ -303,17 +318,9 @@ proc yxt_configure_xe_win_select_dir {load} {
   } else {
     button .xe_conf.run -text "Run" -command { \
       yxt_configure_xe_win_select_dir_save_interim; \
-      yxt_configure_xe_win_select_dir_run_xe; \
+      yxt_configure_xe_win_select_dir_run_xe;
       destroy .xe_conf; \
-      vwait XE_RESULT
-      thread::release $XE_THREAD
-      #set s [file tail [file rootname [xschem get schname]]]
-      #set fn $xe_conf_dict(xe_wd)/$s.xe_log
-      # set xe_log_detail [xetcl_get_xe_log_string]
-      #set xe_log_detail [read_data $fn]
-      #viewdata "Completed: running XE.\n  $xe_log_detail" 1
-      alert_  "Completed running XE"
-      unset XE_THREAD
+      yxt_poll_to_get_xe_results; \
     }  -padx 20
   }
   button .xe_conf.save -text Save -command { \
@@ -905,18 +912,34 @@ proc yxtsc_win_update_change_cut {{callback {}}} {
   source $script
 }
 
-proc run_xe_web {N ud tf} {
-  set output [exec python run_xe_web.py $N $ud $tf]
+proc run_xe_web {N ud tf design} {
+  global XE_ROOT_DIR XEAPI_URL XEAPI_TOKEN
+  set url "--url=$XEAPI_URL"
+  set token "--token=$XEAPI_TOKEN"
+  set output [exec python $XE_ROOT_DIR/python/run_xe_web.py $N $ud $tf $design $url $token]
   return $output
 }
 
-proc get_xe_results {wd url task_id} {
-  set output [exec python get_xe_results.py $wd $url $task_id]
+proc get_xe_results {} {
+  global XE_ROOT_DIR XEAPI_URL XEAPI_TOKEN XE_TASKID xe_conf_dict XE_URL
+  set wd "--wd=$xe_conf_dict(xe_wd)"
+  set url "--url=$XEAPI_URL"
+  set results_url "--results_url=$XE_URL"
+  set token "--token=$XEAPI_TOKEN"
+  set output [exec python $XE_ROOT_DIR/python/get_xe_results.py $wd $url $results_url $XE_TASKID $token]
+  return $output
+}
+
+proc get_xe_log {design} {
+  global XE_ROOT_DIR XEAPI_URL XEAPI_TOKEN
+  set url "--url=$XEAPI_URL"
+  set token "--token=$XEAPI_TOKEN"
+  set output [exec python $XE_ROOT_DIR/python/get_xe_log.py $design $url $token]
   return $output
 }
 
 proc yxt_configure_xe_win_select_dir_run_xe {{callback {}}} {
-  global XSCHEM_SHAREDIR netlist_dir netlist_type sim xschem_libs XE_RESULT XE_THREAD
+  global XSCHEM_SHAREDIR netlist_dir netlist_type sim xschem_libs XE_RESULT XE_THREAD XE_URL XE_TASKID
   global xe_conf_dict top_subckt
   set top_subckt 1
   set_sim_defaults
@@ -949,33 +972,50 @@ proc yxt_configure_xe_win_select_dir_run_xe {{callback {}}} {
       append tf $fn
       append tf " "
     }
-    set ret_json_str [run_xe_web "--nl=$N" $ud $tf]
+    set ret_json_str [run_xe_web "--nl=$N" $ud $tf "--design=$s"]
     set ret_dict [::json::json2dict $ret_json_str]
-    set url [dict get $ret_dict url]
-    set task_id [dict get $ret_dict task_id]
-    if {$::OS == "Windows"} {
-      if ([info exists XE_THREAD]) {
-        alert_  "Looks like XE is still running in the background."  
-      } else {
-        #puts "Start running XE with a separate thread.  You will be informed with a window when that is completed:"
-        #puts "Command to XE = $cmd"
-        #thread::create "check_xe_status"
-        puts "Did it come here1"
-
-        set XE_THREAD [thread::create {thread::wait;}]
-        puts "Did it come here2"
-        thread::send -async $XE_THREAD "exec python get_xe_results.py --wd=$xe_conf_dict(xe_wd) --url=$url $task_id" XE_RESULT
-        puts "Did it come here3"
-        #thread::send -async $XE_THREAD "eval exec $cmd" XE_RESULT
-        #thread::send -async $XE_THREAD "[yxt_run_all_xe $cmd]" XE_RESULT
-      }
+    if (![dict exists $ret_dict url]) {
+      alert_  "Something went wrong: $ret_dict"
     } else {
-      set id [$fg $st sh -c [get_xe_results --wd=$xe_conf_dict(xe_wd) --url=$url $task_id)]]
-      set execute_callback($id) $callback
-    } 
+      set XE_URL [dict get $ret_dict url]
+      set XE_TASKID [dict get $ret_dict task_id]
+      # puts "url=$ret_dict task_id=$task_id"
+    }
   } else {
     alert_  "Didn't find a netlist to run XE."
   }
+}
+
+proc yxt_poll_to_get_xe_results {} {
+  global XE_RESULT XE_THREAD xe_conf_dict XE_URL XE_TASKID
+  if (![info exists XE_URL]) {
+    return
+  }
+  if {$::OS == "Windows"} {
+    if ([info exists XE_THREAD]) {
+      alert_  "Looks like XE is still running in the background."  
+    } else {
+      #puts "Start running XE with a separate thread.  You will be informed with a window when that is completed:"
+      #puts "Command to XE = $cmd"
+      #thread::create "check_xe_status"
+      set XE_THREAD [thread::create {thread::wait;}]
+      #thread::send -async $XE_THREAD "exec python $XE_ROOT_DIR/python/get_xe_results.py --wd=$xe_conf_dict(xe_wd) --url=$XE_URL $XE_TASKID" XE_RESULT
+      thread::send -async $XE_THREAD [get_xe_results] XE_RESULT
+      #thread::send -async $XE_THREAD "eval exec $cmd" XE_RESULT
+      #thread::send -async $XE_THREAD "[yxt_run_all_xe $cmd]" XE_RESULT
+    }
+  } else {
+    set id [$fg $st sh -c [$XE_ROOT_DIR/python/get_xe_results --wd=$xe_conf_dict(xe_wd) --url=$url $task_id)]]
+    set execute_callback($id) $callback
+  } 
+  vwait XE_RESULT
+  thread::release $XE_THREAD
+  set design [file tail [file rootname [xschem get schname]]]
+  set xe_log_detail [get_xe_log $design]
+  viewdata "Completed: running XE.\n  $xe_log_detail" 1
+  unset XE_THREAD
+  unset XE_URL
+  unset XE_TASKID
 }
 
 proc yxt_process_fi_subckt {} {
