@@ -13,23 +13,22 @@
 package require json
 
 if {$::OS == "Windows"} {
-  load xe_dmrc.dll
   package require Thread
-} else {
-  load xe_dmrc.so
 }
 
-proc xe::get_info {netname} {  
-  global xe_net_info_dict
-  #set path [string range [xschem get sch_path] 1 end]
-  #puts "get_info path=$path net=$net"
-  #set netname $path$net
-  #return $netname
-  #puts "netname = $netname"
-  if {[info exists xe_net_info_dict($netname)]} {
-    return $xe_net_info_dict($netname)
-  }
-  return ""
+namespace eval yxt {
+    proc get_info {netname} {  
+      global xe_net_info_dict
+      #set path [string range [xschem get sch_path] 1 end]
+      #puts "get_info path=$path net=$net"
+      #set netname $path$net
+      #return $netname
+      #puts "netname = $netname"
+      if {[info exists xe_net_info_dict($netname)]} {
+        return $xe_net_info_dict($netname)
+      }
+      return ""
+    }   
 }
 
 proc yxt_read_net_property {} {
@@ -920,13 +919,14 @@ proc run_xe_web {N ud tf design} {
   return $output
 }
 
-proc get_xe_results {} {
+proc get_xe_results {design} {
   global XE_ROOT_DIR XEAPI_URL XEAPI_TOKEN XE_TASKID xe_conf_dict XE_URL
   set wd "--wd=$xe_conf_dict(xe_wd)"
   set url "--url=$XEAPI_URL"
   set results_url "--results_url=$XE_URL"
   set token "--token=$XEAPI_TOKEN"
-  set output [exec python $XE_ROOT_DIR/python/get_xe_results.py $wd $url $results_url $XE_TASKID $token]
+  set des "--design=$design"
+  set output [exec python $XE_ROOT_DIR/python/get_xe_results.py $wd $url $results_url $XE_TASKID $des $token]
   return $output
 }
 
@@ -988,6 +988,7 @@ proc yxt_configure_xe_win_select_dir_run_xe {{callback {}}} {
 
 proc yxt_poll_to_get_xe_results {} {
   global XE_RESULT XE_THREAD xe_conf_dict XE_URL XE_TASKID
+  set design [file tail [file rootname [xschem get schname]]]
   if (![info exists XE_URL]) {
     return
   }
@@ -1000,7 +1001,7 @@ proc yxt_poll_to_get_xe_results {} {
       #thread::create "check_xe_status"
       set XE_THREAD [thread::create {thread::wait;}]
       #thread::send -async $XE_THREAD "exec python $XE_ROOT_DIR/python/get_xe_results.py --wd=$xe_conf_dict(xe_wd) --url=$XE_URL $XE_TASKID" XE_RESULT
-      thread::send -async $XE_THREAD [get_xe_results] XE_RESULT
+      thread::send -async $XE_THREAD [get_xe_results $design] XE_RESULT
       #thread::send -async $XE_THREAD "eval exec $cmd" XE_RESULT
       #thread::send -async $XE_THREAD "[yxt_run_all_xe $cmd]" XE_RESULT
     }
@@ -1010,18 +1011,20 @@ proc yxt_poll_to_get_xe_results {} {
   } 
   vwait XE_RESULT
   thread::release $XE_THREAD
-  set design [file tail [file rootname [xschem get schname]]]
   set xe_log_detail [get_xe_log $design]
   viewdata "Completed: running XE.\n  $xe_log_detail" 1
   unset XE_THREAD
   unset XE_URL
   unset XE_TASKID
+  set cmd "cmd /c \"cd $xe_conf_dict(xe_wd) & tar -xvf $design.zip\""
+  set r [catch {eval exec $cmd } res]
+  yxt_read_net_property
 }
 
 proc yxt_process_fi_subckt {} {
   global xe_conf_dict xe_sd_fi_inst
   set s [file tail [file rootname [xschem get schname]]]
-  set fn $xe_conf_dict(xe_wd)/fi_subckt.xe_fi_subckt
+  set fn $xe_conf_dict(xe_wd)/$s.xe_fi_subckt
   set fd [open $fn r]
   set a [catch "open \"$fn\" r" fd]
   if {$a} {
@@ -1075,32 +1078,10 @@ proc yxt_see_report_win_context_menu {{msg {}}} {
   wm title .xe_report_dialog $msg
   set xe_csv_files1 [lsort [glob -nocomplain -directory $xe_conf_dict(xe_wd) -tails *.{csv,xe_lm_v}]]
   foreach file $xe_csv_files1 {
-    if [regexp {\.xe_lm_v} $file] {
-      set xe_report_ht(xe_lm_entry) $file
-    } elseif [regexp {xe_ckc_classify_net\.csv} $file] {
-      set xe_report_ht(xe_ckc_entry_classify_net) $file
-    } elseif [regexp {xe_ckc_unclassify_net\.csv} $file] {
-      set xe_report_ht(xe_ckc_entry_unclassify_net) $file
-    } elseif [regexp {xe_ckc_classify_device\.csv} $file] {
-      set xe_report_ht(xe_ckc_entry_classify_device) $file
-    } elseif [regexp {xe_ckc_unclassify_device\.csv} $file] {
-      set xe_report_ht(xe_ckc_entry_unclassify_device) $file
-    } elseif [regexp {xe_dmrc_classify_net\.csv} $file] {
+    if [regexp {classify_net_report\.csv} $file] {
       set xe_report_ht(xe_dmrc_entry_classify_net) $file
-    } elseif [regexp {xe_dmrc_unclassify_net\.csv} $file] {
-      set xe_report_ht(xe_dmrc_entry_unclassify_net) $file
-    } elseif [regexp {xe_dmrc_classify_device\.csv} $file] {
+    } elseif [regexp {classify_xtor_report\.csv} $file] {
       set xe_report_ht(xe_dmrc_entry_classify_device) $file
-    } elseif [regexp {xe_dmrc_unclassify_device\.csv} $file] {
-      set xe_report_ht(xe_dmrc_entry_unclassify_device) $file
-    } elseif [regexp {xe_lm_classify_net\.csv} $file] {
-      set xe_report_ht(xe_lm_entry_classify_net) $file
-    } elseif [regexp {xe_lm_unclassify_net\.csv} $file] {
-      set xe_report_ht(xe_lm_entry_unclassify_net) $file
-    } elseif [regexp {xe_lm_classify_device\.csv} $file] {
-      set xe_report_ht(xe_lm_entry_classify_device) $file
-    } elseif [regexp {xe_lm_unclassify_device\.csv} $file] {
-      set xe_report_ht(xe_lm_entry_unclassify_device) $file
     } elseif [regexp {xe_weff\.csv} $file] {
       set xe_report_ht(xe_ckc_weff) $file
     } else {lappend list_checks $file;}
@@ -1113,94 +1094,20 @@ proc yxt_see_report_win_context_menu {{msg {}}} {
   .xe_report_dialog.l.paneleft.tree configure -padding {0 0 0 0}
   pack .xe_report_dialog.l.paneleft.tree -expand 1 -fill both
 
-  if {[info exists xe_report_ht(xe_lm_entry)]} {
-    set xe_lm_entry [.xe_report_dialog.l.paneleft.tree insert {} end -text "XE-LM"]
-    set xe_lm_entry_lm [.xe_report_dialog.l.paneleft.tree insert $xe_lm_entry end -text "xe_lm_v"]
-    set xe_report_ht($xe_lm_entry_lm) $xe_report_ht(xe_lm_entry)
-
-    set has_classify_net [info exists xe_report_ht(xe_lm_entry_classify_net)]
-    set has_unclassify_net [info exists xe_report_ht(xe_lm_entry_unclassify_net)]
-    set has_classify_device [info exists xe_report_ht(xe_lm_entry_classify_device)]
-    set has_unclassify_device [info exists xe_report_ht(xe_lm_entry_unclassify_device)]
-    if {$has_unclassify_net || $has_unclassify_net || $has_classify_device || $has_unclassify_device} {
-      set xe_lm_entry_classify [.xe_report_dialog.l.paneleft.tree insert $xe_lm_entry end -text "Classification"]  
-    }
-    if {$has_classify_net} {
-      set xe_lm_entry_classify_net [.xe_report_dialog.l.paneleft.tree insert $xe_lm_entry_classify end -text "Classify Net"]
-      set xe_report_ht($xe_lm_entry_classify_net) $xe_report_ht(xe_lm_entry_classify_net)
-    }
-    if {$has_unclassify_net} {
-      set xe_lm_entry_unclassify_net [.xe_report_dialog.l.paneleft.tree insert $xe_lm_entry_classify end -text "Un-Classify Net"]
-      set xe_report_ht($xe_lm_entry_unclassify_net) $xe_report_ht(xe_lm_entry_unclassify_net)
-    }
-    if {$has_classify_device} {
-      set xe_lm_entry_classify_device [.xe_report_dialog.l.paneleft.tree insert $xe_lm_entry_classify end -text "Classify Device"]
-      set xe_report_ht($xe_lm_entry_classify_device) $xe_report_ht(xe_lm_entry_classify_device)
-    }
-    if {$has_unclassify_device} {
-      set xe_lm_entry_unclassify_device [.xe_report_dialog.l.paneleft.tree insert $xe_lm_entry_classify end -text "Un-Classify Device"]
-      set xe_report_ht($xe_lm_entry_unclassify_device) $xe_report_ht(xe_lm_entry_unclassify_device)
-    }
-  }
-  
-  if {[info exists xe_report_ht(xe_ckc_entry_classify_net)]} {
-    set xe_ckc_entry [.xe_report_dialog.l.paneleft.tree insert {} end -text "XE-CKC"]
-    set has_classify_net [info exists xe_report_ht(xe_ckc_entry_classify_net)]
-    set has_unclassify_net [info exists xe_report_ht(xe_ckc_entry_unclassify_net)]
-    set has_classify_device [info exists xe_report_ht(xe_ckc_entry_classify_device)]
-    set has_unclassify_device [info exists xe_report_ht(xe_ckc_entry_unclassify_device)]
-    if {$has_unclassify_net || $has_unclassify_net || $has_classify_device || $has_unclassify_device} {
-      set xe_ckc_entry_classify [.xe_report_dialog.l.paneleft.tree insert $xe_ckc_entry end -text "Classification"]  
-    }
-    if {$has_classify_net} {
-      set xe_ckc_entry_classify_net [.xe_report_dialog.l.paneleft.tree insert $xe_ckc_entry_classify end -text "Classify Net"]
-      set xe_report_ht($xe_ckc_entry_classify_net) $xe_report_ht(xe_ckc_entry_classify_net)
-    }
-    if {$has_unclassify_net} {
-      set xe_ckc_entry_unclassify_net [.xe_report_dialog.l.paneleft.tree insert $xe_ckc_entry_classify end -text "Un-Classify Net"]
-      set xe_report_ht($xe_ckc_entry_unclassify_net) $xe_report_ht(xe_ckc_entry_unclassify_net)
-    }
-    if {$has_classify_device} {
-      set xe_ckc_entry_classify_device [.xe_report_dialog.l.paneleft.tree insert $xe_ckc_entry_classify end -text "Classify Device"]
-      set xe_report_ht($xe_ckc_entry_classify_device) $xe_report_ht(xe_ckc_entry_classify_device)
-    }
-    if {$has_unclassify_device} {
-      set xe_ckc_entry_unclassify_device [.xe_report_dialog.l.paneleft.tree insert $xe_ckc_entry_classify end -text "Un-Classify Device"]
-      set xe_report_ht($xe_ckc_entry_unclassify_device) $xe_report_ht(xe_ckc_entry_unclassify_device)
-    }
-    if {[llength $list_checks] > 0} {
-      set xe_ckc_entry_checks [.xe_report_dialog.l.paneleft.tree insert $xe_ckc_entry end -text "CKC Checks"]
-      foreach check $list_checks {
-        set id [.xe_report_dialog.l.paneleft.tree insert $xe_ckc_entry_checks end -text $check]
-        set xe_report_ht($id) $check
-      }
-    }
-  }
-
   if {[info exists xe_report_ht(xe_dmrc_entry_classify_net)]} {
     set xe_dmrc_entry [.xe_report_dialog.l.paneleft.tree insert {} end -text "XE-DMRC"]
     set has_classify_net [info exists xe_report_ht(xe_dmrc_entry_classify_net)]
-    set has_unclassify_net [info exists xe_report_ht(xe_dmrc_entry_unclassify_net)]
     set has_classify_device [info exists xe_report_ht(xe_dmrc_entry_classify_device)]
-    set has_unclassify_device [info exists xe_report_ht(xe_dmrc_entry_unclassify_device)]
-    if {$has_unclassify_net || $has_unclassify_net || $has_classify_device || $has_unclassify_device} {
+    if {$has_classify_net || $has_classify_device} {
       set xe_dmrc_entry_classify [.xe_report_dialog.l.paneleft.tree insert $xe_dmrc_entry end -text "Classification"]  
     }
     if {$has_classify_net} {
       set xe_dmrc_entry_classify_net [.xe_report_dialog.l.paneleft.tree insert $xe_dmrc_entry_classify end -text "Classify Net"]
       set xe_report_ht($xe_dmrc_entry_classify_net) $xe_report_ht(xe_dmrc_entry_classify_net)
     }
-    if {$has_unclassify_net} {
-      set xe_dmrc_entry_unclassify_net [.xe_report_dialog.l.paneleft.tree insert $xe_dmrc_entry_classify end -text "Un-Classify Net"]
-      set xe_report_ht($xe_dmrc_entry_unclassify_net) $xe_report_ht(xe_dmrc_entry_unclassify_net)
-    }
     if {$has_classify_device} {
       set xe_dmrc_entry_classify_device [.xe_report_dialog.l.paneleft.tree insert $xe_dmrc_entry_classify end -text "Classify Device"]
       set xe_report_ht($xe_dmrc_entry_classify_device) $xe_report_ht(xe_dmrc_entry_classify_device)
-    }
-    if {$has_unclassify_device} {
-      set xe_dmrc_entry_unclassify_device [.xe_report_dialog.l.paneleft.tree insert $xe_dmrc_entry_classify end -text "Un-Classify Device"]
-      set xe_report_ht($xe_dmrc_entry_unclassify_device) $xe_report_ht(xe_dmrc_entry_unclassify_device)
     }
     if {[llength $list_checks] > 0} {
       set xe_dmrc_entry_checks [.xe_report_dialog.l.paneleft.tree insert $xe_dmrc_entry end -text "DMRC Checks"]

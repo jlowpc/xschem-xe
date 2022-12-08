@@ -17,17 +17,19 @@ if {$::OS == "Windows"} {
   load xe_dmrc.so
 }
 
-proc xe::get_info {netname} {  
-  global xe_net_info_dict
-  #set path [string range [xschem get sch_path] 1 end]
-  #puts "get_info path=$path net=$net"
-  #set netname $path$net
-  #return $netname
-  #puts "netname = $netname"
-  if {[info exists xe_net_info_dict($netname)]} {
-    return $xe_net_info_dict($netname)
-  }
-  return ""
+namespace eval yxt {
+    proc get_info {netname} {  
+      global xe_net_info_dict
+      #set path [string range [xschem get sch_path] 1 end]
+      #puts "get_info path=$path net=$net"
+      #set netname $path$net
+      #return $netname
+      #puts "netname = $netname"
+      if {[info exists xe_net_info_dict($netname)]} {
+        return $xe_net_info_dict($netname)
+      }
+      return ""
+    }   
 }
 
 proc yxt_read_net_property {} {

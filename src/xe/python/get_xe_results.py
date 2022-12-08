@@ -51,6 +51,11 @@ def main():
                   default=None,     
                   help='Wait Time')
 
+      parser.add_argument('--design',
+                        default=None,     
+                        required=True,
+                        help='name of design')
+
       args = parser.parse_args() 
       headers = {
             'Authorization': 'Token %s' % args.token
@@ -68,9 +73,8 @@ def main():
                  for item in response_dict['xe_json'][report]:
                         f.write(f"{item['subckt']}:\n")
                         for value in item['fi_device']:
-                              for inst in value:
-                                    f.write(f"  - {inst}")
-                        f.write("\n")
+                            f.write(f"  - {value}")
+                            f.write("\n")
             else:
                   f = open(f"{args.wd}/{report}.csv", "w")
                   is_first = True
@@ -93,6 +97,14 @@ def main():
 
       #with open(filename) as openfile:
       #json.dump(list(log_disk.values()), file)
+
+      url_dl = f"{args.url}/download/{args.design}" 
+      # connect(url_dl, headers)
+      zip_name = f"{args.wd}/{args.design}.zip"
+      r = requests.get(f"{url_dl}", headers=headers, stream=True)
+      with open(zip_name, 'wb') as f:
+        for chunk in r.iter_content():
+            f.write(chunk)
       return 0      
 
 main()

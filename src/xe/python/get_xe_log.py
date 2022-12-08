@@ -1,6 +1,5 @@
 from xehelper import netlist_to_json, config_to_python_code, NetlistEncoder
 import sys, requests, argparse, json
-import tenacity
 
 def get_xe_log(url, headers):
       r = requests.get(url, headers=headers)

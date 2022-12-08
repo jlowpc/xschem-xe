@@ -1,4 +1,4 @@
-import json, re
+import json, re, os
 from json import JSONEncoder
 from PySpice.Spice.Parser import SpiceParser
 from configparser import ConfigParser
@@ -129,6 +129,9 @@ def netlist_to_json(fn):
                     str2 = matchX.group(2).replace('\'', '')
                     xtokens = str2.split(', ')
                     name = xtokens.pop(0)
+                    if xChar == 'X':
+                        def_name = xtokens.pop(0)
+                        xtokens.append(def_name)
                     cell_name = f'{xChar:s}{name:s}'
                     #print(f'match X {cell_name:s}')
                     cell = create_cell(cell_name, xtokens)
@@ -146,12 +149,14 @@ def write_config(fn, filetype, config_dict):
     else:
         fp = open(fn, 'w')
     if filetype in config_dict:
-        for config_dict2 in config_dict[filetype]:
-            for name in config_dict2.keys():
+        for sections in config_dict[filetype]:
+            for name in sections.keys():
                 print("[%s]" %(name), file=fp)
-                for key in config_dict2[name].keys():
-                    print("%s=%s" %(key, config_dict2[name][key]), file=fp)
-            print(file=fp)
+                for item in sections.values():
+                    for tt in item:
+                        print("%s=%s" %(tt[0], tt[1]), file=fp)
+                print(file=fp)
+                    
     if fn is not None:
         fp.close()
 
@@ -161,7 +166,6 @@ def write_spice(fn, config_dict):
         print(json_str)
         netlist = json.loads(json_str, object_hook=json_string_to_netlist_obj)
         netlist.write_spice(fn)
-
 
 # filetype = xe3_tf, xe3_ud, xe4_tf, xe4_ud
 def write_config(fn, filetype, json_str):
@@ -185,7 +189,11 @@ class multidict(OrderedDict):
     _unique = 0   # class variable
 
     def __setitem__(self, key, val):
-        if isinstance(val, dict):
+        if isinstance(val, list) and key in self:
+            self._unique += 1
+            key += f":{str(self._unique)}"
+        elif isinstance(val, dict):
+            #print(f"dict {key} {val}")
             self._unique += 1
             key += f":{str(self._unique)}"
         OrderedDict.__setitem__(self, key, val)
@@ -197,11 +205,29 @@ def config_to_python_code(fn):
     #my_config_parser_dict = {s:dict(config.items(s)) for s in config.sections()}
     config_list = []
     for s in config.sections():
+        #print(s)
         ss = re.sub(":\d$", "", s, count=0, flags=0)
-        item = dict()
-        item[ss] = dict(config.items(s))
-        config_list.append(item)
+        if ss=='include':
+            for f in config.items(s):
+                if f[0] == 'file':
+                    fn1 = get_absolute_path(fn, f[1])
+                    ii2 = config_to_python_code(fn1)
+                    for ii in ii2:
+                        config_list.append(ii)
+            continue
+        items = dict()
+        updated_tuples = list()
+        for item2 in config.items(s):
+            updated_tuples.append((re.sub(":\d$", "", item2[0], count=0, flags=0), item2[1]))
+        #print(updated_tuples)
+        items[ss] = updated_tuples
+        config_list.append(items)
     return config_list
+
+def get_absolute_path(fn1, fn2):
+    file_name = os.path.basename(fn1)  
+    location = os.path.dirname(fn1)    
+    return f"{location}{os.path.sep}{fn2}"
 
 def Test():
     json_str='{"modules":{"inv":{"name":"inv","ports":["in","out","vdd","vss"],"parameters":{},"cells":{"mp1":{"name":"mp1","ports":["out","in","vdd","vss"],"parameters":{"W":"1.23","l":"1.24","as":"1.25","ad":"1.25","ps":"1.25","pd":"1.25"},"model":"sky130_fd_pr__pfet_01v8"},"mn1":{"name":"mn1","ports":["out","in","vdd","vss"],"parameters":{"W":"2.23","l":"2.24","as":"2.25","ad":"2.25","ps":"2.25","pd":"2.25"},"model":"sky130_fd_pr__nfet_01v8"}}},"buffer":{"name":"buffer","ports":["in","out","vdd","vss"],"parameters":{},"cells":{"x1":{"name":"x1","ports":["out","in","vdd","vss"],"parameters":{},"model":"inv"}}}}}'
