@@ -85,6 +85,7 @@
 #include <X11/keysym.h>
 #include <X11/Xatom.h>
 #include <X11/xpm.h>
+
 #define xunlink unlink
 #define xfseek fseek
 #define xftell ftell
@@ -99,6 +100,12 @@ extern void change_to_unix_fn(char* fn);
 extern char win_temp_dir[PATH_MAX];
 #define xfseek _fseeki64
 #define xftell _ftelli64
+#endif
+
+#undef HAS_XCB
+#ifdef  HAS_XCB
+#include <xcb/render.h>
+#include <X11/Xlib-xcb.h>
 #endif
 
 #if HAS_CAIRO==1
@@ -996,6 +1003,10 @@ extern Colormap colormap;
 extern unsigned char **pixdata;
 extern unsigned char pixdata_init[22][32];
 extern Display *display;
+
+#ifdef HAS_XCB
+extern xcb_connection_t *xcb_conn;
+#endif
 extern int screen_number;
 extern int screendepth;
 extern Pixmap cad_icon_pixmap, cad_icon_mask, *pixmap;
