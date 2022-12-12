@@ -142,15 +142,6 @@ proc yxt_load {} {
   }
 }
 
-proc yxt_configure_xe_win_select_dir {window} {
-  global xe_conf_dict xe_wd_interim INITIALINSTDIR
-  if {[info exists xe_conf_dict(xe_wd)]} {
-    set xe_wd_interim [tk_chooseDirectory -initialdir $xe_wd_interim -parent $window -title {Select XE Working DIR} -mustexist false]
-  } else {
-    set xe_wd_interim [tk_chooseDirectory -initialdir $INITIALINSTDIR -parent $window -title {Select XE Working DIR} -mustexist false]
-  }
-}
-
 proc yxt_configure_xe_win_select_dir_select_dir {window} {
   global xe_conf_dict xe_wd_interim INITIALINSTDIR
   if {[info exists xe_conf_dict(xe_wd)]} {
@@ -919,17 +910,6 @@ proc run_xe_web {N ud tf design} {
   return $output
 }
 
-proc get_xe_results {design} {
-  global XE_ROOT_DIR XEAPI_URL XEAPI_TOKEN XE_TASKID xe_conf_dict XE_URL
-  set wd "--wd=$xe_conf_dict(xe_wd)"
-  set url "--url=$XEAPI_URL"
-  set results_url "--results_url=$XE_URL"
-  set token "--token=$XEAPI_TOKEN"
-  set des "--design=$design"
-  set output [exec python $XE_ROOT_DIR/python/get_xe_results.py $wd $url $results_url $XE_TASKID $des $token]
-  return $output
-}
-
 proc get_xe_log {design} {
   global XE_ROOT_DIR XEAPI_URL XEAPI_TOKEN
   set url "--url=$XEAPI_URL"
@@ -939,7 +919,7 @@ proc get_xe_log {design} {
 }
 
 proc yxt_configure_xe_win_select_dir_run_xe {{callback {}}} {
-  global XSCHEM_SHAREDIR netlist_dir netlist_type sim xschem_libs XE_RESULT XE_THREAD XE_URL XE_TASKID
+  global XSCHEM_SHAREDIR netlist_dir netlist_type sim xschem_libs XE_URL XE_TASKID
   global xe_conf_dict top_subckt
   set top_subckt 1
   set_sim_defaults
@@ -988,6 +968,7 @@ proc yxt_configure_xe_win_select_dir_run_xe {{callback {}}} {
 
 proc yxt_poll_to_get_xe_results {} {
   global XE_RESULT XE_THREAD xe_conf_dict XE_URL XE_TASKID
+  global XE_ROOT_DIR XEAPI_URL XEAPI_TOKEN
   set design [file tail [file rootname [xschem get schname]]]
   if (![info exists XE_URL]) {
     return
@@ -999,11 +980,15 @@ proc yxt_poll_to_get_xe_results {} {
       #puts "Start running XE with a separate thread.  You will be informed with a window when that is completed:"
       #puts "Command to XE = $cmd"
       #thread::create "check_xe_status"
+      set wd "--wd=$xe_conf_dict(xe_wd)"
+      set url "--url=$XEAPI_URL"
+      set results_url "--results_url=$XE_URL"
+      set token "--token=$XEAPI_TOKEN"
+      set des "--design=$design"
       set XE_THREAD [thread::create {thread::wait;}]
+      thread::send -async $XE_THREAD [list exec python $XE_ROOT_DIR/python/get_xe_results.py $wd $url $results_url $XE_TASKID $des $token] XE_RESULT
       #thread::send -async $XE_THREAD "exec python $XE_ROOT_DIR/python/get_xe_results.py --wd=$xe_conf_dict(xe_wd) --url=$XE_URL $XE_TASKID" XE_RESULT
-      thread::send -async $XE_THREAD [get_xe_results $design] XE_RESULT
-      #thread::send -async $XE_THREAD "eval exec $cmd" XE_RESULT
-      #thread::send -async $XE_THREAD "[yxt_run_all_xe $cmd]" XE_RESULT
+      #thread::send -async $XE_THREAD [list after 300] XE_RESULT
     }
   } else {
     set id [$fg $st sh -c [$XE_ROOT_DIR/python/get_xe_results --wd=$xe_conf_dict(xe_wd) --url=$url $task_id)]]
@@ -1011,6 +996,7 @@ proc yxt_poll_to_get_xe_results {} {
   } 
   vwait XE_RESULT
   thread::release $XE_THREAD
+  alert_  "XE finished running and report is ready to be reviewed."
   set xe_log_detail [get_xe_log $design]
   viewdata "Completed: running XE.\n  $xe_log_detail" 1
   unset XE_THREAD
