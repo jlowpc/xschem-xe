@@ -67,7 +67,13 @@ def main():
       dataJSON  = json.dumps(data, indent=None, cls=NetlistEncoder, separators=(',', ':'))
       #print(dataJSON)
       url_netlists = f"{args.url}/netlists/" 
-      r = requests.post(url_netlists, headers=headers, json=data)
+      try:
+            r = requests.post(url_netlists, headers=headers, json=data)
+      except requests.exceptions.RequestException as e:  # This is the correct syntax
+            ret_response = {"status_code" : 404}
+            responseJSON = json.dumps(ret_response)
+            print(responseJSON)
+            return 1
       if (r.status_code==200 or r.status_code==201):
             response_dict = json.loads(r.text)
             #print(response_dict)
