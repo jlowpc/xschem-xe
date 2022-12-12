@@ -310,7 +310,17 @@ proc yxt_configure_xe_win_select_dir {load} {
       yxt_configure_xe_win_select_dir_save_interim; \
       yxt_configure_xe_win_select_dir_run_xe;
       destroy .xe_conf; \
-      yxt_poll_to_get_xe_results; \
+      vwait XE_RESULT; \
+      set ret_dict [::json::json2dict $XE_RESULT]; \
+      if (![dict exists $ret_dict url]) { \
+        alert_  "Something went wrong: $ret_dict"; \
+      } else { \
+        set XE_URL [dict get $ret_dict url]; \
+        set XE_TASKID [dict get $ret_dict task_id]; \
+        yxt_poll_to_get_xe_results; \
+      }
+      thread::release $XE_THREAD; \
+      unset XE_THREAD; 
     }  -padx 20
   }
   button .xe_conf.save -text Save -command { \
@@ -919,8 +929,9 @@ proc get_xe_log {design} {
 }
 
 proc yxt_configure_xe_win_select_dir_run_xe {{callback {}}} {
-  global XSCHEM_SHAREDIR netlist_dir netlist_type sim xschem_libs XE_URL XE_TASKID
+  global XSCHEM_SHAREDIR netlist_dir netlist_type sim xschem_libs XE_URL XE_TASKID XE_ROOT_DIR XEAPI_URL XEAPI_TOKEN
   global xe_conf_dict top_subckt
+  global XE_THREAD XE_RESULT
   set top_subckt 1
   set_sim_defaults
   set tool xe
@@ -952,29 +963,27 @@ proc yxt_configure_xe_win_select_dir_run_xe {{callback {}}} {
       append tf $fn
       append tf " "
     }
-    set ret_json_str [run_xe_web "--nl=$N" $ud $tf "--design=$s"]
-    set ret_dict [::json::json2dict $ret_json_str]
-    if (![dict exists $ret_dict url]) {
-      alert_  "Something went wrong: $ret_dict"
-    } else {
-      set XE_URL [dict get $ret_dict url]
-      set XE_TASKID [dict get $ret_dict task_id]
-      # puts "url=$ret_dict task_id=$task_id"
-    }
+    set url "--url=$XEAPI_URL"
+    set token "--token=$XEAPI_TOKEN"
+
+    set XE_THREAD [thread::create {
+          thread::wait ; # Enter the event loop
+        }]
+    thread::send -async $XE_THREAD "[list exec python $XE_ROOT_DIR/python/run_xe_web.py --nl=$N $ud $tf --design=$s $url $token]" XE_RESULT
   } else {
     alert_  "Didn't find a netlist to run XE."
   }
 }
 
 proc yxt_poll_to_get_xe_results {} {
-  global XE_RESULT XE_THREAD xe_conf_dict XE_URL XE_TASKID
+  global XE_RESULT2 XE_THREAD2 xe_conf_dict XE_URL XE_TASKID
   global XE_ROOT_DIR XEAPI_URL XEAPI_TOKEN
   set design [file tail [file rootname [xschem get schname]]]
   if (![info exists XE_URL]) {
     return
   }
   if {$::OS == "Windows"} {
-    if ([info exists XE_THREAD]) {
+    if ([info exists XE_THREAD2]) {
       alert_  "Looks like XE is still running in the background."  
     } else {
       #puts "Start running XE with a separate thread.  You will be informed with a window when that is completed:"
@@ -985,21 +994,21 @@ proc yxt_poll_to_get_xe_results {} {
       set results_url "--results_url=$XE_URL"
       set token "--token=$XEAPI_TOKEN"
       set des "--design=$design"
-      set XE_THREAD [thread::create {thread::wait;}]
-      thread::send -async $XE_THREAD [list exec python $XE_ROOT_DIR/python/get_xe_results.py $wd $url $results_url $XE_TASKID $des $token] XE_RESULT
-      #thread::send -async $XE_THREAD "exec python $XE_ROOT_DIR/python/get_xe_results.py --wd=$xe_conf_dict(xe_wd) --url=$XE_URL $XE_TASKID" XE_RESULT
-      #thread::send -async $XE_THREAD [list after 300] XE_RESULT
+      set XE_THREAD2 [thread::create {thread::wait;}]
+      thread::send -async $XE_THREAD2 [list exec python $XE_ROOT_DIR/python/get_xe_results.py $wd $url $results_url $XE_TASKID $des $token] XE_RESULT2
+      #thread::send -async $XE_THREAD2 "exec python $XE_ROOT_DIR/python/get_xe_results.py --wd=$xe_conf_dict(xe_wd) --url=$XE_URL $XE_TASKID" XE_RESULT2
+      #thread::send -async $XE_THREAD2 [list after 300] XE_RESULT2
     }
   } else {
     set id [$fg $st sh -c [$XE_ROOT_DIR/python/get_xe_results --wd=$xe_conf_dict(xe_wd) --url=$url $task_id)]]
     set execute_callback($id) $callback
   } 
-  vwait XE_RESULT
-  thread::release $XE_THREAD
+  vwait XE_RESULT2
+  thread::release $XE_THREAD2
   alert_  "XE finished running and report is ready to be reviewed."
   set xe_log_detail [get_xe_log $design]
   viewdata "Completed: running XE.\n  $xe_log_detail" 1
-  unset XE_THREAD
+  unset XE_THREAD2
   unset XE_URL
   unset XE_TASKID
   set cmd "cmd /c \"cd $xe_conf_dict(xe_wd) & tar -xvf $design.zip\""
