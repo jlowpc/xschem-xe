@@ -1,5 +1,5 @@
 #
-#  File: xe.tcl
+#  File: xe_web.tcl
 #  
 #  This file is used with XE, a propietary all in one EDA tool to 
 #  analyze and abstract complex VLSI circuits, and XSCHEM 
@@ -17,65 +17,42 @@ if {$::OS == "Windows"} {
 }
 
 namespace eval yxt {
-    proc get_info {netname} {  
-      global xe_net_info_dict
-      #set path [string range [xschem get sch_path] 1 end]
-      #puts "get_info path=$path net=$net"
-      #set netname $path$net
-      #return $netname
-      #puts "netname = $netname"
-      if {[info exists xe_net_info_dict($netname)]} {
-        return $xe_net_info_dict($netname)
-      }
-      return ""
-    }   
-}
-
-proc yxt_read_net_property {} {
-  global xe_net_info_dict xe_conf_dict
-  set s [file tail [file rootname [xschem get schname]]]
-  set fn $xe_conf_dict(xe_wd)/$s.net_property
-  set fd [open $fn r]
-  set a [catch "open \"$fn\" r" fd]
-  if {$a} {
-    puts stderr "Can not open file to read info for XE $fn"
-  } else {
-    while { [gets $fd line] >=0 } {
-      if { [regexp {^#} $line] } { # comments
-        continue
-      } else {
-        set tokens [split $line { }]
-        set xe_net_info_dict([lindex $tokens 0]) [lindex $tokens 1]
-      } 
+  proc get_info {netname} {  
+    global xe_net_info_dict
+    #set path [string range [xschem get sch_path] 1 end]
+    #puts "get_info path=$path net=$net"
+    #set netname $path$net
+    #return $netname
+    #puts "netname = $netname"
+    if {[info exists xe_net_info_dict($netname)]} {
+      return $xe_net_info_dict($netname)
     }
+    return ""
   } 
-  close $fd
+  
+  proc read_net_property {} {
+    global xe_net_info_dict xe_conf_dict
+    set s [file tail [file rootname [xschem get schname]]]
+    set fn $xe_conf_dict(xe_wd)/$s.net_property
+    set fd [open $fn r]
+    set a [catch "open \"$fn\" r" fd]
+    if {$a} {
+      puts stderr "Can not open file to read info for XE $fn"
+    } else {
+      while { [gets $fd line] >=0 } {
+        if { [regexp {^#} $line] } { # comments
+          continue
+        } else {
+          set tokens [split $line { }]
+          set xe_net_info_dict([lindex $tokens 0]) [lindex $tokens 1]
+        } 
+      }
+    } 
+    close $fd
+  }
 }
 
-
-#  set n [string tolower $n]
-#  set prefix [string range $n 0 0]
-#  set path [string range [xschem get sch_path] 1 end]
-#  set n $path$n
-#  if { $path ne {} } {
-#    set n $prefix.$n
-#  }
-#  if { ![regexp $prefix {[ve]}] } {
-#    set n @$n
-#  }
-#  set n i($n)
-#  if { [regexp {\[} $n] } { set n \{$n\} }
-#  # puts "ngspice::get_current --> $n"
-#  set err [catch {set ::ngspice::ngspice_data($n)} res]
-#  if { $err } {
-#    set res {?}
-#  } else {
-#    set res [ format %.4g $res ]
-#  }
-#  # puts "$n --> $res"
-#  return $res
-
-proc yxt_clear_global {} {
+proc yxt::clear_global {} {
   global xe_gT xe_gTFull xe_gfilter_item_ht xe_gtablewindow_visibility
   array unset xe_gT 
   array unset xe_gTFull 
@@ -84,8 +61,8 @@ proc yxt_clear_global {} {
 }
 
 # Global variables
-global XSCHEM_SHAREDIR sim XE_ROOT_DIR
-yxt_clear_global
+global XSCHEM_SHAREDIR XE_ROOT_DIR has_x
+yxt::clear_global
 set xe_cm_wcounter 1
 set XE_ROOT_DIR $XSCHEM_SHAREDIR/XE
 source $XE_ROOT_DIR/xewebrc
@@ -97,21 +74,9 @@ if {[info exists has_x]} {
   menu .menubar.xe.menu -tearoff 0
   .menubar.xe.menu add command -label "Configure XE" -command "yxt_configure_xe_win_select_dir 0"   
   .menubar.xe.menu add command -label "See Report" -command "yxt_see_report_win_context_menu {XE Reports}"
-  .menubar.xe.menu add command -label "XE-SC" -command "yxtsc_win_update_change"
   pack .menubar.xe -side left
 }
 
-###############################################
-# TBD: TO BE REMOVED ONCE TCL IS SETUP
-set_sim_defaults
-lappend sim(tool_list) {xe}
-set_ne sim(xe,0,cmd) {run_xe.tcl}
-set_ne sim(xe,0,name) {YXTech XE}
-set_ne sim(xe,0,fg) 0
-set_ne sim(xe,0,st) 1
-# there's only one XE and that's the default one
-set_ne sim(xe,n) 1
-set_ne sim(xe,default) 0
 ###############################################
 # if XE's WD/UD/TF are setup, just call xe_load API
 # else call configure_xe_win
@@ -169,7 +134,7 @@ proc yxt_backslash_to_slash {s} {
   return $s
 }
 
-proc yxt_configure_xe_win_select_dir_save_interim {} {
+proc yxt::configure_xe_win_select_dir_save_interim {} {
   global xe_wd_interim xe_uds_interim xe_tfs_interim
   global xe_conf_dict 
   set xe_wd_interim [yxt_backslash_to_slash $xe_wd_interim]
@@ -196,7 +161,7 @@ proc yxt_configure_xe_win_select_dir_clear {} {
 
 proc yxt_save_xe_conf {} {
   global USER_CONF_DIR xe_conf_dict
-  yxt_configure_xe_win_select_dir_save_interim
+  yxt::configure_xe_win_select_dir_save_interim
   set design [file tail [file rootname [xschem get schname]]]
   set filename $USER_CONF_DIR/$design.xe_save
   set fd [open $filename w]
@@ -209,7 +174,7 @@ proc yxt_save_xe_conf {} {
   }
 }
 
-proc yxt_auto_load_save_file {} {
+proc yxt::auto_load_save_file {} {
   global xe_conf_dict xe_wd_interim xe_uds_interim xe_tfs_interim
   global USER_CONF_DIR has_x
   set design [file tail [file rootname [xschem get schname]]]
@@ -231,7 +196,7 @@ proc yxt_configure_xe_win_select_dir {load} {
   global netlist_type netlist_dir
   global XE_RESULT XE_THREAD
   catch {destroy .xe_conf} 
-  yxt_auto_load_save_file
+  yxt::auto_load_save_file
   
   toplevel .xe_conf -class dialog
   wm title .xe_conf {XE Configuration}
@@ -296,19 +261,19 @@ proc yxt_configure_xe_win_select_dir {load} {
     yxt_configure_xe_win_select_dir_clear \
   } -padx 20
   button .xe_conf.ok -text OK -command { \
-    yxt_configure_xe_win_select_dir_save_interim; \
+    yxt::configure_xe_win_select_dir_save_interim; \
     destroy .xe_conf; \
   } -padx 20
   if {$load} {
     button .xe_conf.load -text "Load" -command { \
-      yxt_configure_xe_win_select_dir_save_interim; \
+      yxt::configure_xe_win_select_dir_save_interim; \
       destroy .xe_conf; \
       yxt_load
     }  -padx 20
   } else {
     button .xe_conf.run -text "Run" -command { \
-      yxt_configure_xe_win_select_dir_save_interim; \
-      yxt_configure_xe_win_select_dir_run_xe;
+      yxt::configure_xe_win_select_dir_save_interim; \
+      yxt::configure_xe_win_select_dir_run_xe;
       destroy .xe_conf; \
       vwait XE_RESULT; \
       set ret_dict [::json::json2dict $XE_RESULT]; \
@@ -338,7 +303,7 @@ proc yxt_configure_xe_win_select_dir {load} {
   
   bind .xe_conf <Escape> {destroy .xe_conf}
   bind .xe_conf <Return> {
-    yxt_configure_xe_win_select_dir_save_interim; \
+    yxt::configure_xe_win_select_dir_save_interim; \
     destroy .xe_conf; \
   }
 
@@ -383,544 +348,7 @@ proc yxt_init_path_dict {filename} {
   }
 }
 
-proc yxtsc_win_add_select_net {type global_list} {
-  upvar #0 global_list list  
-  set nets [xschem selected_wire]
-  set path [xschem get sch_path]
-  regsub {^\.} $path {} path
-  foreach net $nets {
-    if {$path ne "."} {
-      set full [append path $nets]
-    } else {
-      set full $nets
-    }
-    lappend list $full
-    lappend list " "
-    .xe_sc.topf.center.$type.r.net insert end "$full\n"
-  }
-}
-
-# <new> is saved; load should factor that in
-proc yxtsc_save_path_dict {filename} {
-  global xesc_path_dict
-  set fd [open $filename w]
-  set a [catch "open \"$filename\" w" fd]
-  if {$a} {
-    puts stderr "Can not open file to save cut information: $filename"
-  } else {   
-    puts $fd [list array set xesc_path_dict [array get xesc_path_dict]]
-    close $fd 
-  }
-}
-
-proc yxtsc_win_update_change {} {
-  global xesc_net_type xesc_path_name_selected xesc_path_dict
-  foreach type $xesc_net_type {
-    .xe_sc.topf.center.$type.r.net delete 1.0 end
-    .xe_sc.topf.center.$type.r.net insert 1.0 $xesc_path_dict($xesc_path_name_selected,$type) 
-    }
-  .xe_sc.middle.name.text configure -textvariable xesc_path_dict($xesc_path_name_selected,tcl_filename)
-  .xe_sc.middle.filename.text configure -textvariable xesc_path_dict($xesc_path_name_selected,write_filename)
-  .xe_sc.middle.cap_mult_slow.text configure -textvariable xesc_path_dict($xesc_path_name_selected,cap_mult_slow)
-  .xe_sc.middle.speed.slow configure -value $xesc_path_dict($xesc_path_name_selected,speed_slow) -variable xesc_path_dict($xesc_path_name_selected,speed_slow) -value 1
-  .xe_sc.middle.speed.fast configure -value $xesc_path_dict($xesc_path_name_selected,speed_slow) -variable xesc_path_dict($xesc_path_name_selected,speed_slow) -value 0
-  .xe_sc.middle.termination.vcvs configure -value xesc_path_dict($xesc_path_name_selected,termination) -variable xesc_path_dict($xesc_path_name_selected,termination) -value 1
-  .xe_sc.middle.termination.cap configure -value xesc_path_dict($xesc_path_name_selected,termination) -variable xesc_path_dict($xesc_path_name_selected,termination) -value 0
-  .xe_sc.middle.checks.sensitize configure -variable xesc_path_dict($xesc_path_name_selected,auto_sensitize) 
-  .xe_sc.middle.checks.preserve_rail_name configure -variable xesc_path_dict($xesc_path_name_selected,preserve_rail_name)
-}
-
-# TBD: Should we have a default path that always get picked instead of the first one in list
-#      Maybe rather than remembering the path, push it to the first one when save or changed?
-# Need to match with yxtsc_win_update_change
-proc yxtsc_load_path_dict {filename} {
-  global xesc_net_type xesc_path_dict xesc_path_name_list
-  global xesc_path_name_selected xesc_path_name_selected_old xesc_path_index
-  # Destroy the multiple paths checkboxes as xesc_path_name_list will be cleared
-  foreach path $xesc_path_name_list {
-    if {$path eq {<new>}} {continue;}
-    pack forget .xe_sc.middle.multipaths.bottom.$path.c
-    pack forget .xe_sc.middle.multipaths.bottom.$path
-    destroy .xe_sc.middle.multipaths.bottom.$path.c
-    destroy pack forget .xe_sc.middle.multipaths.bottom.$path
-  }
-  source $filename
-  set xesc_path_name_list {}
-  foreach key [array names xesc_path_dict] {
-    set s [lindex [split $key ","] 0]
-    if {[lsearch $xesc_path_name_list $s] < 0} {
-      lappend xesc_path_name_list $s
-    }
-  }
-  set xesc_path_name_selected [lindex $xesc_path_name_list 0]
-  set xesc_path_name_selected_old $xesc_path_name_selected
-  set xesc_path_index 0
-  .xe_sc.topf.center.top.text configure -values $xesc_path_name_list 
-  .xe_sc.topf.center.top.text set $xesc_path_name_selected
-
-  foreach path $xesc_path_name_list {
-    if {$path eq {<new>}} {continue}
-    frame .xe_sc.middle.multipaths.bottom.$path
-    # TBD: Do I need to initialize xesc_path_dict($xesc_path_name_selected, )
-    checkbutton .xe_sc.middle.multipaths.bottom.$path.c -text "$path" -variable xesc_path_dict($xesc_path_name_selected,sc_multi_$path) 
-    pack .xe_sc.middle.multipaths.bottom.$path -side left
-    pack .xe_sc.middle.multipaths.bottom.$path.c -side left 
-    if {$path eq $xesc_path_name_selected} {
-      .xe_sc.middle.multipaths.bottom.$path.c configure -state disabled
-    } 
-  }
-  yxtsc_win_update_change
-}
-
-# TBD: Changing path name on the fly (instead of <new>) doesn't work
-# Any changes should reflect in yxtsc_load_path_dict
-proc yxtsc_win_update_change {} {
-  global xe_conf_dict xesc_path_dict # xesc_path_dict(name, start={}|end={}|passthru={}|speed_slow=1|0|cap_mult_slow=<float>|termination=cap|vcvs|auto_sensitize=1|0|preserve_rail_name=1|0|tcl_filename=string|write_filename=string|multi={}) 
-  global xesc_net_type xesc_path_name_list xesc_path_name_selected xesc_path_name_selected_old xesc_path_index
-  global xesc_file_save
-  catch {destroy .xe_sc} 
-  toplevel .xe_sc -class dialog
-  wm title .xe_sc {XE-Simcut Configuration}
-  wm geometry .xe_sc 700x540
-  frame .xe_sc.topf 
-  pack .xe_sc.topf -fill both -expand yes
-
-  frame .xe_sc.topf.center
-  frame .xe_sc.middle
-  frame .xe_sc.bottom
-
-  set bg(0) {#dddddd}
-  set bg(1) {#aaaaaa}
-  set toggle 0
-  set xesc_net_type [list start end passthru]  
-  if {![info exists xesc_path_dict]} {
-    set xesc_path_name_list <new>
-    yxt_init_path_dict <new>
-  } 
-  set xesc_path_name_selected [lindex $xesc_path_name_list 0]
-  set xesc_path_name_selected_old $xesc_path_name_selected
-  set xesc_path_index 0
-
-  frame .xe_sc.topf.center.top -padx 5 -pady 10
-  label .xe_sc.topf.center.top.lab -text {Path name*}
-  ttk::combobox .xe_sc.topf.center.top.text -values $xesc_path_name_list -textvariable xesc_path_name_selected
-
-  pack .xe_sc.topf.center -fill both -expand yes
-  pack .xe_sc.topf.center.top -fill x
-  pack .xe_sc.topf.center.top.lab -side left 
-  pack .xe_sc.topf.center.top.text -side left -fill both -expand yes
-
-  foreach type $xesc_net_type {
-    frame .xe_sc.topf.center.$type
-    if {$type eq "start" || $type eq "end"} {
-      label .xe_sc.topf.center.$type.l -width 12 -text $type*  -bg $bg($toggle)
-    } else {
-      label .xe_sc.topf.center.$type.l -width 12 -text $type  -bg $bg($toggle)
-    }
-    frame .xe_sc.topf.center.$type.r
-    text .xe_sc.topf.center.$type.r.net -width 20 -height 3 -wrap none -bg $bg($toggle)
-    .xe_sc.topf.center.$type.r.net insert 1.0 $xesc_path_dict($xesc_path_name_selected,$type)
-    button .xe_sc.topf.center.$type.r.select  -text "Select" -command \
-      "yxtsc_win_add_select_net $type xesc_path_dict($xesc_path_name_selected,$type)" \
-      -bg $bg($toggle)
-    incr toggle
-    set toggle [expr {$toggle %2}]
-
-    pack .xe_sc.topf.center.$type -fill both -expand yes
-    pack .xe_sc.topf.center.$type.l -fill y -side left
-    pack .xe_sc.topf.center.$type.r -fill both -expand yes
-    pack .xe_sc.topf.center.$type.r.net -side left -fill both -expand yes
-    pack .xe_sc.topf.center.$type.r.select -side left -fill y 
-  }
-  frame .xe_sc.middle.name
-  label .xe_sc.middle.name.lab -text {Tcl Script Filename*}
-  entry .xe_sc.middle.name.text -relief sunken -textvariable xesc_path_dict($xesc_path_name_selected,tcl_filename) 
-  pack .xe_sc.middle -fill x
-  pack .xe_sc.middle.name -fill x
-  pack .xe_sc.middle.name.lab -side left 
-  pack .xe_sc.middle.name.text -side left -fill x -expand yes
-
-  frame .xe_sc.middle.filename
-  label .xe_sc.middle.filename.lab -text {Write Filename*}
-  entry .xe_sc.middle.filename.text -relief sunken -textvariable xesc_path_dict($xesc_path_name_selected,write_filename) 
-  pack .xe_sc.middle.filename -fill x
-  pack .xe_sc.middle.filename.lab -side left 
-  pack .xe_sc.middle.filename.text -side left -fill x -expand yes
-
-  frame .xe_sc.middle.cap_mult_slow
-  label .xe_sc.middle.cap_mult_slow.lab -text {Capacitance multiplier for slow}
-  entry .xe_sc.middle.cap_mult_slow.text -relief sunken -textvariable xesc_path_dict($xesc_path_name_selected,cap_mult_slow) -validate key -vcmd {string is double %P}
-  pack .xe_sc.middle.cap_mult_slow -fill x
-  pack .xe_sc.middle.cap_mult_slow.lab -side left 
-  pack .xe_sc.middle.cap_mult_slow.text -side left -fill x -expand yes
-
-  frame .xe_sc.middle.speed
-  label .xe_sc.middle.speed.lab -text Speed
-  radiobutton .xe_sc.middle.speed.slow -text Slow -variable xesc_path_dict($xesc_path_name_selected,speed_slow) -value 1
-  radiobutton .xe_sc.middle.speed.fast -text Fast -variable xesc_path_dict($xesc_path_name_selected,speed_slow) -value 0
-  pack .xe_sc.middle.speed -fill x
-  pack .xe_sc.middle.speed.lab -side left 
-  pack .xe_sc.middle.speed.slow -side left 
-  pack .xe_sc.middle.speed.fast -side left 
- 
-  frame .xe_sc.middle.termination
-  label .xe_sc.middle.termination.lab -text {Termination Mode}
-  radiobutton .xe_sc.middle.termination.vcvs -text VCVS -variable xesc_path_dict($xesc_path_name_selected,termination) -value 1
-  radiobutton .xe_sc.middle.termination.cap -text Cap -variable xesc_path_dict($xesc_path_name_selected,termination) -value 0
-  pack .xe_sc.middle.termination -fill x
-  pack .xe_sc.middle.termination.lab -side left 
-  pack .xe_sc.middle.termination.vcvs -side left 
-  pack .xe_sc.middle.termination.cap -side left 
-
-  frame .xe_sc.middle.checks
-  checkbutton .xe_sc.middle.checks.sensitize -text {Auto Sensitize} -variable xesc_path_dict($xesc_path_name_selected,auto_sensitize) 
-  checkbutton .xe_sc.middle.checks.preserve_rail_name -text {Preserve Rail Name} -variable xesc_path_dict($xesc_path_name_selected,preserve_rail_name)  
-  pack .xe_sc.middle.checks -fill x
-  pack .xe_sc.middle.checks.sensitize -side left 
-  pack .xe_sc.middle.checks.preserve_rail_name -side left 
-
-  frame .xe_sc.middle.multipaths -relief groove -borderwidth 2 -width 2 -height 2
-  pack .xe_sc.middle.multipaths -fill x
-  frame .xe_sc.middle.multipaths.top
-  label .xe_sc.middle.multipaths.top.lab -text {Multiple Paths:}
-  frame .xe_sc.middle.multipaths.bottom
-  pack .xe_sc.middle.multipaths.top -fill x
-  pack .xe_sc.middle.multipaths.top.lab -side left -fill both 
-  pack .xe_sc.middle.multipaths.bottom -fill x
-
-  foreach path $xesc_path_name_list {
-    if {$path eq {<new>}} {continue}
-    frame .xe_sc.middle.multipaths.bottom.$path
-    set xesc_path_dict($xesc_path_name_selected,sc_multi_$path) 0
-    checkbutton .xe_sc.middle.multipaths.bottom.$path.c -text "$path" -variable xesc_path_dict($xesc_path_name_selected,sc_multi_$path) 
-    pack .xe_sc.middle.multipaths.bottom.$path -side left
-    pack .xe_sc.middle.multipaths.bottom.$path.c -side left 
-    if {$path eq $xesc_path_name_selected} {.xe_sc.middle.multipaths.bottom.$path.c configure -state disabled}
-  }
-  # <FocusIn> is first time clicking on the combobox (the drop down menu)
-  bind .xe_sc.topf.center.top.text <FocusIn> {
-    set xesc_path_name_selected_old $xesc_path_name_selected
-    set xesc_path_index [.xe_sc.topf.center.top.text current]
-  }
-  # <FocusOut> is when it leaves the combobox (the drop down menu), so <new> MAY have been changed to a new path
-  bind .xe_sc.topf.center.top.text <FocusOut> {
-    set is_new 0
-    if {$xesc_path_name_selected_old ne $xesc_path_name_selected} {
-      if {$xesc_path_name_selected_old eq {<new>}} {
-        set is_new 1
-        yxt_init_path_dict $xesc_path_name_selected
-        yxt_init_path_dict <new>
-      }
-      # multi path check box is destroy and re-create as new path (or path renamed) get introduced
-      foreach path $xesc_path_name_list {
-        if {$path eq {<new>}} {continue;}
-        pack forget .xe_sc.middle.multipaths.bottom.$path.c
-        pack forget .xe_sc.middle.multipaths.bottom.$path
-        destroy .xe_sc.middle.multipaths.bottom.$path.c
-        destroy pack forget .xe_sc.middle.multipaths.bottom.$path
-      }
-      # Replace name if necessary
-      set xesc_path_name_list [lreplace $xesc_path_name_list \
-        $xesc_path_index $xesc_path_index $xesc_path_name_selected]
-      if {$is_new==1} {
-        lappend xesc_path_name_list <new>
-      }
-      .xe_sc.topf.center.top.text configure -values $xesc_path_name_list
-      foreach path $xesc_path_name_list {
-        if {$path eq {<new>}} {continue}
-        frame .xe_sc.middle.multipaths.bottom.$path
-        # TBD: Do I need to initialize xesc_path_dict($xesc_path_name_selected, )
-        checkbutton .xe_sc.middle.multipaths.bottom.$path.c -text "$path" -variable xesc_path_dict($xesc_path_name_selected,sc_multi_$path) 
-        pack .xe_sc.middle.multipaths.bottom.$path -side left
-        pack .xe_sc.middle.multipaths.bottom.$path.c -side left 
-        if {$path eq $xesc_path_name_selected} {.xe_sc.middle.multipaths.bottom.$path.c configure -state disabled}
-      }
-      yxtsc_win_update_change 
-    }
-  }
-  bind .xe_sc.topf.center.top.text <<ComboboxSelected>> {
-    if {$xesc_path_name_selected_old ne $xesc_path_name_selected} {
-      if {$xesc_path_name_selected_old ne "<new>"} {
-        # Save old path that's being changed out of (except <new>)
-        foreach type $xesc_net_type {
-          set xesc_path_dict($xesc_path_name_selected_old,$type) [.xe_sc.topf.center.$type.r.net get 1.0 end] 
-        }
-      } else {
-        # reset <new> with whatever values posted
-        yxt_init_path_dict <new>
-      }
-      # <ComboboxSelected> doesn't need multiple paths deleted because no new path was introduced
-      yxtsc_win_update_change
-    }
-    set xesc_path_name_selected_old $xesc_path_name_selected
-    set xesc_path_index [.xe_sc.topf.center.top.text current]
-    foreach path $xesc_path_name_list {
-      if {$path eq {<new>}} {continue}
-      if {$path eq $xesc_path_name_selected} {
-        .xe_sc.middle.multipaths.bottom.$path.c configure -state disabled -variable xesc_path_dict($xesc_path_name_selected,sc_multi_$path)
-      } else {
-        .xe_sc.middle.multipaths.bottom.$path.c configure -state normal -variable xesc_path_dict($xesc_path_name_selected,sc_multi_$path)
-      }
-    }
-  }
-  frame .xe_sc.middle.info
-  label .xe_sc.middle.info.note -text {* required field to do a cut} 
-  pack .xe_sc.middle.info -fill x
-  pack .xe_sc.middle.info.note -side left 
-
-  button .xe_sc.bottom.delete  -text {Delete Path} -command {
-    if {$xesc_path_name_selected ne {<new>}} {
-      set answer [tk_messageBox -message  "Are you sure you want to delete path $xesc_path_name_selected \nContinue?" \
-             -icon warning -parent . -type yesno]
-      if { $answer eq "yes"} { 
-        pack forget .xe_sc.middle.multipaths.bottom.$xesc_path_name_selected.c
-        pack forget .xe_sc.middle.multipaths.bottom.$xesc_path_name_selected
-        destroy .xe_sc.middle.multipaths.bottom.$xesc_path_name_selected.c
-        destroy pack forget .xe_sc.middle.multipaths.bottom.$xesc_path_name_selected
-        set xesc_path_name_list [lreplace $xesc_path_name_list $xesc_path_index $xesc_path_index]
-        .xe_sc.topf.center.top.text configure -values $xesc_path_name_list  
-        set xesc_path_name_selected [lindex $xesc_path_name_list 0]
-        set xesc_path_name_selected_old $xesc_path_name_selected
-        set xesc_path_index 0
-        .xe_sc.topf.center.top.text set $xesc_path_name_selected
-        if {$xesc_path_name_selected ne {<new>}} {
-          .xe_sc.middle.multipaths.bottom.$xesc_path_name_selected.c configure -state disabled
-        }
-        yxtsc_win_update_change
-      }
-      focus  .xe_sc
-    }
-  }
-  button .xe_sc.bottom.cancel  -text Cancel -command {destroy .xe_sc}
-  button .xe_sc.bottom.save -text {Save} -command {
-    foreach type $xesc_net_type {
-      set xesc_path_dict($xesc_path_name_selected,$type) [.xe_sc.topf.center.$type.r.net get 1.0 {end - 1 chars}] 
-    }
-    set save_fn ""
-    if {![info exists xesc_file_save] || $xesc_file_save eq ""} {
-      set save_fn [tk_getSaveFile -parent .xe_sc]
-    } else {
-      set save_fn [tk_getSaveFile -parent .xe_sc -initialfile $xesc_file_save]
-    }
-    if {$save_fn ne ""} {
-      set xesc_file_save $save_fn
-      yxtsc_save_path_dict $xesc_file_save 
-    }
-  }
-  button .xe_sc.bottom.load -text {Load} -command {
-    set xesc_file_save [tk_getOpenFile -parent .xe_sc]
-    if {$xesc_file_save ne ""} {
-      yxtsc_load_path_dict $xesc_file_save 
-    }
-  }
-  button .xe_sc.bottom.cut -text {Cut} -command {
-    while { [xschem get currsch] } { xschem go_back } 
-    foreach type $xesc_net_type {
-      set xesc_path_dict($xesc_path_name_selected,$type) [.xe_sc.topf.center.$type.r.net get 1.0 {end - 1 chars}] 
-    }
-    if {[info exists xe_conf_dict(xe_wd)] && [info exists xesc_path_dict($xesc_path_name_selected,tcl_filename)] && [info exists xesc_path_dict($xesc_path_name_selected,write_filename)] && [info exists xesc_path_dict($xesc_path_name_selected,start)] && [info exists xesc_path_dict($xesc_path_name_selected,end)] && \
-      $xe_conf_dict(xe_wd) ne "" && $xesc_path_dict($xesc_path_name_selected,tcl_filename) ne "" && $xesc_path_dict($xesc_path_name_selected,write_filename) ne "" && $xesc_path_dict($xesc_path_name_selected,start) ne "" && $xesc_path_dict($xesc_path_name_selected,end) ne ""} {
-      yxtsc_win_update_change_cut
-      destroy .xe_sc
-      # TBD: Error checking (what if it fails, need to inform user), only hilight if user says yes when sc finishes
-      set cut_fn $xe_conf_dict(xe_wd)/$xesc_path_name_selected/$xesc_path_dict($xesc_path_name_selected,write_filename)
-      if {[file exists $cut_fn]} { 
-        yxtsc_hilight_cut $cut_fn
-      }
-    } else {
-      if {![info exists xe_conf_dict(xe_wd)]} {
-        alert_  "Need to first configure working directory for XE to do a cut"
-      } else {
-        alert_  "Need a tcl and output filename to do a cut.  Please fill all required fields*."
-      }
-    }
-  }
-  wm protocol .xe_sc WM_DELETE_WINDOW {destroy .xe_sc}
-  pack .xe_sc.bottom.delete -side left -anchor w
-  pack .xe_sc.bottom.save -side left -anchor w
-  pack .xe_sc.bottom.load -side left -anchor w
-  pack .xe_sc.bottom.cut -side left -anchor w
-  pack .xe_sc.bottom.cancel -side right -anchor e
-  pack .xe_sc.topf -fill both -expand yes
-  pack .xe_sc.bottom -fill x
-}
-
-# Highlight nets and devices after cut is finished.
-# TBD: It does take a while to highlight; possibly add a request from user instead of auto doing it.
-# TBD: Instance is still not done yet.
-proc yxtsc_hilight_cut {cut_fn} {
-  set fd [open $cut_fn r]
-  set a [catch "open \"$cut_fn\" r" fd]
-  set pick_up_inst 0
-  if {$a} {
-    puts stderr "Can not open file to read to hilight nets and xtors $cut_fn"
-  } else {    
-    while { [gets $fd line] >=0 } {
-      if { [regexp {^\*\|NET (\S+)} $line \1 net_name] } { 
-        probe_net $net_name
-      }
-      #elseif { $line eq "*** Instance section (ccr devices)" } { 
-      #  set pick_up_inst 1
-      #} elseif { $line eq "*****************************************************************************" } { 
-      #  set pick_up_inst 0
-      #} elseif ($pick_up_inst) {
-      #  if { [regexp {^(\S+)} $line \1 device_name] } { 
-      #    probe_inst $device_name
-      #  }
-      #}
-    }
-  } 
-  close $fd
-}
-
-proc yxtsc_create_cut_script {cut_work_dir} {
-  global xesc_path_dict xesc_path_name_list xesc_path_name_selected xe_conf_dict
-
-  set fn $cut_work_dir/$xesc_path_dict($xesc_path_name_selected,tcl_filename) 
-  set cut_fn $cut_work_dir/$xesc_path_dict($xesc_path_name_selected,write_filename)
-  set fd [open $fn w]
-  puts $fd "#!/usr/bin/tclsh"
-
-  puts $fd "###################################################"
-  puts $fd "#                                                 "
-  puts $fd "# XSchem created TCL script to run XE-SC          "
-  puts $fd "# $fn"
-  puts $fd "#                                                 "
-  puts $fd "###################################################"
-  
-  yxtsc_write_one_path $fd $xesc_path_name_selected
-  
-  set multi_list {}
-  lappend multi_list $xesc_path_name_selected
-  foreach path $xesc_path_name_list {
-    if {$path eq {<new>}} {continue}
-    if {$path eq $xesc_path_name_selected} {continue}
-    puts $fd "\n"
-    if {[info exists xesc_path_dict($xesc_path_name_selected,sc_multi_$path)] && $xesc_path_dict($xesc_path_name_selected,sc_multi_$path)==1} {
-      yxtsc_write_one_path $fd $path
-      lappend multi_list $path
-    }
-  }
-  if {[llength $multi_list] > 1} {
-    puts $fd "set yxt_multi_paths {}"
-    foreach p $multi_list {
-      puts $fd "lappend yxt_multi_paths \$$p"
-    }
-    puts $fd "xe_write_paths \$yxt_multi_paths $cut_fn 0"
-  } else {
-    puts $fd "xe_write_path \$$xesc_path_name_selected $cut_fn 0"
-  }
-  puts $fd "# Clean-up XE-SC API"
-  # puts $fd "paths.exit()" # TBD: where to call exit after load()
-  close $fd
-  return $fn
-}
-
-proc yxtsc_write_one_path {fd path_name} {
-  global xesc_path_dict
-  if ($xesc_path_dict($path_name,preserve_rail_name)) {
-    puts $fd "xe_set_preserve_rail_name_in_spf"
-  }
-  puts $fd "set $path_name \[xe_create_path $path_name\]"
-  xetcl_write_net $fd $path_name start
-  set tokens [split [regexp -all -inline {\S+} $xesc_path_dict($path_name,end)]]
-  foreach net $tokens {
-    set net [join $net]
-    regsub -all {\[} $net {\\[} net
-    regsub -all {\]} $net {\\]} net
-    puts $fd "xe_add_path_end_net \$$path_name $net"
-  }
-  set tokens [split [regexp -all -inline {\S+} $xesc_path_dict($path_name,passthru)]]
-  foreach net $tokens {
-    set net [join $net]
-    regsub -all {\[} $net {\\[} net
-    regsub -all {\]} $net {\\]} net
-    puts $fd "xe_add_path_passthru_net \$$path_name $net"
-  }
-  if {$xesc_path_dict($path_name,speed_slow)} {
-    puts $fd "xe_set_path_speed \$$path_name slow"
-  } else {
-    puts $fd "xe_set_path_speed \$$path_name fast"
-  }
-  puts $fd "xe_set_path_cap_mult_slow \$$path_name $xesc_path_dict($path_name,cap_mult_slow)"
-  if ($xesc_path_dict($path_name,termination)) {
-    puts $fd "xe_set_path_termination_mode \$$path_name vcvs"
-  } else {
-    puts $fd "xe_set_path_termination_mode \$$path_name cap"
-  }
-  if ($xesc_path_dict($path_name,auto_sensitize)) {
-    puts $fd "xe_set_path_auto_sensitize \$$path_name"
-  }
-  puts $fd "xe_cut_path \$$path_name"
-}
-
-proc xetcl_write_net {fd path_name type} {
-  global xesc_path_dict
-  set tokens [split [regexp -all -inline {\S+} $xesc_path_dict($path_name,$type)]]
-  foreach net $tokens {
-    # join is needed because net is a string representation of a list with 
-    # auto insert braces to preserve white space
-    set net [join $net] 
-    regsub -all {\[} $net {\\[} net
-    regsub -all {\]} $net {\\]} net
-    if {$type eq "start"} {
-      puts $fd "xe_add_path_start_net \$$path_name $net"
-    } elseif {$type eq "start"} {
-      puts $fd "xe_add_path_end_net \$$path_name $net"
-    } elseif {$type eq "start"} {
-      puts $fd "xe_add_path_passthru_net \$$path_name $net"
-    }
-  }
-}
-
-proc yxtsc_win_update_change_cut {{callback {}}} {
-  global XSCHEM_SHAREDIR netlist_dir netlist_type xschem_libs XE_RESULT
-  global xe_conf_dict xesc_path_name_selected top_subckt
-
-  set top_subckt 1
-  set s [file tail [file rootname [xschem get schname]]]
-  set n ${netlist_dir}/${s}
-  set N ${n}.$netlist_type
-  if {![info exists xe_conf_dict(xe_wd)] || ![info exists xe_conf_dict(xe_uds)] || ![info exists xe_conf_dict(xe_tfs)] || \
-  $xe_conf_dict(xe_wd) eq "" || $xe_conf_dict(xe_uds) eq "" || $xe_conf_dict(xe_tfs) eq ""} {
-    alert_  "Need to first configure working directory, UD files, techfiles before running XE-SC"
-    return
-  }
-  if {![file exists $N]} { 
-    set answer [tk_messageBox -message  "Netlist is not created. Would you like to create one now?" \
-           -icon warning -parent . -type yesno]
-    if {$answer eq "no"} {
-        return {}
-    } else {
-      xschem netlist
-    }
-  }
-  set cut_work_dir $xe_conf_dict(xe_wd)/$xesc_path_name_selected
-  if {![file exist $cut_work_dir]} {
-       file mkdir $cut_work_dir
-  }
-  set script [yxtsc_create_cut_script $cut_work_dir]
-  if {[file exists $N]} {
-     if {![xe_is_init]} {
-       after 500 {set XE_RESULT [yxt_load]}
-       vwait XE_RESULT
-     }
-  } else {
-    alert_  "Didn't find a netlist to run XE."
-  }
-  #TBD: source $script should only happen after yxt_load finishes, research how to use VWAIT
-  source $script
-}
-
-proc run_xe_web {N ud tf design} {
-  global XE_ROOT_DIR XEAPI_URL XEAPI_TOKEN
-  set url "--url=$XEAPI_URL"
-  set token "--token=$XEAPI_TOKEN"
-  set output [exec python $XE_ROOT_DIR/python/run_xe_web.py $N $ud $tf $design $url $token]
-  return $output
-}
-
-proc get_xe_log {design} {
+proc yxt::get_xe_log {design} {
   global XE_ROOT_DIR XEAPI_URL XEAPI_TOKEN
   set url "--url=$XEAPI_URL"
   set token "--token=$XEAPI_TOKEN"
@@ -928,8 +356,8 @@ proc get_xe_log {design} {
   return $output
 }
 
-proc yxt_configure_xe_win_select_dir_run_xe {{callback {}}} {
-  global XSCHEM_SHAREDIR netlist_dir netlist_type sim xschem_libs XE_URL XE_TASKID XE_ROOT_DIR XEAPI_URL XEAPI_TOKEN
+proc yxt::configure_xe_win_select_dir_run_xe {{callback {}}} {
+  global netlist_dir netlist_type xschem_libs XE_URL XE_TASKID XE_ROOT_DIR XEAPI_URL XEAPI_TOKEN
   global xe_conf_dict top_subckt
   global XE_THREAD XE_RESULT
   set top_subckt 1
@@ -1006,14 +434,14 @@ proc yxt_poll_to_get_xe_results {} {
   vwait XE_RESULT2
   thread::release $XE_THREAD2
   alert_  "XE finished running and report is ready to be reviewed."
-  set xe_log_detail [get_xe_log $design]
+  set xe_log_detail [yxt::get_xe_log $design]
   viewdata "Completed: running XE.\n  $xe_log_detail" 1
   unset XE_THREAD2
   unset XE_URL
   unset XE_TASKID
   set cmd "cmd /c \"cd $xe_conf_dict(xe_wd) & tar -xvf $design.zip\""
   set r [catch {eval exec $cmd } res]
-  yxt_read_net_property
+  yxt::read_net_property
 }
 
 proc yxt_process_fi_subckt {} {
@@ -1059,7 +487,7 @@ proc yxt_see_report_win_context_menu {{msg {}}} {
     yxt_configure_xe_win_select_dir 0
     return
   }
-  yxt_clear_global
+  yxt::clear_global
   #array unset xe_gT 
   #array unset xe_gTFull 
   #array unset xe_gfilter_item_ht 
@@ -1185,7 +613,7 @@ proc yxt_see_report_win_context_menu {{msg {}}} {
         pack .xe_report_dialog.l.paneright.table.xscroll -side bottom -fill x 
         set num_col 0
         set current_row 0
-        yxt_clear_global
+        yxt::clear_global
         #array unset xe_gT 
         #array unset xe_gTFull 
         #array unset xe_gfilter_item_ht 
@@ -1266,8 +694,7 @@ proc yxt_see_report_win_context_menu_context_menu {w el mousex mousey} {
 }
 
 proc yxt_see_report_win_context_menu_probe {w el mousex mousey} {
-  global pathlist current_dirname
-  global xe_cm_wcounter xe_cm_w xe_sd_fi_inst
+  global xe_sd_fi_inst
   if {[scan $el %d,%d r c] != 2} return
   if {![$w tag includes title $el]} {
     set data_title [$w get 0,$c]
@@ -1475,80 +902,12 @@ proc yxt_report_win_cm_filter_update_table {w} {
   $w configure -state disabled
 }
 
-proc yxt_run_all_xe {cmd} {
-  global XE_ROOT_DIR
-  yxt_run_xe_lm $cmd
-  yxt_run_xe_dmrc
-  yxt_read_net_property
-}
-
-
-proc yxt_run_xe_lm {cmd} {
-  set xe_lm_cmd "xe_lm_shell $cmd"
-  #puts $xe_lm_cmd
-  #eval exec $xe_lm_cmd
-}
-
-proc yxt_run_xe_dmrc {} {
-  global XE_ROOT_DIR xe_conf_dict
-  set wd $xe_conf_dict(xe_wd)
-  set design [file tail [file rootname [xschem get schname]]]
-  source $XE_ROOT_DIR/xe_ckc_limits.tcl
-  source $XE_ROOT_DIR/xe_ckc_helpers.tcl
-  set check_scripts [lsort [glob -nocomplain -directory $XE_ROOT_DIR -tails check_*.{tcl}]]
-  foreach script $check_scripts {
-    source $XE_ROOT_DIR/$script
-  }
-  yxt_load
-  foreach script $check_scripts {
-    regexp {check_(.*)\.tcl} $script matched check_name
-    set filename $wd/${design}_${check_name}.csv
-    set fd [open $filename w]
-    set a [catch "open \"$filename\" w" fd]
-    if {$a} {
-      puts stderr "Can not open file to run $check_name: $filename"
-    } else {   
-      xetcl_check_${check_name} $fd   
-      close $fd
-    } 
-  }
-  #xetcl_driver_weff
-  #xetcl_finfet_device_size
-  #xetcl_sram6t_device_size
-}
-
 ################################################################################
 # Replace Native Xschem's with XE's
 # Need to decide how to best save XE's settings
 # proc save_file_dialog { msg ext global_initdir {initialfile {}} {overwrt 1} } {
 #proc update_recent_file {f} 
 ################################################################################
-################################################################################
-# Temporary
-## given a hierarchical instance name x1.xamp go down in the hierarchy and 
-## highlight the specified instance.
-proc probe_inst_old {device hilight_each_level} {
-
-  xschem set no_draw 1
-  # return to top level if not already there
-  while { [xschem get currsch] } { xschem go_back } 
-  if {$device ne "."} {
-    while { [regexp {\.} $device] } {
-      set inst $device
-      regsub {\..*} $inst {} inst
-      regsub {[^.]+\.} $device {} device
-      if {$hilight_each_level} {
-        xschem search exact 0 name $inst
-      }
-      xschem search exact 1 name $inst
-      xschem descend
-    }
-    set err [catch {xschem search exact 0 name $device}]
-  }
-  xschem set no_draw 0
-  xschem redraw
-}
-
 proc probe_inst {path} {
   xschem set no_draw 1
   # return to top level if not already there
