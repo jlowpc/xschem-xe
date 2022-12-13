@@ -17,39 +17,6 @@ if {$::OS == "Windows"} {
 }
 
 namespace eval yxt {
-  proc get_info {netname} {  
-    global xe_net_info_dict
-    #set path [string range [xschem get sch_path] 1 end]
-    #puts "get_info path=$path net=$net"
-    #set netname $path$net
-    #return $netname
-    #puts "netname = $netname"
-    if {[info exists xe_net_info_dict($netname)]} {
-      return $xe_net_info_dict($netname)
-    }
-    return ""
-  } 
-  
-  proc read_net_property {} {
-    global xe_net_info_dict xe_conf_dict
-    set s [file tail [file rootname [xschem get schname]]]
-    set fn $xe_conf_dict(xe_wd)/$s.net_property
-    set fd [open $fn r]
-    set a [catch "open \"$fn\" r" fd]
-    if {$a} {
-      puts stderr "Can not open file to read info for XE $fn"
-    } else {
-      while { [gets $fd line] >=0 } {
-        if { [regexp {^#} $line] } { # comments
-          continue
-        } else {
-          set tokens [split $line { }]
-          set xe_net_info_dict([lindex $tokens 0]) [lindex $tokens 1]
-        } 
-      }
-    } 
-    close $fd
-  }
 }
 
 proc yxt::clear_global {} {
@@ -72,9 +39,40 @@ if {[info exists has_x]} {
   package require Tktable
   menubutton .menubar.xe -text "XE"  -menu .menubar.xe.menu
   menu .menubar.xe.menu -tearoff 0
-  .menubar.xe.menu add command -label "Configure XE" -command "yxt_configure_xe_win_select_dir 0"   
-  .menubar.xe.menu add command -label "See Report" -command "yxt_see_report_win_context_menu {XE Reports}"
+  .menubar.xe.menu add command -label "Configure XE" -command "yxt::configure_xe_win_select_dir 0"   
+  .menubar.xe.menu add command -label "See Report" -command "yxt::see_report_win_context_menu {XE Reports}"
   pack .menubar.xe -side left
+}
+
+
+proc yxt::get_info {netname} {  
+  global xe_net_info_dict
+  if {[info exists xe_net_info_dict($netname)]} {
+    return $xe_net_info_dict($netname)
+  }
+  return ""
+} 
+
+proc yxt::read_net_property {} {
+  global xe_net_info_dict xe_conf_dict
+  if {![info exists xe_conf_dict(xe_wd)]} {return}
+  set s [file tail [file rootname [xschem get schname]]]
+  set fn $xe_conf_dict(xe_wd)/$s.net_property
+  set fd [open $fn r]
+  set a [catch "open \"$fn\" r" fd]
+  if {$a} {
+    puts stderr "Can not open file to read info for XE $fn"
+  } else {
+    while { [gets $fd line] >=0 } {
+      if { [regexp {^#} $line] } { # comments
+        continue
+      } else {
+        set tokens [split $line { }]
+        set xe_net_info_dict([lindex $tokens 0]) [lindex $tokens 1]
+      } 
+    }
+  } 
+  close $fd
 }
 
 ###############################################
@@ -103,7 +101,7 @@ proc yxt_load {} {
     xe::load $xe_conf_dict(xe_wd) $N $ud $tf "" ""
     # TBD: Need to put this in the background, and a method to let user know that it's done.  All XE's action should be paused until this finishes
   } else { 
-    yxt_configure_xe_win_select_dir 1
+    yxt::configure_xe_win_select_dir 1
   }
 }
 
@@ -135,8 +133,7 @@ proc yxt_backslash_to_slash {s} {
 }
 
 proc yxt::configure_xe_win_select_dir_save_interim {} {
-  global xe_wd_interim xe_uds_interim xe_tfs_interim
-  global xe_conf_dict 
+  global xe_wd_interim xe_conf_dict xe_uds_interim xe_tfs_interim
   set xe_wd_interim [yxt_backslash_to_slash $xe_wd_interim]
   if {![info exists xe_conf_dict(xe_wd)] || $xe_conf_dict(xe_wd) ne $xe_wd_interim} {
     set xe_conf_dict(xe_wd) $xe_wd_interim
@@ -182,7 +179,7 @@ proc yxt::auto_load_save_file {} {
     if {[catch { source $USER_CONF_DIR/$design.xe_save } err] } {
       puts "Problems loading xe's save data for this design: $err"
       if {[info exists has_x]} {
-        tk_messageBox -message  "Problems loading xe's save data for this desig: $err" \
+        tk_messageBox -message  "Problems loading xe's save data for this design: $err" \
             -icon warning -parent . -type ok
       }
     }
@@ -191,9 +188,8 @@ proc yxt::auto_load_save_file {} {
 
 # TBD: working directory doesn't exist.
 # modified should only be updated if something is changed
-proc yxt_configure_xe_win_select_dir {load} {
+proc yxt::configure_xe_win_select_dir {load} {
   global xe_conf_dict xe_wd_interim xe_uds_interim xe_tfs_interim 
-  global netlist_type netlist_dir
   global XE_RESULT XE_THREAD
   catch {destroy .xe_conf} 
   yxt::auto_load_save_file
@@ -356,18 +352,52 @@ proc yxt::get_xe_log {design} {
   return $output
 }
 
+proc yxt::test {} {
+  global netlist_dir netlist_type netlist_dir xe_conf_dict
+  set design [file tail [file rootname [xschem get schname]]]
+  set n ${netlist_dir}/${design}
+  set N ${n}.$netlist_type
+  puts "netlist=$N"
+  file stat $N nl_detail
+  puts "$N mod time is $nl_detail(mtime)"
+
+  set s [xschem get schname]
+  puts "schname = $s"
+  file stat $s sch_detail
+
+  if {[info exists xe_conf_dict(xe_wd)]} {
+    set fn $xe_conf_dict(xe_wd)/${design}.net_property
+    puts "fn is $fn"
+    if [file exist $fn] {
+      file stat $N xe_detail
+      puts "$fn mod time is $xe_detail(mtime)"
+    }
+  }
+}
+
+proc yxt::file_mtime {fn} {
+  file stat $fn detail
+  set mtime $detail(mtime)
+  return $mtime
+}
+
 proc yxt::configure_xe_win_select_dir_run_xe {{callback {}}} {
   global netlist_dir netlist_type xschem_libs XE_URL XE_TASKID XE_ROOT_DIR XEAPI_URL XEAPI_TOKEN
-  global xe_conf_dict top_subckt
+  global xe_conf_dict top_subckt spiceprefix
   global XE_THREAD XE_RESULT
-  set top_subckt 1
+  # XE need to netlist with top_subkct and no spiceprefix
+  set top_subckt 1 
+  set spiceprefix 0
   set_sim_defaults
-  set tool xe
-  set s [file tail [file rootname [xschem get schname]]]
+  set sch_fn [xschem get schname]
+  set s [file tail [file rootname $sch_fn]]
   set n ${netlist_dir}/${s}
   set N ${n}.$netlist_type
+  set nl_mtime [yxt::file_mtime $N]
+  set sch_mtime [yxt::file_mtime $sch_fn]
+
   if {![info exists xe_conf_dict(xe_wd)] || ![info exists xe_conf_dict(xe_uds)] || ![info exists xe_conf_dict(xe_tfs)] || \
-  $xe_conf_dict(xe_wd) eq "" || $xe_conf_dict(xe_uds) eq "" || $xe_conf_dict(xe_tfs) eq ""} {
+      $xe_conf_dict(xe_wd) eq "" || $xe_conf_dict(xe_uds) eq "" || $xe_conf_dict(xe_tfs) eq ""} {
     alert_  "Need to first configure working directory, UD files, techfiles before running XE"
     return
   }
@@ -380,6 +410,28 @@ proc yxt::configure_xe_win_select_dir_run_xe {{callback {}}} {
       xschem netlist
     }
   }
+  if {$nl_mtime < $sch_mtime} {
+    set answer [tk_messageBox -message  "Schematic has been modified since last netlist generated.  Would you like to create one now?" \
+           -icon warning -parent . -type yesno]
+    if {$answer eq "yes"} {
+      xschem netlist
+    }
+  }
+  if {[info exists xe_conf_dict(xe_wd)]} {
+    set design [file tail [file rootname [xschem get schname]]]
+    set fn $xe_conf_dict(xe_wd)/${design}.net_property
+    if [file exist $fn] {
+      set xe_mtime [yxt::file_mtime $fn]
+      if {$sch_mtime < $xe_mtime} {
+        set answer [tk_messageBox -message  "XE was ran and it looks like schematic hasn't changed, do you want to rerun again?" \
+               -icon warning -parent . -type yesno]
+        if {$answer eq "no"} {
+          return {}
+        }
+      }
+    }
+  }
+
   if {[file exists $N]} {
     set ud "--ud="
     foreach fn $xe_conf_dict(xe_uds) {
@@ -471,7 +523,7 @@ proc yxt_process_fi_subckt {} {
   close $fd
 }
 
-proc yxt_see_report_win_context_menu {{msg {}}} {
+proc yxt::see_report_win_context_menu {{msg {}}} {
   global xe_conf_dict xe_csv_files1 xe_report_ht
   global xe_gtablewindow_visibility xe_gT xe_gTFull xe_gfilter_item_ht
   if {[winfo exists .xe_report_dialog]} {
@@ -482,10 +534,30 @@ proc yxt_see_report_win_context_menu {{msg {}}} {
     alert_  "Need to be on the top most level to read XE report"
     return
   }
+  yxt::auto_load_save_file
+  yxt::read_net_property
   if (![info exists xe_conf_dict(xe_wd)]) {
     alert_  "Need to first configure XE to read report"
-    yxt_configure_xe_win_select_dir 0
+    yxt::configure_xe_win_select_dir 0
     return
+  }
+  set design [file tail [file rootname [xschem get schname]]]
+  set sch_mtime [yxt::file_mtime [xschem get schname]]
+  set fn $xe_conf_dict(xe_wd)/${design}.net_property
+  if {[file exist $fn]} {
+    set xe_mtime [yxt::file_mtime $fn]
+    if {$xe_mtime < $sch_mtime} {
+      set answer [tk_messageBox -message  "XE was last ran since schematic has changed, do you want to rerun again?" \
+                  -icon warning -parent . -type yesno]
+      if {$answer eq "yes"} {
+        yxt::configure_xe_win_select_dir 0
+        return
+      }
+    }
+  } else {
+    alert_  "Need to first configure XE to read report"
+    yxt::configure_xe_win_select_dir 0
+    return    
   }
   yxt::clear_global
   #array unset xe_gT 
@@ -558,7 +630,7 @@ proc yxt_see_report_win_context_menu {{msg {}}} {
   pack  .xe_report_dialog.l.paneright.table -side bottom  -fill both -expand true
   pack .xe_report_dialog.l.paneright.table.xscroll -side bottom -fill x 
   bind .xe_report_dialog.l.paneright.table <Button-3> {
-    yxt_see_report_win_context_menu %W [%W index @%x,%y] %X %Y 
+    yxt::see_report_win_context_menu %W [%W index @%x,%y] %X %Y 
   }
   bind .xe_report_dialog.l.paneright.table <Button-1> {
     yxt_see_report_win_context_menu_probe %W [%W index @%x,%y] %X %Y
