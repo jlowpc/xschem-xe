@@ -1050,6 +1050,7 @@ extern char **cli_opt_argv;
 extern int cli_opt_netlist_type;
 extern int cli_opt_flat_netlist;
 extern char cli_opt_plotfile[PATH_MAX];
+extern char cli_opt_diff[PATH_MAX];
 extern char cli_opt_netlist_dir[PATH_MAX];
 extern char cli_opt_filename[PATH_MAX];
 extern int cli_opt_no_readline;
@@ -1236,7 +1237,7 @@ extern void store_poly(int pos, double *x, double *y, int points,
 extern void store_arc(int pos, double x, double y, double r, double a, double b,
                unsigned int rectcolor, unsigned short sel, char *prop_ptr);
 
-extern void hier_psprint(void);
+extern void hier_psprint(char **res, int what);
 extern void global_spice_netlist(int global);
 extern void global_tedax_netlist(int global);
 extern void global_vhdl_netlist(int global);

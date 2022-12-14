@@ -1255,6 +1255,15 @@ proc xschem_server {sock addr port} {
   fileevent $sock readable [list xschem_getdata $sock]
 }
 
+proc list_hierarchy {} {
+  set s [xschem list_hierarchy]
+  set r {}
+  foreach {a b} [lsort -decreasing -dictionary -index 0 -stride 2 $s] {
+    append r  $a {  } $b \n
+  }
+  return $r
+}
+
 ## given a path (x1.x2.m4) descend into x1.x2 and return m4 whether m4 found or not 
 proc descend_hierarchy {path {redraw 1}} {
   xschem set no_draw 1
@@ -4620,6 +4629,22 @@ proc add_ext {fname ext} {
   return [file rootname $fname]$ext
 }
 
+proc swap_compare_schematics {} {
+  global compare_sch
+  set sch1 [xschem get schname]
+  set sch2 [xschem get sch_to_compare]
+  if {$sch2 ne {}} {
+    xschem load $sch2 nofullzoom
+    if {[xschem get schname] eq $sch2} { ;# user did not cancel loading
+      if {$compare_sch} {
+        xschem compare_schematics $sch1
+      } else {
+        xschem set sch_to_compare $sch1
+      }
+    }
+  }
+}
+
 proc input_line {txt {cmd {}} {preset {}}  {w 12}} {
   global input_line_cmd input_line_data wm_fix
   set input_line_data {}
@@ -5262,7 +5287,7 @@ set tctx::global_list {
   INITIALINSTDIR INITIALLOADDIR INITIALPROPDIR INITIALTEXTDIR XSCHEM_LIBRARY_PATH
   auto_hilight autofocus_mainwindow
   autotrim_wires bespice_listen_port big_grid_points bus_replacement_char cadgrid cadlayers
-  cadsnap cairo_font_name change_lw color_ps colors connect_by_kissing constrained_move
+  cadsnap cairo_font_name change_lw color_ps colors compare_sch connect_by_kissing constrained_move
   copy_cell custom_label_prefix custom_token dark_colors dark_colorscheme dim_bg dim_value
   disable_unique_names do_all_inst draw_grid draw_window edit_prop_pos edit_prop_size
   edit_symbol_prop_new_sel editprop_sympath en_hilight_conn_inst enable_dim_bg enable_stretch
@@ -5271,7 +5296,7 @@ set tctx::global_list {
   graph_selected graph_sort graph_unlocked hide_empty_graphs hide_symbols hsize
   incr_hilight infowindow_text input_line_cmd input_line_data launcher_default_program
   light_colors line_width live_cursor2_backannotate local_netlist_dir measure_text netlist_show
-  netlist_type no_change_attrs noprint_libs old_selected_tok only_probes path pathlist
+  netlist_type no_change_attrs nolist_libs noprint_libs old_selected_tok only_probes path pathlist
   persistent_command preserve_unchanged_attrs prev_symbol ps_colors rainbow_colors
   rawfile_loaded rcode recentfile
   replace_key retval retval_orig rotated_text search_exact search_found search_schematic
@@ -5514,7 +5539,7 @@ proc switch_undo {} {
 proc build_widgets { {topwin {} } } {
   global XSCHEM_SHAREDIR tabbed_interface simulate_bg
   global colors recentfile color_ps transparent_svg menu_debug_var enable_stretch
-  global netlist_show flat_netlist split_files tmp_bus_char 
+  global netlist_show flat_netlist split_files tmp_bus_char compare_sch
   global draw_grid big_grid_points sym_txt change_lw incr_hilight symbol_width
   global cadgrid draw_window show_pin_net_names toolbar_visible hide_symbols undo_type
   global disable_unique_names persistent_command autotrim_wires en_hilight_conn_inst
@@ -5917,10 +5942,16 @@ proc build_widgets { {topwin {} } } {
 
   $topwin.menubar.hilight.menu add command \
    -label {Set schematic to compare and compare with} \
-   -command "xschem compare_schematics" 
+   -command "set compare_sch 1; xschem compare_schematics" 
   $topwin.menubar.hilight.menu add command \
+   -label {Swap compare schematics} -accelerator {Ctrl-Shift-X} \
+   -command "swap_compare_schematics" 
+  $topwin.menubar.hilight.menu add checkbutton \
    -label {Compare schematics} \
-   -command "xschem compare_schematics {}" \
+   -command {
+      xschem unselect_all
+      xschem redraw } \
+   -variable compare_sch \
    -accelerator {Alt-X}
   $topwin.menubar.hilight.menu add command \
    -label {Highlight net-pin name mismatches on selected instances} \
@@ -6004,6 +6035,9 @@ tclcommand=\"xschem raw_read \$netlist_dir/[file tail [file rootname [xschem get
     } else {
       xschem set format {}
     }
+  }
+  $topwin.menubar.simulation.menu add command -label {Changelog from current hierarchy} -command {
+    viewdata [list_hierarchy]
   }
   $topwin.menubar.simulation.menu add checkbutton -label "Use 'spiceprefix' attribute" -variable spiceprefix \
          -command {xschem save; xschem reload}
@@ -6267,6 +6301,7 @@ if {[file exists ${XSCHEM_TMP_DIR}/xschem_web] } {
 # used in C code
 set_ne xschem_libs {}
 set_ne noprint_libs {}
+set_ne nolist_libs {}
 set_ne debug_var 0
 # used to activate debug from menu
 set_ne menu_debug_var 0
@@ -6329,6 +6364,7 @@ set_ne draw_grid 1
 set_ne big_grid_points 0
 set_ne persistent_command 0
 set_ne autotrim_wires 0
+set_ne compare_sch 0
 set_ne disable_unique_names 0
 set_ne sym_txt 1
 set_ne show_infowindow 0 

@@ -576,7 +576,7 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
     {
       int ret = 0;
       if(argc > 2) {
-        ret = compare_schematics(argv[2]);
+        ret = compare_schematics(abs_sym_path(argv[2], ""));
       }
       else {
         ret = compare_schematics(NULL); 
@@ -987,6 +987,10 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
               Tcl_SetResult(interp, xctx->sch_path[x], TCL_VOLATILE);
             }
           }
+          else if(!strcmp(argv[2], "sch_to_compare")) 
+          {
+            Tcl_SetResult(interp, xctx->sch_to_compare, TCL_VOLATILE);
+          }
           break;
           case 't':
           #ifndef __unix__
@@ -1335,7 +1339,7 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
       if(argc > 2) {
         my_strncpy(xctx->plotfile, argv[2], S(xctx->plotfile));
       }
-      hier_psprint();
+      hier_psprint(NULL, 1);
       Tcl_ResetResult(interp);
     }
     else if(!strcmp(argv[1], "hilight"))
@@ -1616,6 +1620,15 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
       }
     }
 
+    else if(!strcmp(argv[1], "list_hierarchy"))
+    {
+      char *res = NULL;
+      Tcl_ResetResult(interp);
+      hier_psprint(&res, 2);
+      Tcl_SetResult(interp, res, TCL_VOLATILE);
+      my_free(1645, &res);
+    }
+
     else if(!strcmp(argv[1], "list_hilights"))
     {
       const char *sep;
@@ -1638,13 +1651,14 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
 
     else if(!strcmp(argv[1], "load") )
     {
-      int load_symbols = 1, force = 0, undo_reset = 1;
+      int load_symbols = 1, force = 0, undo_reset = 1, nofullzoom = 0;
       size_t i;
       if(argc > 3) {
         for(i = 3; i < argc; i++) {
           if(!strcmp(argv[i], "symbol")) load_symbols = 0;
           if(!strcmp(argv[i], "force")) force = 1;
           if(!strcmp(argv[i], "noundoreset")) undo_reset = 0;
+          if(!strcmp(argv[i], "nofullzoom")) nofullzoom = 1;
         }
       }
       if(argc>2) {
@@ -1681,7 +1695,8 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
             my_strdup(375, &xctx->sch_path[xctx->currsch], ".");
             xctx->sch_path_hash[xctx->currsch] = 0;
             xctx->sch_inst_number[xctx->currsch] = 1;
-            zoom_full(1, 0, 1, 0.97);
+            if(nofullzoom) draw();
+            else zoom_full(1, 0, 1, 0.97);
           }
         }
       }
@@ -2559,6 +2574,9 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
             if(xctx->lastsel) {
               change_layer();
             }
+          }
+          else if(!strcmp(argv[2], "sch_to_compare")) {
+            my_strncpy(xctx->sch_to_compare, abs_sym_path(argv[3], ""), S(xctx->sch_to_compare));
           }
           else if(!strcmp(argv[2], "text_svg")) {
             text_svg=atoi(argv[3]);
