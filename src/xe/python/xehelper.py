@@ -226,7 +226,9 @@ def config_to_python_code(fn):
 
 def get_absolute_path(fn1, fn2):
     file_name = os.path.basename(fn1)  
-    location = os.path.dirname(fn1)    
+    location = os.path.dirname(fn1)   
+    if location == "":
+        return f"{fn2}"
     return f"{location}{os.path.sep}{fn2}"
 
 def Test():
