@@ -621,6 +621,7 @@ void clear_drawing(void)
  my_free(687, &xctx->schprop);
  my_free(688, &xctx->schvhdlprop);
  my_free(689, &xctx->version_string);
+ if(xctx->header_text) my_free(1654, &xctx->header_text);
  my_free(690, &xctx->schverilogprop);
  for(i=0;i<xctx->wires;i++)
  {
@@ -1557,7 +1558,9 @@ void calc_drawing_bbox(xRect *boundbox, int selected)
      updatebbox(count,boundbox,&rect);
    }
    #if HAS_CAIRO==1
-   if(customfont) cairo_restore(xctx->cairo_ctx);
+   if(customfont) {
+     cairo_restore(xctx->cairo_ctx);
+   }
    #endif
  }
  for(i=0;i<xctx->instances;i++)
@@ -2391,9 +2394,9 @@ int text_bbox(const char *str, double xscale, double yscale,
   /*  if(size*xctx->mooz>800.) { */
   /*    return 0; */
   /*  } */
+
   cairo_set_font_size (xctx->cairo_ctx, size*xctx->mooz);
   cairo_font_extents(xctx->cairo_ctx, &fext);
-
   ww=0.; hh=1.;
   c=0;
   *cairo_lines=1;
@@ -2623,8 +2626,11 @@ int place_text(int draw_text, double mx, double my)
     if(t->flags & TEXT_OBLIQUE) slant = CAIRO_FONT_SLANT_OBLIQUE;
     cairo_save(xctx->cairo_ctx);
     cairo_save(xctx->cairo_save_ctx);
-    cairo_select_font_face (xctx->cairo_ctx, textfont, slant, weight);
-    cairo_select_font_face (xctx->cairo_save_ctx, textfont, slant, weight);
+    xctx->cairo_font =
+          cairo_toy_font_face_create(textfont, slant, weight);
+    cairo_set_font_face(xctx->cairo_ctx, xctx->cairo_font);
+    cairo_set_font_face(xctx->cairo_save_ctx, xctx->cairo_font);
+    cairo_font_face_destroy(xctx->cairo_font);
   }
   #endif
   save_draw=xctx->draw_window;

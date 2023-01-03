@@ -189,7 +189,10 @@ int set_text_custom_font(xText *txt) /* 20171122 for correct text_bbox calculati
     if(txt->flags & TEXT_ITALIC) slant = CAIRO_FONT_SLANT_ITALIC;
     if(txt->flags & TEXT_OBLIQUE) slant = CAIRO_FONT_SLANT_OBLIQUE;
     cairo_save(xctx->cairo_ctx);
-    cairo_select_font_face (xctx->cairo_ctx, textfont, slant, weight);
+    xctx->cairo_font =
+          cairo_toy_font_face_create(textfont, slant, weight);
+    cairo_set_font_face(xctx->cairo_ctx, xctx->cairo_font);
+    cairo_font_face_destroy(xctx->cairo_font);
     return 1;
   }
   return 0;
@@ -295,8 +298,8 @@ void draw_string(int layer, int what, const char *str, short rot, short flip, in
   }
 
   set_cairo_color(layer);
-  cairo_set_font_size (xctx->cairo_ctx, size*xctx->mooz);
-  cairo_set_font_size (xctx->cairo_save_ctx, size*xctx->mooz);
+  cairo_set_font_size(xctx->cairo_ctx, size*xctx->mooz);
+  cairo_set_font_size(xctx->cairo_save_ctx, size*xctx->mooz);
   cairo_font_extents(xctx->cairo_ctx, &fext);
   dbg(1, "draw_string(): size * mooz=%g height=%g ascent=%g descent=%g\n",
        size * xctx->mooz, fext.height, fext.ascent, fext.descent);
@@ -584,8 +587,11 @@ void draw_symbol(int what,int c, int n,int layer,short tmp_flip, short rot,
           if(symptr->text[j].flags & TEXT_OBLIQUE) slant = CAIRO_FONT_SLANT_OBLIQUE;
           cairo_save(xctx->cairo_ctx);
           cairo_save(xctx->cairo_save_ctx);
-          cairo_select_font_face (xctx->cairo_ctx, textfont, slant, weight);
-          cairo_select_font_face (xctx->cairo_save_ctx, textfont, slant, weight);
+          xctx->cairo_font =
+                cairo_toy_font_face_create(textfont, slant, weight);
+          cairo_set_font_face(xctx->cairo_ctx, xctx->cairo_font);
+          cairo_set_font_face(xctx->cairo_save_ctx, xctx->cairo_font);
+          cairo_font_face_destroy(xctx->cairo_font);
         }
         #endif
         dbg(1, "drawing string: str=%s prop=%s\n", txtptr, text.prop_ptr);
@@ -729,7 +735,9 @@ void draw_temp_symbol(int what, GC gc, int n,int layer,short tmp_flip, short rot
      (text.rot + ( (flip && (text.rot & 1) ) ? rot+2 : rot) ) & 0x3,
      flip^text.flip, text.hcenter, text.vcenter, x0+x1, y0+y1, text.xscale, text.yscale);
    #if HAS_CAIRO==1
-   if(customfont) cairo_restore(xctx->cairo_ctx);
+   if(customfont) {
+     cairo_restore(xctx->cairo_ctx);
+   }
    #endif
 
   }
@@ -2345,32 +2353,44 @@ static void draw_graph_variables(int wcnt, int wave_color, int n_nodes, int swee
     if(yt <= gr->ypos2 && yt >= gr->ypos1) {
       #if HAS_CAIRO == 1
       if(gr->hilight_wave == wcnt) {
-        cairo_select_font_face(xctx->cairo_ctx, "Sans-Serif", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
-        cairo_select_font_face(xctx->cairo_save_ctx, "Sans-Serif", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+        xctx->cairo_font =
+              cairo_toy_font_face_create("Sans-Serif", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+        cairo_set_font_face(xctx->cairo_ctx, xctx->cairo_font);
+        cairo_set_font_face(xctx->cairo_save_ctx, xctx->cairo_font);
+        cairo_font_face_destroy(xctx->cairo_font);
       }
       #endif
       draw_string(wave_color, NOW, tmpstr, 2, 0, 0, 0,
         xt, DW_Y(yt), gr->digtxtsizelab, gr->digtxtsizelab);
       #if HAS_CAIRO == 1
       if(gr->hilight_wave == wcnt) {
-        cairo_select_font_face(xctx->cairo_ctx, "Sans-Serif", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
-        cairo_select_font_face(xctx->cairo_save_ctx, "Sans-Serif", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
+        xctx->cairo_font =
+              cairo_toy_font_face_create("Sans-Serif", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
+        cairo_set_font_face(xctx->cairo_ctx, xctx->cairo_font);
+        cairo_set_font_face(xctx->cairo_save_ctx, xctx->cairo_font);
+        cairo_font_face_destroy(xctx->cairo_font);
       }
       #endif
     }
   } else {
     #if HAS_CAIRO == 1
     if(gr->hilight_wave == wcnt) {
-      cairo_select_font_face(xctx->cairo_ctx, "Sans-Serif", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
-      cairo_select_font_face(xctx->cairo_save_ctx, "Sans-Serif", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+      xctx->cairo_font =
+            cairo_toy_font_face_create("Sans-Serif", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+      cairo_set_font_face(xctx->cairo_ctx, xctx->cairo_font);
+      cairo_set_font_face(xctx->cairo_save_ctx, xctx->cairo_font);
+      cairo_font_face_destroy(xctx->cairo_font);
     }
     #endif
     draw_string(wave_color, NOW, tmpstr, 0, 0, 0, 0,
         gr->rx1 + 2 + gr->rw / n_nodes * wcnt, gr->ry1, gr->txtsizelab, gr->txtsizelab);
     #if HAS_CAIRO == 1
     if(gr->hilight_wave == wcnt) {
-      cairo_select_font_face(xctx->cairo_ctx, "Sans-Serif", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
-      cairo_select_font_face(xctx->cairo_save_ctx, "Sans-Serif", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
+      xctx->cairo_font =
+            cairo_toy_font_face_create("Sans-Serif", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
+      cairo_set_font_face(xctx->cairo_ctx, xctx->cairo_font);
+      cairo_set_font_face(xctx->cairo_save_ctx, xctx->cairo_font);
+      cairo_font_face_destroy(xctx->cairo_font);
     }
     #endif
   }
@@ -2996,8 +3016,11 @@ static void draw_graph_all(int flags)
     #if HAS_CAIRO==1
     cairo_save(xctx->cairo_ctx);
     cairo_save(xctx->cairo_save_ctx);
-    cairo_select_font_face(xctx->cairo_ctx, "Sans-Serif", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
-    cairo_select_font_face(xctx->cairo_save_ctx, "Sans-Serif", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
+    xctx->cairo_font =
+          cairo_toy_font_face_create("Sans-Serif", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
+    cairo_set_font_face(xctx->cairo_ctx, xctx->cairo_font);
+    cairo_set_font_face(xctx->cairo_save_ctx, xctx->cairo_font);
+    cairo_font_face_destroy(xctx->cairo_font);
     #endif
     if(xctx->draw_single_layer==-1 || GRIDLAYER == xctx->draw_single_layer) {
       if(xctx->enable_layer[GRIDLAYER]) for(i = 0; i < xctx->rects[GRIDLAYER]; i++) {
@@ -3480,8 +3503,11 @@ void draw(void)
  
           cairo_save(xctx->cairo_ctx);
           cairo_save(xctx->cairo_save_ctx);
-          cairo_select_font_face (xctx->cairo_ctx, textfont, slant, weight);
-          cairo_select_font_face (xctx->cairo_save_ctx, textfont, slant, weight);
+          xctx->cairo_font =
+                cairo_toy_font_face_create(textfont, slant, weight);
+          cairo_set_font_face(xctx->cairo_ctx, xctx->cairo_font);
+          cairo_set_font_face(xctx->cairo_save_ctx, xctx->cairo_font);
+          cairo_font_face_destroy(xctx->cairo_font);
         }
         #endif
         draw_string(textlayer, ADD, xctx->text[i].txt_ptr,

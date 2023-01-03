@@ -463,6 +463,7 @@ static void alloc_xschem_data(const char *top_path, const char *win_path)
   xctx->schsymbolprop=NULL; /* symbol property string */
   xctx->schverilogprop=NULL;/* verilog */
   xctx->version_string = NULL;
+  xctx->header_text = NULL;
   xctx->rectcolor= 4;  /* this is the current layer when xschem started. */
   xctx->currsch = 0;
   xctx->ui_state = 0;
@@ -508,6 +509,7 @@ static void alloc_xschem_data(const char *top_path, const char *win_path)
 #if HAS_CAIRO==1
   xctx->cairo_ctx = xctx->cairo_save_ctx = NULL;
   xctx->cairo_sfc = xctx->cairo_save_sfc = NULL;
+  xctx->cairo_font = NULL;
 #endif
   xctx->gctiled = 0;
   /* get_unnamed_node() */
@@ -1772,11 +1774,12 @@ static void resetcairo(int create, int clear, int force_or_resize)
     if(cairo_surface_status(xctx->cairo_save_sfc)!=CAIRO_STATUS_SUCCESS) {
       fprintf(errfp, "ERROR: invalid cairo xcb surface\n");
     }
-
+    xctx->cairo_font =
+       cairo_toy_font_face_create(tclgetvar("cairo_font_name"), CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
+    /* dbg(0, "1 refcount=%d\n", cairo_font_face_get_reference_count(xctx->cairo_font)); */
     xctx->cairo_save_ctx = cairo_create(xctx->cairo_save_sfc);
     /* cairo_set_antialias (xctx->cairo_save_ctx, CAIRO_ANTIALIAS_NONE); */
-    cairo_select_font_face(xctx->cairo_save_ctx, tclgetvar("cairo_font_name"), 
-      CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
+    cairo_set_font_face(xctx->cairo_save_ctx, xctx->cairo_font);
     cairo_set_font_size(xctx->cairo_save_ctx, 20);
 
     cairo_set_font_options(xctx->cairo_save_ctx, options);
@@ -1796,14 +1799,12 @@ static void resetcairo(int create, int clear, int force_or_resize)
     }
     xctx->cairo_ctx = cairo_create(xctx->cairo_sfc);
     /* cairo_set_antialias (xctx->cairo_ctx, CAIRO_ANTIALIAS_NONE); */
-    cairo_select_font_face(xctx->cairo_ctx, tclgetvar("cairo_font_name"),
-      CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
+    cairo_set_font_face(xctx->cairo_ctx, xctx->cairo_font);
     cairo_set_font_size(xctx->cairo_ctx, 20);
-
     cairo_set_font_options(xctx->cairo_ctx, options);
-
     cairo_set_line_join(xctx->cairo_ctx, CAIRO_LINE_JOIN_ROUND);
     cairo_set_line_cap(xctx->cairo_ctx, CAIRO_LINE_CAP_ROUND);
+    cairo_font_face_destroy(xctx->cairo_font);
     cairo_font_options_destroy(options);
   }
   #endif /* HAS_CAIRO */

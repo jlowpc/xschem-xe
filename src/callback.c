@@ -49,7 +49,7 @@ static int waves_selected(int event, KeySym key, int state, int button)
     }
   }
   if(!is_inside) {
-    tclvareval(xctx->top_path, ".drw configure -cursor arrow" , NULL);
+    tclvareval(xctx->top_path, ".drw configure -cursor {}" , NULL);
     if(xctx->graph_flags & 64) {
       tcleval("graph_show_measure stop");
     }
@@ -324,8 +324,11 @@ static int waves_callback(int event, int mx, int my, KeySym key, int button, int
   #if HAS_CAIRO==1
   cairo_save(xctx->cairo_ctx);
   cairo_save(xctx->cairo_save_ctx);
-  cairo_select_font_face(xctx->cairo_ctx, "Sans-Serif", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
-  cairo_select_font_face(xctx->cairo_save_ctx, "Sans-Serif", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
+  xctx->cairo_font =
+        cairo_toy_font_face_create("Sans-Serif", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
+  cairo_set_font_face(xctx->cairo_ctx, xctx->cairo_font);
+  cairo_set_font_face(xctx->cairo_save_ctx, xctx->cairo_font);
+  cairo_font_face_destroy(xctx->cairo_font);
   #endif
   gr = &xctx->graph_struct;
   for(i=0; i < xctx->rects[GRIDLAYER]; i++) {
@@ -2374,6 +2377,10 @@ int callback(const char *winpath, int event, int mx, int my, KeySym key,
         tclsetvar("flat_netlist","0");
     }
     break;
+   }
+   if(key=='B' && state==ShiftMask)    /* edit schematic header/license */
+   {
+     tcleval("update_schematic_header");
    }
    if(key=='b' && state==0)                     /* merge schematic */
    {
