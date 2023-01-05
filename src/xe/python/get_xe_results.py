@@ -1,6 +1,7 @@
 from xehelper import netlist_to_json, config_to_python_code, NetlistEncoder
 import sys, requests, argparse, json
 import tenacity
+import re
 
 def check_status(url, headers):
       r = requests.post(url, headers=headers)
@@ -67,14 +68,15 @@ def main():
       # print(r.text)
 
       for report in response_dict['xe_json']:
-            if report == 'fi_subckt':
-                 f = open(f"{args.wd}/{report}.xe_fi_subckt", "w") 
-
-                 for item in response_dict['xe_json'][report]:
-                        f.write(f"{item['subckt']}:\n")
-                        for value in item['fi_device']:
-                            f.write(f"  - {value}")
-                            f.write("\n")
+            if re.match(".*\.xe_log", report):
+                 f = open(f"{args.wd}/{report}", "w") 
+                 f.write(response_dict['xe_json'][report]['text'])
+            elif re.match(".*\.net_property", report):
+                 f = open(f"{args.wd}/{report}", "w") 
+                 f.write(response_dict['xe_json'][report]['text'])
+            elif re.match(".*\.xe_fi_subckt", report):
+                 f = open(f"{args.wd}/{report}", "w") 
+                 f.write(response_dict['xe_json'][report]['text'])
             else:
                   f = open(f"{args.wd}/{report}.csv", "w")
                   is_first = True
@@ -98,13 +100,13 @@ def main():
       #with open(filename) as openfile:
       #json.dump(list(log_disk.values()), file)
 
-      url_dl = f"{args.url}/download/{args.design}" 
+      #url_dl = f"{args.url}/download/{args.design}" 
       # connect(url_dl, headers)
-      zip_name = f"{args.wd}/{args.design}.zip"
-      r = requests.get(f"{url_dl}", headers=headers, stream=True)
-      with open(zip_name, 'wb') as f:
-        for chunk in r.iter_content():
-            f.write(chunk)
+      #zip_name = f"{args.wd}/{args.design}.zip"
+      #r = requests.get(f"{url_dl}", headers=headers, stream=True)
+      #with open(zip_name, 'wb') as f:
+      #  for chunk in r.iter_content():
+      #      f.write(chunk)
       return 0      
 
 main()

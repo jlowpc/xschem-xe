@@ -70,7 +70,7 @@ def main():
       try:
             r = requests.post(url_netlists, headers=headers, json=data)
       except requests.exceptions.RequestException as e:  # This is the correct syntax
-            ret_response = {"status_code" : 404}
+            ret_response = {"status_code" : r.status_code, "error" : r.text}
             responseJSON = json.dumps(ret_response)
             print(responseJSON)
             return 1
