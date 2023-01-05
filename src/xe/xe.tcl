@@ -1579,6 +1579,7 @@ proc yxt_run_xe_dmrc {} {
       close $fd
     } 
   }
+  xe::exit
   #xetcl_driver_weff
   #xetcl_finfet_device_size
   #xetcl_sram6t_device_size
