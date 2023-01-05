@@ -1,0 +1,3 @@
+global XEAPI_URL XEAPI_TOKEN
+set XEAPI_URL {https://xeapi.herokuapp.com}
+set XEAPI_TOKEN {FICTITIOUS61cc50cd1fc263cba27eca14c89ebfc0fa53ac9e}
