@@ -2,9 +2,9 @@ v {xschem version=3.1.0 file_version=1.2
 }
 G {}
 K {type=subcircuit
-format="@name @pinlist @@vcc @@vss @symname"
+format="@name @pinlist @vcc @vss @symname"
 template="name=x1 vcc=vcc vss=vss"
-extra=vcc vss"}
+extra="vcc vss"}
 V {}
 S {}
 E {}
@@ -13,6 +13,7 @@ L 4 140 -50 610 -50 {}
 L 4 610 -380 610 -50 {}
 L 4 140 -380 140 -50 {}
 T {@symname} 520 -400 0 0 0.3 0.3 {}
+T {@name} 140 -400 0 0 0.3 0.3 {}
 N 140 -330 200 -330 {
 lab=clk}
 N 240 -260 400 -260 {
