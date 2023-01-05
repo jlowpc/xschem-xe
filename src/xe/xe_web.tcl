@@ -486,14 +486,16 @@ proc yxt_poll_to_get_xe_results {} {
   vwait XE_RESULT2
   thread::release $XE_THREAD2
   alert_  "XE finished running and report is ready to be reviewed."
-  set xe_log_detail [yxt::get_xe_log $design]
+  #set xe_log_detail [yxt::get_xe_log $design]
+  set fn $xe_conf_dict(xe_wd)/$design.xe_log
+  set xe_log_detail [read_data $fn]
   viewdata "Completed: running XE.\n  $xe_log_detail" 1
   unset XE_THREAD2
   unset XE_URL
   unset XE_TASKID
-  set cmd "cmd /c \"cd $xe_conf_dict(xe_wd) & tar -xvf $design.zip\""
-  set r [catch {eval exec $cmd } res]
-  yxt::read_net_property
+  #set cmd "cmd /c \"cd $xe_conf_dict(xe_wd) & tar -xvf $design.zip\""
+  #set r [catch {eval exec $cmd } res]
+  #yxt::read_net_property
 }
 
 proc yxt_process_fi_subckt {} {
