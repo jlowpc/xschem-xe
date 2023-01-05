@@ -1,4 +1,5 @@
-v {xschem version=3.1.0 file_version=1.2 }
+v {xschem version=3.1.0 file_version=1.2
+}
 G {}
 K {}
 V {}
@@ -262,8 +263,8 @@ value="
 ** opencircuitdesign pdks install
 
 .subckt sky130_fd_sc_hd__inv_1 A VGND VNB VPB VPWR Y
-X0 VGND A Y VNB sky130_fd_pr__nfet_01v8 w=650000u l=150000u
-X1 VPWR A Y VPB sky130_fd_pr__pfet_01v8_hvt w=1e+06u l=150000u
+M0 VGND A Y VNB sky130_fd_pr__nfet_01v8 w=650000u l=150000u
+M1 VPWR A Y VPB sky130_fd_pr__pfet_01v8_hvt w=1e+06u l=150000u
 .ends
 
 "

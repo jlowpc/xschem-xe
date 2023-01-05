@@ -1,4 +1,5 @@
-v {xschem version=3.1.0 file_version=1.2 }
+v {xschem version=3.1.0 file_version=1.2
+}
 G {}
 K {type=subcircuit
 format="@name @pinlist @@vcc @@vss @symname"
@@ -37,5 +38,5 @@ C {devices/ipin.sym} 140 -200 0 0 {name=p1 lab=d}
 C {devices/ipin.sym} 140 -140 0 0 {name=p2 lab=clkA}
 C {devices/opin.sym} 470 -200 0 0 {name=p3 lab=q}
 C {devices/ipin.sym} 140 -110 0 0 {name=p4 lab=clkB}
-C {devices/lab_wire_yxt.sym} 250 -200 0 0 {name=l2 sig_type=std_logic lab=A}
+C {devices/lab_wire_yxt.sym} 250 -200 0 0 {name=l2 sig_type=std_logic lab=A W=10 L=20}
 C {devices/lab_wire_yxt.sym} 360 -200 0 0 {name=l3 sig_type=std_logic lab=B}

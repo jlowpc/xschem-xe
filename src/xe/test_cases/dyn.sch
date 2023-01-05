@@ -1,4 +1,5 @@
-v {xschem version=3.1.0 file_version=1.2 }
+v {xschem version=3.1.0 file_version=1.2
+}
 G {}
 K {type=subcircuit
 format="@name @pinlist @@vcc @@vss @symname"
@@ -7,14 +8,19 @@ extra=vcc vss"}
 V {}
 S {}
 E {}
+L 4 140 -380 610 -380 {}
+L 4 140 -50 610 -50 {}
+L 4 610 -380 610 -50 {}
+L 4 140 -380 140 -50 {}
+T {@symname} 520 -400 0 0 0.3 0.3 {}
 N 140 -330 200 -330 {
 lab=clk}
 N 240 -260 400 -260 {
-lab=#net1}
+lab=z}
 N 240 -300 240 -230 {
-lab=#net1}
+lab=z}
 N 240 -170 240 -130 {
-lab=#net2}
+lab=#net1}
 N 140 -200 200 -200 {
 lab=d}
 N 240 -70 240 -50 {
@@ -24,7 +30,7 @@ lab=q}
 N 530 -330 530 -260 {
 lab=q}
 N 370 -300 370 -260 {
-lab=#net1}
+lab=z}
 N 410 -330 530 -330 {
 lab=q}
 N 240 -380 240 -360 {
@@ -111,3 +117,4 @@ C {devices/lab_pin.sym} 300 -100 0 1 {name=l5 sig_type=std_logic lab=vss}
 C {devices/lab_pin.sym} 300 -200 0 1 {name=l6 sig_type=std_logic lab=vss}
 C {devices/lab_pin.sym} 260 -330 0 1 {name=l7 sig_type=std_logic lab=vcc}
 C {devices/lab_pin.sym} 350 -330 0 0 {name=l8 sig_type=std_logic lab=vcc}
+C {devices/lab_wire_yxt.sym} 310 -260 0 0 {name=l9 sig_type=std_logic lab=z}
