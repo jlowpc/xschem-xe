@@ -1,0 +1,18 @@
+[include]
+file = test.xe_ud
+
+[options]
+hierarchy_delimiter=.
+report_unclassified_subckts_in_log = 1 1  ! Syntax: report_unclassified_subckts_in_log = <num_nodes> <num_devices>
+report_weff = 1
+report_clock = 1
+report_dangling_net = ""
+
+[parse_spi]
+process_additional_xtor_parameters = 1
+top_subckt = yxt_input_rel_test4
+
+[net_property]
+clock = yxt_input_rel_test4 clk 1 R|F
+clock = yxt_input_rel_test4 clkb 1 F|R
+complement = yxt_input_rel_test4 clk clkb

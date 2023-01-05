@@ -1,0 +1,66 @@
+[def_xtor_model]
+model=pmos sky130_fd_pr__pfet_01v8
+cap0_gate_area = 4.59e-6  ! ff/nm^2
+cap1_gate_area= 2.6e-6    ! ff/nm^2
+cap0_diff_area= 0.92e-6   ! ff/nm^2
+cap1_diff_area = 1.29e-6  ! ff/nm^2
+default_mf_finfet_gate_cap0 = 2
+default_mf_finfet_gate_cap1 = 4
+default_mf_finfet_sd_edge_cap0 = 6
+default_mf_finfet_sd_edge_cap1 = 8
+!mf_weffT = leaker 1.0
+!mf_weffT = keeper 1.0
+!mf_weffT = fanout 1.0
+!default_mf_weffT = 1.0
+vt_rank = medium
+additional_param_names = linear nf nrd nrs sa sb sd mult
+subcktcall_in_netlist=1
+
+[def_xtor_model]
+model=pmos sky130_fd_pr__pfet_01v8_hvt
+cap0_gate_area = 4.59e-6  ! ff/nm^2
+cap1_gate_area= 2.6e-6    ! ff/nm^2
+cap0_diff_area= 0.92e-6   ! ff/nm^2
+cap1_diff_area = 1.29e-6  ! ff/nm^2
+default_mf_finfet_gate_cap0 = 2
+default_mf_finfet_gate_cap1 = 4
+default_mf_finfet_sd_edge_cap0 = 6
+default_mf_finfet_sd_edge_cap1 = 8
+!mf_weffT = leaker 1.0
+!mf_weffT = keeper 1.0
+!mf_weffT = fanout 1.0
+!default_mf_weffT = 1.0
+vt_rank = medium
+additional_param_names = linear nf nrd nrs sa sb sd mult
+subcktcall_in_netlist=1
+
+[def_xtor_model]
+model=nmos sky130_fd_pr__nfet_01v8
+cap0_gate_area = 1.58e-6  ! ff/nm^2
+cap1_gate_area = 4.76e-6  ! ff/nm^2
+cap0_diff_area = 1.77e-6  ! ff/nm^2
+cap1_diff_area = 1.08e-6  ! ff/nm^2
+default_mf_finfet_gate_cap0 = 2
+default_mf_finfet_gate_cap1 = 4
+default_mf_finfet_sd_edge_cap0 = 6
+default_mf_finfet_sd_edge_cap1 = 8
+!mf_weffT = leaker 1.0
+!mf_weffT = keeper 1.0
+!mf_weffT = fanout 1.0
+!default_mf_weffT = 1.0
+vt_rank = medium
+additional_param_names = linear nf nrd nrs sa sb sd mult
+subcktcall_in_netlist=1
+
+[def_diode_model]
+model = sky130_fd_pr__diode_pw2nd_05v5
+
+[def_cmos_pair]
+pair = t1 sky130_fd_pr__pfet_01v8 sky130_fd_pr__nfet_01v8
+
+[def_resistor_model]
+model = sky130_fd_pr__res_generic_po
+
+[def_resistor_model]
+model = sky130_fd_pr__res_generic_po
+
