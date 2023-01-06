@@ -78,7 +78,7 @@ def main():
             response_dict = json.loads(r.text)
             #print(response_dict)
             url_str = response_dict["url"]
-            run_xe_url = f"{url_str}run_testcase"
+            run_xe_url = f"{url_str}run_testcase/"
             rxe = requests.get(run_xe_url, headers=headers)
             response_dict = json.loads(rxe.text)
             task_id = response_dict["task_id"]
