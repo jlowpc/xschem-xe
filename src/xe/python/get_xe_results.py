@@ -70,13 +70,16 @@ def main():
       for report in response_dict['xe_json']:
             if re.match(".*\.xe_log", report):
                  f = open(f"{args.wd}/{report}", "w") 
-                 f.write(response_dict['xe_json'][report]['text'])
+                 for line in response_dict['xe_json'][report]:
+                     f.write(line)
             elif re.match(".*\.net_property", report):
                  f = open(f"{args.wd}/{report}", "w") 
-                 f.write(response_dict['xe_json'][report]['text'])
+                 for line in response_dict['xe_json'][report]:
+                     f.write(line)
             elif re.match(".*\.xe_fi_subckt", report):
                  f = open(f"{args.wd}/{report}", "w") 
-                 f.write(response_dict['xe_json'][report]['text'])
+                 for line in response_dict['xe_json'][report]:
+                     f.write(line)
             else:
                   f = open(f"{args.wd}/{report}.csv", "w")
                   is_first = True
