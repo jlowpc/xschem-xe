@@ -8,10 +8,10 @@ def check_status(url, headers):
       #print(r.content)
       response_dict = json.loads(r.text)
       state = response_dict['state']
-      if state != "SUCCESS":
-            raise Exception("Couldn't find SUCCESS")
+      if state != "SUCCESS" and state != "FAILURE":
+            raise Exception("Couldn't find SUCCESS nor FAILURE")
 
-@tenacity.retry(wait=tenacity.wait_fixed(5))
+@tenacity.retry(wait=tenacity.wait_fixed(5), stop=tenacity.stop_after_attempt(5))
 def connect(url, headers):
     try:
         check_status(url, headers)
@@ -65,7 +65,7 @@ def main():
       connect(url1, headers)
       r = requests.get(f"{args.results_url}", headers=headers)
       response_dict = json.loads(r.text)
-      # print(r.text)
+      #print(response_dict)
 
       for report in response_dict['xe_json']:
             if re.match(".*\.xe_log", report):
@@ -83,21 +83,22 @@ def main():
             else:
                   f = open(f"{args.wd}/{report}.csv", "w")
                   is_first = True
-                  for item in response_dict['xe_json'][report]:
-                        is_first2 = True
-                        if is_first:
+                  if type(response_dict['xe_json'][report]) == list:
+                      for item in response_dict['xe_json'][report]:
+                          is_first2 = True
+                          if is_first:
                               for key in item:
-                                    if not is_first2: f.write(",")
-                                    f.write(key)
-                                    is_first2=False
+                                  if not is_first2: f.write(",")
+                                  f.write(key)
+                                  is_first2=False
                               f.write("\n")
                               is_first = False
-                        is_first2 = True
-                        for value in item.values():
+                          is_first2 = True
+                          for value in item.values():
                               if not is_first2: f.write(",")
                               f.write(value)
                               is_first2=False
-                        f.write("\n")
+                          f.write("\n")
             f.close()
 
       #with open(filename) as openfile:

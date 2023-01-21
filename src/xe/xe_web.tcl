@@ -488,8 +488,12 @@ proc yxt_poll_to_get_xe_results {} {
   alert_  "XE finished running and report is ready to be reviewed."
   #set xe_log_detail [yxt::get_xe_log $design]
   set fn $xe_conf_dict(xe_wd)/$design.xe_log
-  set xe_log_detail [read_data $fn]
-  viewdata "Completed: running XE.\n  $xe_log_detail" 1
+  if { [file exists $fn] } {
+    set xe_log_detail [read_data $fn]
+    viewdata "Completed: running XE.\n  $xe_log_detail" 1
+  } else {
+    viewdata "Something went wrong, and no log file can be found" 1
+  }
   unset XE_THREAD2
   unset XE_URL
   unset XE_TASKID
@@ -632,7 +636,7 @@ proc yxt::see_report_win_context_menu {{msg {}}} {
   pack  .xe_report_dialog.l.paneright.table -side bottom  -fill both -expand true
   pack .xe_report_dialog.l.paneright.table.xscroll -side bottom -fill x 
   bind .xe_report_dialog.l.paneright.table <Button-3> {
-    yxt::see_report_win_context_menu %W [%W index @%x,%y] %X %Y 
+    yxt_see_report_win_context_menu_context_menu %W [%W index @%x,%y] %X %Y 
   }
   bind .xe_report_dialog.l.paneright.table <Button-1> {
     yxt_see_report_win_context_menu_probe %W [%W index @%x,%y] %X %Y
@@ -1002,5 +1006,6 @@ proc probe_inst {path} {
   }
   xschem set no_draw 0
   xschem redraw
+  xschem search exact 0 name $path
   return $path
 }
