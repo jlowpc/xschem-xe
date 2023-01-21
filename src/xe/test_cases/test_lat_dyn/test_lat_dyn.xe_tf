@@ -1,0 +1,6 @@
+[include]
+file = test.xe_tf
+
+[rail]
+supply=vcc 1.8
+ground=vss

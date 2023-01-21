@@ -1,0 +1,16 @@
+[options]
+report_weff = 1
+report_unclassified=1
+report_classify=1
+report_classify_ccr_file = ""
+report_spi_reduced_rcnw = 1
+report_flattened_netlist_file=""
+report_classify_feedback=1
+report_fi_instantiations_per_module=""
+
+[flatten]
+use_lower_case_m_as_prefix_in_flattened_xtor_name=1
+
+[parse_spi]
+xtor_size_scale_factor=1e-9
+
