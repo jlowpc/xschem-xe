@@ -111,6 +111,7 @@ extern char win_temp_dir[PATH_MAX];
 #if HAS_CAIRO==1
 #define DRAW_ALL_CAIRO 0 /* use cairo for all graphics. Work in progress! */
 #include <cairo.h>
+#include "cairo_jpg.h"
 #ifdef __unix__
 #include <cairo-xlib.h>
 #include "cairo-xlib-xrender.h"
@@ -369,7 +370,7 @@ do { \
   } \
 } while(0)
 
-#define INT_WIDTH(x) ( (int)(x) == 0 ? 1 : (int)(x) ) 
+#define INT_WIDTH(x) ( tclgetboolvar("change_lw") ? ( (int)(x) == 0 ? 1 : (int)(x) ) : (int)(x) ) 
 #define INT_BUS_WIDTH(x) ( (int)( (BUS_WIDTH) * (x) ) == 0 ? 1 : (int)( (BUS_WIDTH) * (x) ) ) 
 
 /* set do double if you need more precision at the expense of memory */
@@ -377,7 +378,8 @@ do { \
 #define DIG_NWAVES 0.1  /* inverse number: by default 10 digital traces per graph */
 #define DIG_SPACE 0.07 /* trace extends from 0 to DIG_SPACE, so we have DIG_WAVES-DIG_SPACE
                         * spacing between traces */
-
+#define LINECAP CapRound /* CapNotLast, CapButt, CapRound, or CapProjecting */
+#define LINEJOIN JoinRound /* JoinMiter, JoinRound, or JoinBevel */
 typedef struct
 {
   unsigned short type;
@@ -1167,6 +1169,7 @@ extern void hash_wire(int what, int n, int incremental);
 extern void hash_instances(void); /*  20171203 insert instance bbox in spatial hash table */
 
 #if HAS_CAIRO==1
+extern cairo_status_t png_reader(void* in_closure, unsigned char* out_data, unsigned int length);
 extern int text_bbox_nocairo(const char * str,double xscale, double yscale,
             short rot, short flip, int hcenter, int vcenter,
             double x1,double y1, double *rx1, double *ry1,
@@ -1358,6 +1361,7 @@ extern void my_strndup(int id, char **dest, const char *src, size_t n);
 extern size_t my_strdup2(int id, char **dest, const char *src);
 extern char *my_fgets(FILE *fd);
 extern char *my_strtok_r(char *str, const char *delim, const char *quote, char **saveptr);
+extern char **parse_cmd_string(const char *cmd, int *argc);
 extern int my_strncpy(char *d, const char *s, size_t n);
 extern int my_strcasecmp(const char *s1, const char *s2);
 extern double mylog10(double x);

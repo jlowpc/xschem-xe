@@ -467,6 +467,7 @@ static void alloc_xschem_data(const char *top_path, const char *win_path)
   xctx->rectcolor= 4;  /* this is the current layer when xschem started. */
   xctx->currsch = 0;
   xctx->ui_state = 0;
+  xctx->lw = -1.0;
   xctx->need_reb_sel_arr = 1;
   xctx->lastsel = 0;
   xctx->maxsel = 0;
@@ -1702,13 +1703,12 @@ int new_schematic(const char *what, const char *win_path, const char *fname)
 
 void change_linewidth(double w)
 {
-  int i, changed;
+  int i, changed = 0, linew;
+  double oldw = xctx->lw;
 
-  changed=0;
   /* choose line width automatically based on zoom */
-  if(w<0.) {
+  if(w<0. || xctx->lw == -1.0) {
     double cs;
-    changed=1;
     cs = tclgetdoublevar("cadsnap");
     if(tclgetboolvar("change_lw"))  {
       xctx->lw=xctx->mooz * 0.09 * cs;
@@ -1717,15 +1717,18 @@ void change_linewidth(double w)
   /* explicitly set line width */
   } else {
     xctx->lw=w;
-    changed=1;
+  }
+  if(xctx->lw != oldw) {
+    changed = 1;
   }
   if(!changed) return;
   if(has_x) {
+    linew = INT_WIDTH(xctx->lw);
+    dbg(1, "Line width = %d\n", linew);
     for(i=0;i<cadlayers;i++) {
-        XSetLineAttributes (display, xctx->gc[i], INT_WIDTH(xctx->lw), LineSolid, CapRound , JoinRound);
+        XSetLineAttributes (display, xctx->gc[i], linew, LineSolid, LINECAP , LINEJOIN);
     }
-    XSetLineAttributes (display, xctx->gctiled, INT_WIDTH(xctx->lw), LineSolid, CapRound , JoinRound);
-
+    XSetLineAttributes (display, xctx->gctiled, linew, LineSolid, LINECAP , LINEJOIN);
   }
   if(!xctx->only_probes) {
     xctx->areax1 = -2*INT_WIDTH(xctx->lw);
@@ -1778,7 +1781,7 @@ static void resetcairo(int create, int clear, int force_or_resize)
        cairo_toy_font_face_create(tclgetvar("cairo_font_name"), CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
     /* dbg(0, "1 refcount=%d\n", cairo_font_face_get_reference_count(xctx->cairo_font)); */
     xctx->cairo_save_ctx = cairo_create(xctx->cairo_save_sfc);
-    /* cairo_set_antialias (xctx->cairo_save_ctx, CAIRO_ANTIALIAS_NONE); */
+    cairo_set_antialias (xctx->cairo_save_ctx, CAIRO_ANTIALIAS_NONE);
     cairo_set_font_face(xctx->cairo_save_ctx, xctx->cairo_font);
     cairo_set_font_size(xctx->cairo_save_ctx, 20);
 
@@ -1798,7 +1801,7 @@ static void resetcairo(int create, int clear, int force_or_resize)
       fprintf(errfp, "ERROR: invalid cairo surface\n");
     }
     xctx->cairo_ctx = cairo_create(xctx->cairo_sfc);
-    /* cairo_set_antialias (xctx->cairo_ctx, CAIRO_ANTIALIAS_NONE); */
+    cairo_set_antialias (xctx->cairo_ctx, CAIRO_ANTIALIAS_NONE);
     cairo_set_font_face(xctx->cairo_ctx, xctx->cairo_font);
     cairo_set_font_size(xctx->cairo_ctx, 20);
     cairo_set_font_options(xctx->cairo_ctx, options);

@@ -27,6 +27,9 @@ src/parselabel.h
 src/rawtovcd
 src/xschem
 
+/build
+CMakeLists.txt
+.vscode
 
 /XSchemWin/x64
 /XSchemWin/.vs/XSchemWin/v16

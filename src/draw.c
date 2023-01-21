@@ -760,7 +760,11 @@ static void drawgrid()
   set_cairo_color(GRIDLAYER);
   #endif
   while(delta < CADGRIDTHRESHOLD) delta*=CADGRIDMULTIPLY;  /* <-- to be improved,but works */
-  x = xctx->xorigin*xctx->mooz; y = xctx->yorigin*xctx->mooz;
+  #if DRAW_ALL_CAIRO==1
+  x =floor(xctx->xorigin*xctx->mooz) + 0.5; y = floor(xctx->yorigin*xctx->mooz) + 0.5;
+  #else
+  x =xctx->xorigin*xctx->mooz; y = xctx->yorigin*xctx->mooz;
+  #endif
   if(y > xctx->areay1 && y < xctx->areay2) {
     if(xctx->draw_window) {
       #if DRAW_ALL_CAIRO==1
@@ -799,16 +803,18 @@ static void drawgrid()
   }
   tmp = floor((xctx->areay1+1)/delta)*delta-fmod(-xctx->yorigin*xctx->mooz,delta);
   for(x=floor((xctx->areax1+1)/delta)*delta-fmod(-xctx->xorigin*xctx->mooz,delta); x < xctx->areax2; x += delta) {
+    #if DRAW_ALL_CAIRO==1
+    double xx = floor(x) + 0.5;
+    #endif
     for(y=tmp; y < xctx->areay2; y += delta) {
       #if DRAW_ALL_CAIRO==1
+        double yy = floor(y) + 0.5;
         if(xctx->draw_window) {
-          cairo_move_to(xctx->cairo_ctx, x, y);
-          /* cairo_line_to(xctx->cairo_ctx, x, y); */
+          cairo_move_to(xctx->cairo_ctx, xx, yy) ;
           cairo_close_path(xctx->cairo_ctx);
         }
         if(xctx->draw_pixmap) {
-          cairo_move_to(xctx->cairo_save_ctx, x, y);
-          /* cairo_line_to(xctx->cairo_save_ctx, x, y); */
+          cairo_move_to(xctx->cairo_save_ctx, xx, yy);
           cairo_close_path(xctx->cairo_save_ctx);
         }
       #else
@@ -975,7 +981,7 @@ void drawline(int c, int what, double linex1, double liney1, double linex2, doub
    if(xctx->draw_pixmap)
     XDrawLine(display, xctx->save_pixmap, xctx->gc[c], (int)x1, (int)y1, (int)x2, (int)y2);
    if(dash) {
-     XSetLineAttributes (display, xctx->gc[c], INT_WIDTH(xctx->lw), LineSolid, CapRound, JoinRound);
+     XSetLineAttributes (display, xctx->gc[c], INT_WIDTH(xctx->lw), LineSolid, LINECAP, LINEJOIN);
    }
    #if !defined(__unix__) && defined(HAS_CAIRO)
    check_cairo_drawline(ct, c, x1, y1, x2, y2, dash);
@@ -996,14 +1002,14 @@ void drawline(int c, int what, double linex1, double liney1, double linex2, doub
      XSetDashes(display, xctx->gc[c], 0, dash_arr, 1);
      XSetLineAttributes (display, xctx->gc[c], INT_BUS_WIDTH(xctx->lw), xDashType, xCap, xJoin);
    } else {
-     XSetLineAttributes (display, xctx->gc[c], INT_BUS_WIDTH(xctx->lw), LineSolid, CapRound, JoinRound);
+     XSetLineAttributes (display, xctx->gc[c], INT_BUS_WIDTH(xctx->lw), LineSolid, LINECAP, LINEJOIN);
    }
    if(xctx->draw_window) XDrawLine(display, xctx->window, xctx->gc[c], (int)x1, (int)y1, (int)x2, (int)y2);
    if(xctx->draw_pixmap) XDrawLine(display, xctx->save_pixmap, xctx->gc[c], (int)x1, (int)y1, (int)x2, (int)y2);
    #if !defined(__unix__) && defined(HAS_CAIRO)
    check_cairo_drawline(ct, c, x1, y1, x2, y2, dash);
    #endif
-   XSetLineAttributes (display, xctx->gc[c], INT_WIDTH(xctx->lw), LineSolid, CapRound , JoinRound);
+   XSetLineAttributes (display, xctx->gc[c], INT_WIDTH(xctx->lw), LineSolid, LINECAP , LINEJOIN);
   }
  }
  else if((what & END) && i)
@@ -1081,10 +1087,10 @@ void drawtempline(GC gc, int what, double linex1,double liney1,double linex2,dou
   y2=Y_TO_SCREEN(liney2);
   if( clip(&x1,&y1,&x2,&y2) )
   {
-   XSetLineAttributes (display, gc, INT_BUS_WIDTH(xctx->lw), LineSolid, CapRound , JoinRound);
+   XSetLineAttributes (display, gc, INT_BUS_WIDTH(xctx->lw), LineSolid, LINECAP , LINEJOIN);
 
    XDrawLine(display, xctx->window, gc, (int)x1, (int)y1, (int)x2, (int)y2);
-   XSetLineAttributes (display, gc, INT_WIDTH(xctx->lw), LineSolid, CapRound , JoinRound);
+   XSetLineAttributes (display, gc, INT_WIDTH(xctx->lw), LineSolid, LINECAP , LINEJOIN);
   }
  }
 
@@ -1340,7 +1346,7 @@ void drawarc(int c, int what, double x, double y, double r, double a, double b, 
      }
    }
    if(dash) {
-     XSetLineAttributes (display, xctx->gc[c], INT_WIDTH(xctx->lw) ,LineSolid, CapRound , JoinRound);
+     XSetLineAttributes (display, xctx->gc[c], INT_WIDTH(xctx->lw) ,LineSolid, LINECAP , LINEJOIN);
    }
   }
  }
@@ -1528,7 +1534,7 @@ void drawpolygon(int c, int what, double *x, double *y, int points, int poly_fil
     }
   }
   if(dash) {
-    XSetLineAttributes (display, xctx->gc[c], INT_WIDTH(xctx->lw) ,LineSolid, CapRound , JoinRound);
+    XSetLineAttributes (display, xctx->gc[c], INT_WIDTH(xctx->lw) ,LineSolid, LINECAP , LINEJOIN);
   }
   my_free(722, &p);
 }
@@ -1589,7 +1595,7 @@ void drawrect(int c, int what, double rectx1,double recty1,double rectx2,double 
     (unsigned int)y2 - (unsigned int)y1);
    }
    if(dash) {
-     XSetLineAttributes (display, xctx->gc[c], INT_WIDTH(xctx->lw) ,LineSolid, CapRound , JoinRound);
+     XSetLineAttributes (display, xctx->gc[c], INT_WIDTH(xctx->lw) ,LineSolid, LINECAP, LINEJOIN);
    }
   }
  }
@@ -1856,11 +1862,11 @@ static void set_thick_waves(int what, int wcnt, int wave_col, Graph_ctx *gr)
   if(what) {
       if(gr->hilight_wave == wcnt)
          XSetLineAttributes (display, xctx->gc[wave_col],
-            3 * INT_WIDTH(xctx->lw) ,LineSolid, CapRound , JoinRound);
+            3 * INT_WIDTH(xctx->lw) ,LineSolid, LINECAP , LINEJOIN);
   } else {
       if(gr->hilight_wave == wcnt)
          XSetLineAttributes (display, xctx->gc[wave_col],
-            INT_WIDTH(xctx->lw) ,LineSolid, CapRound , JoinRound);
+            (int)(xctx->lw) ,LineSolid, LINECAP , LINEJOIN);
   }
 }
 
@@ -3055,7 +3061,7 @@ typedef struct
   size_t size;
 } png_to_byte_closure_t;
 
-static cairo_status_t png_reader(void *in_closure, unsigned char *out_data, unsigned int length)
+cairo_status_t png_reader(void *in_closure, unsigned char *out_data, unsigned int length)
 {
   png_to_byte_closure_t *closure = (png_to_byte_closure_t *) in_closure;
   if(!closure->buffer) return CAIRO_STATUS_READ_ERROR;
@@ -3127,6 +3133,7 @@ void draw_image(int dr, xRect *r, double *x1, double *y1, double *x2, double *y2
     if(filter) {
       size_t filtersize = 0;
       char *filterdata = NULL;
+      dbg(1, "draw_image(): filter=%s, image_data=%s\n", filter, attr);
       closure.buffer = NULL;
       filterdata = (char *)base64_decode(attr, strlen(attr), &filtersize);
       filter_data(filterdata, filtersize, (char **)&closure.buffer, &data_size, filter); 
@@ -3209,15 +3216,23 @@ void draw_image(int dr, xRect *r, double *x1, double *y1, double *x2, double *y2
   } else { /* resize image to fit in rectangle */
     rw = abs((int)(*x2 - *x1));
     rh = abs((int)(*y2 - *y1));
-    scalex = rw/w * xctx->mooz;
-    scaley = rh/h * xctx->mooz;
+    if (rot == 1 || rot == 3)
+    {
+      scalex = rh/w * xctx->mooz;
+      scaley = rw/h * xctx->mooz;
+    }else
+    {
+      scalex = rw/w * xctx->mooz;
+      scaley = rh/h * xctx->mooz;
+    }
   }
   if(dr && xctx->draw_pixmap) {
     cairo_translate(xctx->cairo_save_ctx, x, y);
-    if(flip && (rot == 0 || rot == 2)) cairo_scale(xctx->cairo_save_ctx, -scalex, scaley);
-    else if(flip && (rot == 1 || rot == 3)) cairo_scale(xctx->cairo_save_ctx, scalex, -scaley);
-    else cairo_scale(xctx->cairo_save_ctx, scalex, scaley);
     cairo_rotate(xctx->cairo_save_ctx, rot * XSCH_PI * 0.5);
+    if(flip && (rot == 0 || rot == 2)) cairo_scale(xctx->cairo_save_ctx, -scalex, scaley);
+    else if(flip && (rot == 1 || rot == 3)) cairo_scale(xctx->cairo_save_ctx, -scalex, scaley);
+    else cairo_scale(xctx->cairo_save_ctx, scalex, scaley);
+    
     cairo_set_source_surface(xctx->cairo_save_ctx, emb_ptr->image, 0. , 0.);
     cairo_rectangle(xctx->cairo_save_ctx, 0, 0, w , h );
     /* cairo_fill(xctx->cairo_save_ctx);
@@ -3227,10 +3242,10 @@ void draw_image(int dr, xRect *r, double *x1, double *y1, double *x2, double *y2
   }
   if(dr && xctx->draw_window) {
     cairo_translate(xctx->cairo_ctx, x, y);
+    cairo_rotate(xctx->cairo_ctx, rot * XSCH_PI * 0.5);
     if(flip && (rot == 0 || rot == 2)) cairo_scale(xctx->cairo_ctx, -scalex, scaley);
     else if(flip && (rot == 1 || rot == 3)) cairo_scale(xctx->cairo_ctx, scalex, -scaley);
     else cairo_scale(xctx->cairo_ctx, scalex, scaley);
-    cairo_rotate(xctx->cairo_ctx, rot * XSCH_PI * 0.5);
     cairo_set_source_surface(xctx->cairo_ctx, emb_ptr->image, 0. , 0.);
     cairo_rectangle(xctx->cairo_ctx, 0, 0, w , h );
     /* cairo_fill(xctx->cairo_ctx);
@@ -3284,8 +3299,8 @@ void svg_embedded_graph(FILE *fd, xRect *r, double rx1, double ry1, double rx2, 
   rwi = (int) (rw * scale + 1.0);
   rhi = (int) (rh * scale + 1.0);
   save_restore_zoom(1);
-  set_viewport_size(rwi, rhi, 1.0);
-  zoom_box(rx1, ry1, rx2, ry2, 1.0);
+  set_viewport_size(rwi, rhi, xctx->lw);
+  zoom_box(rx1 - xctx->lw, ry1 - xctx->lw, rx2 + xctx->lw, ry2 + xctx->lw, 1.0);
   resetwin(1, 1, 1, rwi, rhi);
   save_draw_grid = tclgetboolvar("draw_grid");
   tclsetvar("draw_grid", "0");
