@@ -31,5 +31,15 @@ src/xschem
 CMakeLists.txt
 .vscode
 
+
 /XSchemWin/x64
 /XSchemWin/.vs/XSchemWin/v16
+src/Makefile
+scconfig/sccbox
+scconfig/configure
+scconfig/config.log
+scconfig/config.cache
+doc/manpages/xschem.1
+Makefile.conf
+config.h
+*.Identifier

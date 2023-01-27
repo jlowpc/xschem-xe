@@ -123,6 +123,8 @@ extern char win_temp_dir[PATH_MAX];
 #include <tcl.h>
 #include <tk.h>
 
+#define _ALLOC_ID_ 0 /* to be replaced with unique IDs in my_*() allocations for memory tracking
+                      * see create_alloc_ids.awk */
 #define CADHEIGHT 700                   /*  initial window size */
 #define CADWIDTH 1000
 
@@ -366,7 +368,7 @@ do { \
   register size_t __str_alloc_tmp__ = add; \
   if( __str_alloc_tmp__ >= *size) { \
     *size = __str_alloc_tmp__ + CADCHUNKALLOC; \
-    my_realloc(1212, dest_string, *size); \
+    my_realloc(_ALLOC_ID_, dest_string, *size); \
   } \
 } while(0)
 
@@ -1085,6 +1087,7 @@ extern int set_rect_flags(xRect *r);
 extern int set_rect_extraptr(int what, xRect *drptr);
 extern unsigned char *base64_decode(const char *data, const size_t input_length, size_t *output_length);
 extern char *base64_encode(const unsigned char *data, const size_t input_length, size_t *output_length, int brk);
+extern unsigned char *ascii85_encode(const unsigned char *data, const size_t input_length, size_t *output_length);
 extern int get_raw_index(const char *node);
 extern void free_rawfile(int dr);
 extern int raw_read(const char *f, const char *type);

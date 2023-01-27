@@ -105,23 +105,6 @@ typedef struct
         size_t size;
 } png_to_byte_closure_t;
 
-unsigned char* bin2hex(const unsigned char* bin, size_t len)
-{
-        unsigned char* out;
-        size_t  i;
-
-        if (bin == NULL || len == 0)
-                return NULL;
-
-        out = my_malloc(1665, len * 2 + 1);
-        for (i = 0; i < len; i++) {
-                out[i * 2] = "0123456789abcdef"[bin[i] >> 4];
-                out[i * 2 + 1] = "0123456789abcdef"[bin[i] & 0x0F];
-        }
-        out[len * 2] = '\0';
-
-        return out;
-}
 void ps_drawPNG(xRect* r, double x1, double y1, double x2, double y2, int rot, int flip)
 {
   #if defined(HAS_LIBJPEG) && defined(HAS_CAIRO)
@@ -135,7 +118,7 @@ void ps_drawPNG(xRect* r, double x1, double y1, double x2, double y2, int rot, i
   /* static char str[PATH_MAX];
    * FILE* fp;
    */
-  unsigned char* hexEncodedJPG = NULL;
+  unsigned char* ascii85EncodedJpeg;
   char* image_data64_ptr = NULL;
   cairo_surface_t* surface = NULL;
   unsigned char* jpgData = NULL;
@@ -143,6 +126,7 @@ void ps_drawPNG(xRect* r, double x1, double y1, double x2, double y2, int rot, i
   int quality=100;
   const char *quality_attr;
   size_t image_data_len;
+  size_t oLength;
 
   quality_attr = get_tok_value(r->prop_ptr, "jpeg_quality", 0);
   if(quality_attr[0]) quality = atoi(quality_attr);
@@ -150,8 +134,8 @@ void ps_drawPNG(xRect* r, double x1, double y1, double x2, double y2, int rot, i
     quality_attr = get_tok_value(r->prop_ptr, "jpg_quality", 0);
     if(quality_attr[0]) quality = atoi(quality_attr);
   }
-  my_strdup(59, &filter, get_tok_value(r->prop_ptr, "filter", 0));
-  image_data_len = my_strdup2(1183, &image_data64_ptr, get_tok_value(r->prop_ptr, "image_data", 0));
+  my_strdup(_ALLOC_ID_, &filter, get_tok_value(r->prop_ptr, "filter", 0));
+  image_data_len = my_strdup2(_ALLOC_ID_, &image_data64_ptr, get_tok_value(r->prop_ptr, "image_data", 0));
 
   if (filter) {
     size_t filtersize = 0;
@@ -159,13 +143,13 @@ void ps_drawPNG(xRect* r, double x1, double y1, double x2, double y2, int rot, i
     closure.buffer = NULL;
     filterdata = (char*)base64_decode(image_data64_ptr, image_data_len, &filtersize);
     filter_data(filterdata, filtersize, (char**)&closure.buffer, &data_size, filter);
-    my_free(1661, &filterdata);
+    my_free(_ALLOC_ID_, &filterdata);
   }
   else {
     closure.buffer = base64_decode(image_data64_ptr, image_data_len, &data_size);
   }
-  my_free(1664, &filter);
-  my_free(1184, &image_data64_ptr);
+  my_free(_ALLOC_ID_, &filter);
+  my_free(_ALLOC_ID_, &image_data64_ptr);
   closure.pos = 0;
   closure.size = data_size; /* should not be necessary */
   surface = cairo_image_surface_create_from_png_stream(png_reader, &closure);
@@ -174,7 +158,7 @@ void ps_drawPNG(xRect* r, double x1, double y1, double x2, double y2, int rot, i
   png_size_y = cairo_image_surface_get_height(surface);
 
   cairo_surface_flush(surface);
-  my_free(1667, &closure.buffer);
+  my_free(_ALLOC_ID_, &closure.buffer);
   png_data = cairo_image_surface_get_data(surface);
 
   invertImage = !strcmp(get_tok_value(r->prop_ptr, "InvertOnExport", 0), "true");
@@ -187,7 +171,6 @@ void ps_drawPNG(xRect* r, double x1, double y1, double x2, double y2, int rot, i
     unsigned char png_g = png_data[i + 1];
     unsigned char png_b = png_data[i + 2];
     unsigned char png_a = png_data[i + 3];
-
     double ainv=((double)(0xFF - png_a)) / ((double)(0xFF));
 
     if(invertImage)
@@ -206,56 +189,71 @@ void ps_drawPNG(xRect* r, double x1, double y1, double x2, double y2, int rot, i
   }
   cairo_surface_mark_dirty(surface);
   cairo_image_surface_write_to_jpeg_mem(surface, &jpgData, &fileSize, quality);
-  /* 
-   * my_snprintf(str, S(str), "%s%s", tclgetvar("XSCHEM_TMP_DIR"), "/temp.jpg");
-   * cairo_image_surface_write_to_jpeg(surface, str, 100);
-   * fp = fopen(str, "rb");
-   * fseek(fp, 0L, SEEK_END);
-   * fileSize = ftell(fp);
-   * rewind(fp);
-   * jpgData = my_malloc(1662, fileSize);
-   * fread(jpgData, sizeof(jpgData[0]), fileSize, fp);
-   * fclose(fp);
-   */
-  hexEncodedJPG = bin2hex(jpgData, fileSize);
-  free(jpgData);
-  fprintf(fd, "gsave\n"); 
+  ascii85EncodedJpeg = ascii85_encode(jpgData, fileSize, &oLength);
+  fprintf(fd, "gsave\n");
+  fprintf(fd, "save\n");
+  fprintf(fd, "/RawData currentfile /ASCII85Decode filter def\n");
+  fprintf(fd, "/Data RawData << >> /DCTDecode filter def\n");
   fprintf(fd, "%g %g translate\n", X_TO_PS(x1), Y_TO_PS(y1));
   if(rot==1) fprintf(fd, "90 rotate\n");
   if(rot==2) fprintf(fd, "180 rotate\n");
   if(rot==3) fprintf(fd, "270 rotate\n");
   fprintf(fd, "%g %g scale\n", (X_TO_PS(x2) - X_TO_PS(x1))*0.97, (Y_TO_PS(y2) - Y_TO_PS(y1))*0.97);
-  fprintf(fd, "%g\n", (double)png_size_x);
-  fprintf(fd, "%g\n", (double)png_size_y);
-  fprintf(fd, "8\n");
+  fprintf(fd, "/DeviceRGB setcolorspace\n");
+  fprintf(fd, "{ << /ImageType 1\n");
+  fprintf(fd, "     /Width %g\n", (double)png_size_x);
+  fprintf(fd, "     /Height %g\n", (double)png_size_y);
+  
   if(!flip)
   {
-    if(rot==1) fprintf(fd, "[%g 0 0 %g 0 %g]\n", (double)png_size_y, (double)png_size_x, (double)png_size_y);
-    else if(rot==2) fprintf(fd, "[%g 0 0 %g %g %g]\n", (double)png_size_x, (double)png_size_y, (double)png_size_x, (double)png_size_y);
-    else if(rot==3) fprintf(fd, "[%g 0 0 %g %g 0]\n", (double)png_size_y, (double)png_size_x, (double)png_size_x);
-    else fprintf(fd, "[%g 0 0 %g 0 0]\n", (double)png_size_x, (double)png_size_y); 
+    if(rot==1) fprintf(fd, "     /ImageMatrix [%g 0 0 %g 0 %g]\n",
+           (double)png_size_y, (double)png_size_x, (double)png_size_y);
+    else if(rot==2) fprintf(fd, "     /ImageMatrix [%g 0 0 %g %g %g]\n",
+           (double)png_size_x, (double)png_size_y, (double)png_size_x, (double)png_size_y);
+    else if(rot==3) fprintf(fd, "     /ImageMatrix [%g 0 0 %g %g 0]\n", 
+           (double)png_size_y, (double)png_size_x, (double)png_size_x);
+    else fprintf(fd, "     /ImageMatrix [%g 0 0 %g 0 0]\n", (double)png_size_x, (double)png_size_y); 
   }
   else
   {
-    if(rot==1) fprintf(fd, "[%g 0 0 %g %g %g]\n", -(double)png_size_y, (double)png_size_x, (double)png_size_x, (double)png_size_y);
-    else if(rot==2) fprintf(fd, "[%g 0 0 %g 0 %g]\n", -(double)png_size_x, (double)png_size_y, (double)png_size_y);
-    else if(rot==3) fprintf(fd, "[%g 0 0 %g 0 0]\n", -(double)png_size_y, (double)png_size_x);
-    else fprintf(fd, "[%g 0 0 %g %g 0]\n", -(double)png_size_x, (double)png_size_y, (double)png_size_x); 
+    if(rot==1) fprintf(fd, "     /ImageMatrix [%g 0 0 %g %g %g]\n",
+          -(double)png_size_y, (double)png_size_x, (double)png_size_x, (double)png_size_y);
+    else if(rot==2) fprintf(fd, "     /ImageMatrix [%g 0 0 %g 0 %g]\n",
+          -(double)png_size_x, (double)png_size_y, (double)png_size_y);
+    else if(rot==3) fprintf(fd, "     /ImageMatrix [%g 0 0 %g 0 0]\n",
+          -(double)png_size_y, (double)png_size_x);
+    else fprintf(fd, "     /ImageMatrix [%g 0 0 %g %g 0]\n",
+          -(double)png_size_x, (double)png_size_y, (double)png_size_x); 
   }
-   
+  fprintf(fd, "     /DataSource Data\n");
+  fprintf(fd, "     /BitsPerComponent 8\n");
+  fprintf(fd, "     /Decode [0 1 0 1 0 1]\n");
+  fprintf(fd, "  >> image\n");
+  fprintf(fd, "  Data closefile\n");
+  fprintf(fd, "  RawData flushfile\n");
+  fprintf(fd, "  restore\n");
+  fprintf(fd, "} exec\n");
+
+  #if 1  /* break lines */
+  for (i = 0; i < oLength; i++)
+  {
+    fputc(ascii85EncodedJpeg[i],fd);
+    if(i > 0 && (i % 64) == 0)
+    {
+      fputc('\n',fd);
+      /* if (ascii85Encode[i+1]=='%') idx=63; imageMagic does this for some reason?!
+       *  Doesn't seem to be necesary. */
+    }
+  }
+  #else
+  fprintf(fd, "%s", ascii85EncodedJpeg);
+  #endif
+  fprintf(fd, "~>\n");
   
-  fprintf(fd, "(%s)\n", hexEncodedJPG);
-  fprintf(fd, "/ASCIIHexDecode\n");
-  fprintf(fd, "filter\n");
-  fprintf(fd, "0 dict\n");
-  fprintf(fd, "/DCTDecode\n");
-  fprintf(fd, "filter\n");
-  fprintf(fd, "false\n");
-  fprintf(fd, "3\n");
-  fprintf(fd, "colorimage\n");
   fprintf(fd, "grestore\n");
   cairo_surface_destroy(surface);
-  my_free(1663, &hexEncodedJPG);
+  my_free(_ALLOC_ID_, &ascii85EncodedJpeg);
+  free(jpgData);
   #endif
 }
 
@@ -273,9 +271,11 @@ void ps_embedded_graph(xRect* r, double rx1, double ry1, double rx2, double ry2)
    * FILE* fp;
    * static char str[PATH_MAX];
    */
-  unsigned char *hexEncodedJPG;
+  unsigned char *ascii85EncodedJpeg;
   int quality=100;
   const char *quality_attr;
+  size_t oLength;
+  int i;
 
   quality_attr = get_tok_value(r->prop_ptr, "jpeg_quality", 0);
   if(quality_attr[0]) quality = atoi(quality_attr);
@@ -331,19 +331,8 @@ void ps_embedded_graph(xRect* r, double rx1, double ry1, double rx2, double ry2)
   }
   #endif
   cairo_image_surface_write_to_jpeg_mem(png_sfc, &jpgData, &fileSize, quality);
-  /*
-   * my_snprintf(str, S(str), "%s%s", tclgetvar("XSCHEM_TMP_DIR"), "/temp.jpg");
-   * cairo_image_surface_write_to_jpeg(png_sfc, str, 100);
-   * fp = fopen(str, "rb"); 
-   * fseek(fp, 0L, SEEK_END);
-   * fileSize = ftell(fp);
-   * rewind(fp);
-   * jpgData = my_malloc(1668, fileSize);
-   * fread(jpgData, sizeof(jpgData[0]), fileSize, fp);
-   * fclose(fp);
-   */
 
-  hexEncodedJPG = bin2hex(jpgData, fileSize);
+  ascii85EncodedJpeg = ascii85_encode(jpgData, fileSize, &oLength);
   free(jpgData);
 
   cairo_surface_destroy(png_sfc);
@@ -358,23 +347,45 @@ void ps_embedded_graph(xRect* r, double rx1, double ry1, double rx2, double ry2)
   build_colors(0, 0);
   draw();
   fprintf(fd, "gsave\n");
+  fprintf(fd, "save\n");
+  fprintf(fd, "/RawData currentfile /ASCII85Decode filter def\n");
+  fprintf(fd, "/Data RawData << >> /DCTDecode filter def\n");
   fprintf(fd, "%f %f translate\n", X_TO_PS(rx1), Y_TO_PS(ry1));
   fprintf(fd, "%f %f scale\n", X_TO_PS(rx2) - X_TO_PS(rx1), Y_TO_PS(ry2) - Y_TO_PS(ry1));
-  fprintf(fd, "%d\n", rwi);
-  fprintf(fd, "%d\n", rhi);
-  fprintf(fd, "8\n");
-  fprintf(fd, "[%d 0 0 %d 0 0]\n", rwi, rhi);
-  fprintf(fd, "(%s)\n", hexEncodedJPG);
-  fprintf(fd, "/ASCIIHexDecode\n");
-  fprintf(fd, "filter\n");
-  fprintf(fd, "0 dict\n");
-  fprintf(fd, "/DCTDecode\n");
-  fprintf(fd, "filter\n");
-  fprintf(fd, "false\n");
-  fprintf(fd, "3\n");
-  fprintf(fd, "colorimage\n");
+  fprintf(fd, "/DeviceRGB setcolorspace\n");
+  fprintf(fd, "{ << /ImageType 1\n");
+  fprintf(fd, "     /Width %d\n", rwi);
+  fprintf(fd, "     /Height %d\n", rhi);
+  fprintf(fd, "     /ImageMatrix [%d 0 0 %d 0 0]\n", rwi, rhi);
+  fprintf(fd, "     /DataSource Data\n");
+  fprintf(fd, "     /BitsPerComponent 8\n");
+  fprintf(fd, "     /Decode [0 1 0 1 0 1]\n");
+  fprintf(fd, "  >> image\n");
+  fprintf(fd, "  Data closefile\n");
+  fprintf(fd, "  RawData flushfile\n");
+  fprintf(fd, "  restore\n");
+  fprintf(fd, "} exec\n");
+
+  #if 1 /* break lines */
+  for (i = 0; i < oLength; i++)
+  {
+    fputc(ascii85EncodedJpeg[i],fd);
+    if(i > 0 && (i % 64) == 0) 
+    {
+      fputc('\n',fd);
+      /* if (ascii85Encode[i+1]=='%') idx=63; imageMagic does this for some reason?!
+       *  Doesn't seem to be necesary. */
+    }
+  }
+  #else
+  fprintf(fd, "%s", ascii85EncodedJpeg);
+  #endif
+  fprintf(fd, "~>\n");
+  
   fprintf(fd, "grestore\n");
-  my_free(1666, &hexEncodedJPG);
+
+  my_free(_ALLOC_ID_, &ascii85EncodedJpeg);
+  
   #endif
 }
 static void set_lw(void)
@@ -667,7 +678,7 @@ static void ps_draw_string(int layer, const char *str, short rot, short flip, in
     if(rot == 3 && flip == 1 ) { x=textx1;}
   }
   llength=0;
-  my_strdup2(54, &sss, str);
+  my_strdup2(_ALLOC_ID_, &sss, str);
   tt=ss=sss;
   for(;;) {
     c=*ss;
@@ -685,7 +696,7 @@ static void ps_draw_string(int layer, const char *str, short rot, short flip, in
     }
     ss++;
   }
-  my_free(53, &sss);
+  my_free(_ALLOC_ID_, &sss);
 }
 
 static void old_ps_draw_string(int gctext,  const char *str,
@@ -850,16 +861,16 @@ static void ps_draw_symbol(int n,int layer, int what, short tmp_flip, short rot,
      polygon = ((xctx->inst[n].ptr+ xctx->sym)->poly[layer])[j];
      {   /* scope block so we declare some auxiliary arrays for coord transforms. 20171115 */
        int k;
-       double *x = my_malloc(309, sizeof(double) * polygon.points);
-       double *y = my_malloc(310, sizeof(double) * polygon.points);
+       double *x = my_malloc(_ALLOC_ID_, sizeof(double) * polygon.points);
+       double *y = my_malloc(_ALLOC_ID_, sizeof(double) * polygon.points);
        for(k=0;k<polygon.points;k++) {
          ROTATION(rot, flip, 0.0,0.0,polygon.x[k],polygon.y[k],x[k],y[k]);
          x[k]+= x0;
          y[k] += y0;
        }
        ps_drawpolygon(layer, NOW, x, y, polygon.points, polygon.fill, polygon.dash);
-       my_free(876, &x);
-       my_free(877, &y);
+       my_free(_ALLOC_ID_, &x);
+       my_free(_ALLOC_ID_, &y);
      }
 
    }
@@ -993,7 +1004,8 @@ void create_ps(char **psfile, int what)
       return;
     }
   }
-  ps_colors=my_calloc(311, cadlayers, sizeof(Ps_color));
+  setbuf(fd, NULL); /*To prevent buffer errors, still investigating cause. */
+  ps_colors=my_calloc(_ALLOC_ID_, cadlayers, sizeof(Ps_color));
   if(ps_colors==NULL){
     fprintf(errfp, "create_ps(): calloc error\n");
     return;
@@ -1217,7 +1229,7 @@ void create_ps(char **psfile, int what)
     fclose(fd);
   }
   tclsetboolvar("draw_grid", old_grid);
-  my_free(879, &ps_colors);
+  my_free(_ALLOC_ID_, &ps_colors);
 }
 
 int ps_draw(int what)
