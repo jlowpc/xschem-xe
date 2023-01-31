@@ -1,12 +1,11 @@
 [options]
 report_weff = 1
 report_unclassified=1
-report_classify=1 include_cs_gate_ccr
-report_classify_ccr_file = ""
-report_spi_reduced_rcnw = 1
-report_flattened_netlist_file=""
+report_classify=1 
 report_classify_feedback=1
 report_fi_instantiations_per_module=""
+report_unclassified_subckts_in_log = 1 1  ! Syntax: report_unclassified_subckts_in_log = <num_nodes> <num_devices>
+hierarchy_delimiter=.
 
 [flatten]
 use_lower_case_m_as_prefix_in_flattened_xtor_name=1
@@ -14,4 +13,3 @@ use_lower_case_m_as_prefix_in_flattened_xtor_name=1
 [parse_spi]
 xtor_size_scale_factor=1e-6
 process_additional_xtor_parameters = 1
-

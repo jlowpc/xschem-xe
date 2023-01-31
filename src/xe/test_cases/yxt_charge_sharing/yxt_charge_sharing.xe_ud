@@ -1,15 +1,7 @@
 [include]
 file = test.xe_ud
 
-[options]
-!hierarchy_delimiter=/
-report_unclassified_subckts_in_log = 1 1  ! Syntax: report_unclassified_subckts_in_log = <num_nodes> <num_devices>
-report_weff = 1
-report_clock = 1
-report_dangling_net = ""
-
 [parse_spi]
-!top_subckt = yxt_charge_sharing clk out D C B A F E vss vcc
 top_subckt = yxt_charge_sharing
 
 [net_property]
