@@ -1194,7 +1194,7 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
         else if(argc > 5) 
           Tcl_SetResult(interp, (char *)get_tok_value(xctx->sym[i].prop_ptr, argv[4], atoi(argv[5])), TCL_VOLATILE);
 
-      } else if(!strcmp(argv[2], "rect")) {
+      } else if(!strcmp(argv[2], "rect")) { /* xschem getprop rect c n token */
         if(argc < 6) {
           Tcl_SetResult(interp, "xschem getprop rect needs <color> <n> <token>", TCL_STATIC);
           return TCL_ERROR;
@@ -1202,6 +1202,14 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
           int c = atoi(argv[3]);
           int n = atoi(argv[4]);
           Tcl_SetResult(interp, (char *)get_tok_value(xctx->rect[c][n].prop_ptr, argv[5], 2), TCL_VOLATILE);
+        }
+      } else if(!strcmp(argv[2], "text")) { /* xschem getprop text n token */
+        if(argc < 5) {
+          Tcl_SetResult(interp, "xschem getprop text needs <n> <token>", TCL_STATIC);
+          return TCL_ERROR;
+        } else {
+          int n = atoi(argv[3]);
+          Tcl_SetResult(interp, (char *)get_tok_value(xctx->text[n].prop_ptr, argv[4], 2), TCL_VOLATILE);
         }
       }
     }
@@ -1358,6 +1366,38 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
       Tcl_ResetResult(interp);
     }
 
+    else if(!strcmp(argv[1], "hilight_instname"))
+    {
+      int inst;
+      char *type;
+      int incr_hi;
+      xctx->enable_drill=0;
+      incr_hi = tclgetboolvar("incr_hilight");
+      prepare_netlist_structs(0);
+      if((inst = get_instance(argv[2])) < 0 ) {
+        Tcl_SetResult(interp, "xschem hilight_instname: instance not found", TCL_STATIC);
+        return TCL_ERROR;
+      } else {
+        type = (xctx->inst[inst].ptr+ xctx->sym)->type;
+        if( type && xctx->inst[inst].node && IS_LABEL_SH_OR_PIN(type) ) { /* instance must have a pin! */
+              /* sets xctx->hilight_nets=1 */
+          if(!bus_hilight_hash_lookup(xctx->inst[inst].node[0], xctx->hilight_color, XINSERT_NOREPLACE)) {
+            dbg(1, "xschem hilight_instname: node=%s\n", xctx->inst[inst].node[0]);
+            if(incr_hi) incr_hilight_color();
+          }
+        } else {
+          dbg(1, "xschem hilight_instname: setting hilight flag on inst %d\n",inst);
+          /* xctx->hilight_nets=1; */  /* done in hilight_hash_lookup() */
+          xctx->inst[inst].color = xctx->hilight_color;
+          inst_hilight_hash_lookup(xctx->inst[inst].instname, xctx->hilight_color, XINSERT_NOREPLACE);
+          if(incr_hi) incr_hilight_color();
+        }
+        dbg(1, "hilight_nets=%d\n", xctx->hilight_nets);
+        if(xctx->hilight_nets) propagate_hilights(1, 0, XINSERT_NOREPLACE);
+        redraw_hilights(0);
+      }
+      Tcl_ResetResult(interp);
+    }
     else if(!strcmp(argv[1], "hilight_netname"))
     {
       int ret = 0;
@@ -1535,7 +1575,7 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
         pin = get_tok_value((xctx->inst[i].ptr+ xctx->sym)->rect[PINLAYER][p].prop_ptr, "name",0);
         if(!pin[0]) pin = "--ERROR--";
         my_mstrcat(655, &pins, "{", pin, "}", NULL);
-        if(p< no_of_pins-1) my_strcat(377, &pins, " ");
+        if(p< no_of_pins-1) my_strcat(_ALLOC_ID_, &pins, " ");
       }
       Tcl_SetResult(interp, pins, TCL_VOLATILE);
       my_free(_ALLOC_ID_, &pins);
@@ -2768,6 +2808,73 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
           bbox(END,0.0,0.0,0.0,0.0);
         }
         Tcl_ResetResult(interp);
+
+      } else if(argc > 4 && !strcmp(argv[2], "text")) {
+      /*  0       1      2   3   4    5      6
+       * xschem setprop text n token value [fast] */
+        int change_done = 0;
+        int tmp, fast = 0;
+        double xx1, xx2, yy1, yy2, dtmp;
+        xText *t;
+        int n = atoi(argv[3]);
+        if(!(n >=0 && n < xctx->texts) ) {
+          Tcl_SetResult(interp, "xschem setprop text: wrong text number", TCL_STATIC);
+          return TCL_ERROR;
+        }
+        t = &xctx->text[n];
+        if(argc > 6) {
+          if(!strcmp(argv[6], "fast")) {
+            fast = 1;
+            argc = 6;
+          }
+          if(!strcmp(argv[6], "fastundo")) {
+            fast = 3;
+            argc = 6;
+          }
+        }
+        else if(argc > 5) {
+          if(!strcmp(argv[5], "fast")) {
+            fast = 1;
+            argc = 5;
+          }
+          if(!strcmp(argv[5], "fastundo")) {
+            fast = 3;
+            argc = 5;
+          }
+        }
+        if(!fast) {
+          bbox(START,0.0,0.0,0.0,0.0);
+        }
+        if(argc > 5) {
+          /* verify if there is some difference */
+          if(strcmp(argv[5], get_tok_value(t->prop_ptr, argv[4], 0))) {
+            change_done = 1;
+            if(fast == 3 || fast == 0) xctx->push_undo();
+            my_strdup2(_ALLOC_ID_, &t->prop_ptr, subst_token(t->prop_ptr, argv[4], argv[5]));
+          }
+        } else {
+          get_tok_value(t->prop_ptr, argv[4], 0);
+          if(xctx->tok_size) {
+            change_done = 1;
+            if(fast == 3 || fast == 0) xctx->push_undo();
+            my_strdup2(_ALLOC_ID_, &t->prop_ptr, subst_token(t->prop_ptr, argv[4], NULL)); /* delete attr */
+          }
+        }
+        if(change_done) set_modify(1);
+        set_text_flags(t);
+        text_bbox(t->txt_ptr, t->xscale,
+                  t->yscale, t->rot, t->flip, t->hcenter,
+                  t->vcenter, t->x0, t->y0,
+                  &xx1,&yy1,&xx2,&yy2, &tmp, &dtmp);
+
+        if(!fast) {
+          bbox(ADD, xx1, yy1, xx2, yy2);
+          /* redraw rect with new props */
+          bbox(SET,0.0,0.0,0.0,0.0);
+          draw();
+          bbox(END,0.0,0.0,0.0,0.0);
+        }
+        Tcl_ResetResult(interp);
       }
     }
     else if(!strcmp(argv[1], "show_pin_net_names"))
@@ -3181,10 +3288,10 @@ int tclvareval(const char *script, ...)
   va_list args;
 
   va_start(args, script);
-  size = my_strcat(1379, &str, script);
+  size = my_strcat(_ALLOC_ID_, &str, script);
   dbg(1, "tclvareval(): script=%s, str=%s, size=%d\n", script, str, size);
   while( (p = va_arg(args, const char *)) ) {
-    size = my_strcat(1380, &str, p);
+    size = my_strcat(_ALLOC_ID_, &str, p);
     dbg(1, "tclvareval(): p=%s, str=%s, size=%d\n", p, str, size);
   }
   return_code = Tcl_EvalEx(interp, str, (int)size, TCL_EVAL_GLOBAL);

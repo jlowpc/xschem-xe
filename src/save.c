@@ -577,7 +577,7 @@ static int read_dataset(FILE *fd, const char *type)
         ptr++;
       }
       if(xctx->graph_sim_type && !strcmp(xctx->graph_sim_type, "ac")) { /* AC */
-        my_strcat(415, &xctx->graph_names[i << 1], varname);
+        my_strcat(_ALLOC_ID_, &xctx->graph_names[i << 1], varname);
         int_hash_lookup(&xctx->graph_raw_table, xctx->graph_names[i << 1], (i << 1), XINSERT_NOREPLACE);
         if(strstr(varname, "v(") == varname || strstr(varname, "i(") == varname)
           my_mstrcat(664, &xctx->graph_names[(i << 1) + 1], "ph(", varname + 2, NULL);
@@ -585,7 +585,7 @@ static int read_dataset(FILE *fd, const char *type)
           my_mstrcat(540, &xctx->graph_names[(i << 1) + 1], "ph(", varname, ")", NULL);
         int_hash_lookup(&xctx->graph_raw_table, xctx->graph_names[(i << 1) + 1], (i << 1) + 1, XINSERT_NOREPLACE);
       } else {
-        my_strcat(541, &xctx->graph_names[i], varname);
+        my_strcat(_ALLOC_ID_, &xctx->graph_names[i], varname);
         int_hash_lookup(&xctx->graph_raw_table, xctx->graph_names[i], i, XINSERT_NOREPLACE);
       }
       /* use hash table to store index number of variables */
@@ -1667,45 +1667,25 @@ static void write_xschem_file(FILE *fd)
 static void load_text(FILE *fd)
 {
   int i;
-  const char *str;
-   dbg(3, "load_text(): start\n");
-   check_text_storage();
-   i=xctx->texts;
-   xctx->text[i].txt_ptr=NULL;
-   load_ascii_string(&xctx->text[i].txt_ptr,fd);
-   if(fscanf(fd, "%lf %lf %hd %hd %lf %lf ",
-     &xctx->text[i].x0, &xctx->text[i].y0, &xctx->text[i].rot,
-     &xctx->text[i].flip, &xctx->text[i].xscale,
-     &xctx->text[i].yscale)<6) {
-     fprintf(errfp,"WARNING:  missing fields for TEXT object, ignoring\n");
-     read_line(fd, 0);
-     return;
-   }
-   xctx->text[i].prop_ptr=NULL;
-   xctx->text[i].font=NULL;
-   xctx->text[i].sel=0;
-   load_ascii_string(&xctx->text[i].prop_ptr,fd);
-   if( xctx->text[i].prop_ptr)
-     my_strdup(_ALLOC_ID_, &xctx->text[i].font, get_tok_value(xctx->text[i].prop_ptr, "font", 0));
-
-   str = get_tok_value(xctx->text[i].prop_ptr, "hcenter", 0);
-   xctx->text[i].hcenter = strcmp(str, "true")  ? 0 : 1;
-   str = get_tok_value(xctx->text[i].prop_ptr, "vcenter", 0);
-   xctx->text[i].vcenter = strcmp(str, "true")  ? 0 : 1;
-
-   str = get_tok_value(xctx->text[i].prop_ptr, "layer", 0);
-   if(str[0]) xctx->text[i].layer = atoi(str);
-   else xctx->text[i].layer = -1;
-   xctx->text[i].flags = 0;
-   str = get_tok_value(xctx->text[i].prop_ptr, "slant", 0);
-   xctx->text[i].flags |= strcmp(str, "oblique") ? 0 : TEXT_OBLIQUE;
-   xctx->text[i].flags |= strcmp(str, "italic") ? 0 : TEXT_ITALIC;
-   str = get_tok_value(xctx->text[i].prop_ptr, "weight", 0);
-   xctx->text[i].flags |= strcmp(str, "bold") ? 0 : TEXT_BOLD;
-   str = get_tok_value(xctx->text[i].prop_ptr, "hide", 0);
-   xctx->text[i].flags |= strcmp(str, "true") ? 0 : HIDE_TEXT;
-
-   xctx->texts++;
+  dbg(3, "load_text(): start\n");
+  check_text_storage();
+  i=xctx->texts;
+  xctx->text[i].txt_ptr=NULL;
+  load_ascii_string(&xctx->text[i].txt_ptr,fd);
+  if(fscanf(fd, "%lf %lf %hd %hd %lf %lf ",
+    &xctx->text[i].x0, &xctx->text[i].y0, &xctx->text[i].rot,
+    &xctx->text[i].flip, &xctx->text[i].xscale,
+    &xctx->text[i].yscale)<6) {
+    fprintf(errfp,"WARNING:  missing fields for TEXT object, ignoring\n");
+    read_line(fd, 0);
+    return;
+  }
+  xctx->text[i].prop_ptr=NULL;
+  xctx->text[i].font=NULL;
+  xctx->text[i].sel=0;
+  load_ascii_string(&xctx->text[i].prop_ptr,fd);
+  set_text_flags(&xctx->text[i]);
+  xctx->texts++;
 }
 
 static void load_wire(FILE *fd)
@@ -2823,7 +2803,7 @@ static void add_pinlayer_boxes(int *lastr, xRect **bb,
   bb[PINLAYER][i].sel = 0;
   /* add to symbol pins remaining attributes from schematic pins, except name= and lab= */
   my_strdup(_ALLOC_ID_, &pin_label, get_sym_template(prop_ptr, "lab"));   /* remove name=...  and lab=... */
-  my_strcat(159, &bb[PINLAYER][i].prop_ptr, pin_label);
+  my_strcat(_ALLOC_ID_, &bb[PINLAYER][i].prop_ptr, pin_label);
   my_free(_ALLOC_ID_, &pin_label);
   lastr[PINLAYER]++;
 }
@@ -2998,7 +2978,6 @@ int load_sym_def(const char *name, FILE *embed_fd)
   int lastt;
   xText *tt;
   int endfile;
-  const char *str;
   char *skip_line;
   const char *dash;
   xSymbol * symbol;
@@ -3333,8 +3312,8 @@ int load_sym_def(const char *name, FILE *embed_fd)
            int i;
            for(i = 1; i <level; i++) {
              const char *instname = get_tok_value(lcc[i].prop_ptr, "name", 0);
-             my_strcat(1582, &path, instname);
-             my_strcat(1588, &path, ".");
+             my_strcat(_ALLOC_ID_, &path, instname);
+             my_strcat(_ALLOC_ID_, &path, ".");
            }
          }
          if(path) new_size += strlen(path);
@@ -3354,8 +3333,8 @@ int load_sym_def(const char *name, FILE *embed_fd)
            int i;
            for(i = 1; i <level; i++) {
              const char *instname = get_tok_value(lcc[i].prop_ptr, "name", 0);
-             my_strcat(1590, &path, instname);
-             my_strcat(1591, &path, "."); 
+             my_strcat(_ALLOC_ID_, &path, instname);
+             my_strcat(_ALLOC_ID_, &path, "."); 
            }
          } 
          if(path) new_size += strlen(path);
@@ -3377,25 +3356,10 @@ int load_sym_def(const char *name, FILE *embed_fd)
      if(level > 0 && symtype && !strcmp(symtype, "label")) {
        char lay[30];
        my_snprintf(lay, S(lay), " layer=%d", WIRELAYER);
-       my_strcat(1163, &tt[i].prop_ptr, lay);
+       my_strcat(_ALLOC_ID_, &tt[i].prop_ptr, lay);
      }
      dbg(1, "l_s_d(): loaded text : t=%s p=%s\n", tt[i].txt_ptr, tt[i].prop_ptr ? tt[i].prop_ptr : "NULL");
-     my_strdup(_ALLOC_ID_, &tt[i].font, get_tok_value(tt[i].prop_ptr, "font", 0));
-     str = get_tok_value(tt[i].prop_ptr, "hcenter", 0);
-     tt[i].hcenter = strcmp(str, "true")  ? 0 : 1;
-     str = get_tok_value(tt[i].prop_ptr, "vcenter", 0);
-     tt[i].vcenter = strcmp(str, "true")  ? 0 : 1;
-     str = get_tok_value(tt[i].prop_ptr, "layer", 0);
-     if(str[0]) tt[i].layer = atoi(str);
-     else tt[i].layer = -1;
-     tt[i].flags = 0;
-     str = get_tok_value(tt[i].prop_ptr, "slant", 0);
-     tt[i].flags |= strcmp(str, "oblique")  ? 0 : TEXT_OBLIQUE;
-     tt[i].flags |= strcmp(str, "italic")  ? 0 : TEXT_ITALIC;
-     str = get_tok_value(tt[i].prop_ptr, "weight", 0);
-     tt[i].flags |= strcmp(str, "bold")  ? 0 : TEXT_BOLD;
-     str = get_tok_value(tt[i].prop_ptr, "hide", 0);
-     tt[i].flags |= strcmp(str, "true")  ? 0 : HIDE_TEXT;
+     set_text_flags(&tt[i]);
      lastt++;
      break;
     case 'N': /* store wires as lines on layer WIRELAYER. */
@@ -3800,8 +3764,8 @@ void descend_symbol(void)
   /* build up current hierarchy path */
   my_strdup(_ALLOC_ID_,  &str, xctx->inst[n].instname);
   my_strdup(_ALLOC_ID_, &xctx->sch_path[xctx->currsch+1], xctx->sch_path[xctx->currsch]);
-  my_strcat(365, &xctx->sch_path[xctx->currsch+1], str);
-  my_strcat(366, &xctx->sch_path[xctx->currsch+1], ".");
+  my_strcat(_ALLOC_ID_, &xctx->sch_path[xctx->currsch+1], str);
+  my_strcat(_ALLOC_ID_, &xctx->sch_path[xctx->currsch+1], ".");
   xctx->sch_path_hash[xctx->currsch+1] = 0;
 
   my_strdup(_ALLOC_ID_, &xctx->hier_attr[xctx->currsch].prop_ptr,

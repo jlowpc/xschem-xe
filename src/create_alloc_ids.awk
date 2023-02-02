@@ -2,7 +2,6 @@
 # replaces _ALLOC_ID_ in all source files with unique ID for memory tracking
 
 BEGIN{
-
   if(ARGC <= 1) {
      print "Usage: " ENVIRON["_"] " create|reset"
      exit
@@ -22,7 +21,7 @@ BEGIN{
     while(getline < filename) {
       if(create_id == 0) {
         if(!start) f = f "\n"
-        str = gensub(/(my_(malloc|calloc|realloc|free|strdup|strdup2))\([0-9]+,/, "\\1(_ALLOC_ID_,", "G")
+        str = gensub(/(my_(malloc|calloc|realloc|free|strcat|strncat|strdup|strdup2))\([0-9]+,/, "\\1(_ALLOC_ID_,", "G")
         if(str != $0) changed = 1
         f = f str
       } else {
