@@ -86,7 +86,7 @@ def main():
             responseJSON = json.dumps(ret_response)
             print(responseJSON)
             return 0
-      ret_response = {"status_code" : r.status_code}
+      ret_response = {"status_code" : r.status_code, "error" : r.text}
       responseJSON = json.dumps(ret_response)
       print(responseJSON)
       return 1
