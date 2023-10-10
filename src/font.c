@@ -3,7 +3,7 @@
  * This file is part of XSCHEM,
  * a schematic capture and Spice/Vhdl/Verilog netlisting tool for circuit
  * simulation.
- * Copyright (C) 1998-2022 Stefan Frederik Schippers
+ * Copyright (C) 1998-2023 Stefan Frederik Schippers
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,7 +31,7 @@ void compile_font(void)
  my_snprintf(name, S(name), "%s/systemlib/font.sch", tclgetvar("XSCHEM_SHAREDIR"));
  unselect_all(1);
  remove_symbols();
- load_schematic(1,name,0);
+ load_schematic(1, name, 0, 1);
  for(code=0;code<127;code++)
  {
   unselect_all(1);
@@ -41,7 +41,7 @@ void compile_font(void)
   character[code] = my_calloc(_ALLOC_ID_, xctx->lastsel*4+1, sizeof(double));
   character[code][0] = (double)xctx->lastsel;
   dbg(2, "compile_font(): character[%d][]={%.16g",code,character[code][0]);
-  for(i=0;i<xctx->lastsel;i++)
+  for(i=0;i<xctx->lastsel; ++i)
   {
    character[code][i*4+1] =
       xctx->line[xctx->sel_array[i].col][xctx->sel_array[i].n].x1-code*FONTOFFSET;
@@ -60,6 +60,6 @@ void compile_font(void)
  clear_drawing();
  unselect_all(1);
  xctx->currsch = 0;
- my_strncpy(xctx->sch[xctx->currsch], "", S(xctx->sch[xctx->currsch]));
+ my_free(_ALLOC_ID_, &xctx->sch[xctx->currsch]);
 }
 

@@ -1,3 +1,5 @@
 global XEAPI_URL XEAPI_TOKEN
+#set XEAPI_URL {http://localhost:8000}
+#set XEAPI_TOKEN {e3ce4c12a37cfa3c47963e5f816944cb379432b4}
 set XEAPI_URL {https://xeapi.herokuapp.com}
-set XEAPI_TOKEN {FICTITIOUS61cc50cd1fc263cba27eca14c89ebfc0fa53ac9e}
+set XEAPI_TOKEN {79c9ca39f0e598b0ba664827cc4a9ef0ca447cc2}

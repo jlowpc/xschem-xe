@@ -23,7 +23,6 @@ xschem wire  520 -460 760 -460 {lab=A}
 xschem wire  580 -420 760 -420 {lab=B}
 xschem wire  580 -420 580 -350 {lab=B}
 xschem wire  520 -350 580 -350 {lab=B}
-xschem instance ../../../xschem_library/devices/title.sym 160 -30 0 0 {name=l2 author="Stefan"}
 xschem instance ../../../xschem_library/pcb/74ls00.sym 420 -350 0 0 {name=U1:2  risedel=100 falldel=200}
 xschem instance ../../../xschem_library/pcb/74ls00.sym 870 -440 0 0 {name=U1:1  risedel=100 falldel=200}
 xschem instance ../../../xschem_library/devices/lab_pin.sym 970 -440 0 1 {name=p0 lab=OUTPUT_Y}
@@ -77,4 +76,4 @@ xschem instance ../../../xschem_library/devices/lab_pin.sym 40 -350 0 1 {name=l5
 xschem instance ../../../xschem_library/devices/lab_pin.sym 40 -410 0 1 {name=l6 lab=INPUT_E verilog_type=reg}
 xschem instance ../../../xschem_library/devices/lab_pin.sym 40 -390 0 1 {name=l7 lab=INPUT_F verilog_type=reg}
 xschem save
-xschem exit
+xschem exit closewindow

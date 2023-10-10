@@ -1,4 +1,23 @@
-v {xschem version=3.1.0 file_version=1.2
+v {xschem version=3.4.4 file_version=1.2
+*
+* This file is part of XSCHEM,
+* a schematic capture and Spice/Vhdl/Verilog netlisting tool for circuit
+* simulation.
+* Copyright (C) 1998-2023 Stefan Frederik Schippers
+*
+* This program is free software; you can redistribute it and/or modify
+* it under the terms of the GNU General Public License as published by
+* the Free Software Foundation; either version 2 of the License, or
+* (at your option) any later version.
+*
+* This program is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+* GNU General Public License for more details.
+*
+* You should have received a copy of the GNU General Public License
+* along with this program; if not, write to the Free Software
+* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 }
 G {}
 K {type=subcircuit
@@ -51,7 +70,8 @@ dataset=-1}
 P 4 5 560 -700 560 -510 1350 -510 1350 -700 560 -700 {dash=3}
 P 4 5 820 -920 820 -730 1350 -730 1350 -920 820 -920 {dash=3}
 P 4 5 0 -1160 1840 -1160 1840 0 -0 0 0 -1160 {dash=4}
-T {These 2 instances are equivalent} 260 -310 0 0 0.4 0.4 {}
+T {These 2 instances
+are equivalent} 260 -310 0 0 0.4 0.4 {}
 T {Example of using a schematic as a component instance
 instead of the usual symbol. LCC: Local Custom Cell.
 
@@ -81,10 +101,11 @@ N 700 -320 700 -240 {
 lab=#net1}
 N 700 -490 700 -380 {
 lab=ZZ}
-C {vsource.sym} 50 -140 0 0 {name=V1 value="pwl 0 0 1u 0 5u 3"}
+C {vsource.sym} 50 -140 0 0 {name=V1 value="pwl 0 0 1u 0 5u 3"
+savecurrent=1}
 C {lab_pin.sym} 50 -170 0 0 {name=p4 lab=A}
 C {lab_pin.sym} 50 -110 0 0 {name=p5 lab=0}
-C {code_shown.sym} 510 -250 0 0 {name=STIMULI
+C {code_shown.sym} 480 -280 0 0 {name=STIMULI
 only_toplevel=true
 tclcommand="xschem edit_vi_prop"
 value=".control
@@ -154,7 +175,8 @@ value="************************************************
 "}
 C {lab_pin.sym} 240 -190 0 0 {name=p6 lab=A}
 C {lab_pin.sym} 430 -190 0 1 {name=p7 lab=ZZZ}
-C {vsource.sym} 50 -240 0 0 {name=V2 value=3}
+C {vsource.sym} 50 -240 0 0 {name=V2 value=3
+savecurrent=1}
 C {lab_pin.sym} 50 -270 0 0 {name=p8 lab=VDD}
 C {lab_pin.sym} 50 -210 0 0 {name=p9 lab=0}
 C {res.sym} 410 -130 0 0 {name=R1
@@ -163,7 +185,8 @@ footprint=1206
 device=resistor
 m=1}
 C {lab_pin.sym} 410 -80 0 0 {name=p10 lab=HALF}
-C {vsource.sym} 50 -340 0 0 {name=V3 value=1.5}
+C {vsource.sym} 50 -340 0 0 {name=V3 value=1.5
+savecurrent=1}
 C {lab_pin.sym} 50 -370 0 0 {name=p11 lab=HALF}
 C {lab_pin.sym} 50 -310 0 0 {name=p12 lab=0}
 C {lab_pin.sym} 120 -490 0 0 {name=p13 lab=A}

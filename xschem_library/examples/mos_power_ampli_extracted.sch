@@ -1,4 +1,24 @@
-v {xschem version=3.0.0 file_version=1.2 }
+v {xschem version=3.4.4 file_version=1.2
+*
+* This file is part of XSCHEM,
+* a schematic capture and Spice/Vhdl/Verilog netlisting tool for circuit
+* simulation.
+* Copyright (C) 1998-2023 Stefan Frederik Schippers
+*
+* This program is free software; you can redistribute it and/or modify
+* it under the terms of the GNU General Public License as published by
+* the Free Software Foundation; either version 2 of the License, or
+* (at your option) any later version.
+*
+* This program is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+* GNU General Public License for more details.
+*
+* You should have received a copy of the GNU General Public License
+* along with this program; if not, write to the Free Software
+* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+}
 G {}
 K {}
 V {}
@@ -80,3 +100,9 @@ C {title.sym} 160 -30 0 0 {name=l2 author="Stefan Schippers"}
 C {opin.sym} 210 -160 0 0 {name=p5 lab=OUT}
 C {ipin.sym} 140 -210 0 0 {name=p1 lab=MINUS}
 C {ipin.sym} 140 -170 0 0 {name=p4 lab=VSS}
+C {noconn.sym} 140 -210 2 0 {name=l1}
+C {noconn.sym} 140 -190 2 0 {name=l3}
+C {noconn.sym} 140 -170 2 0 {name=l4}
+C {noconn.sym} 140 -150 2 0 {name=l5}
+C {noconn.sym} 140 -130 2 0 {name=l6}
+C {noconn.sym} 210 -160 2 1 {name=l7}

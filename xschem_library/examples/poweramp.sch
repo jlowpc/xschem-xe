@@ -1,4 +1,23 @@
-v {xschem version=3.1.0 file_version=1.2
+v {xschem version=3.4.4 file_version=1.2
+*
+* This file is part of XSCHEM,
+* a schematic capture and Spice/Vhdl/Verilog netlisting tool for circuit
+* simulation.
+* Copyright (C) 1998-2023 Stefan Frederik Schippers
+*
+* This program is free software; you can redistribute it and/or modify
+* it under the terms of the GNU General Public License as published by
+* the Free Software Foundation; either version 2 of the License, or
+* (at your option) any later version.
+*
+* This program is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+* GNU General Public License for more details.
+*
+* You should have received a copy of the GNU General Public License
+* along with this program; if not, write to the Free Software
+* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 }
 G {}
 K {}
@@ -19,8 +38,8 @@ B 2 1200 -500 1880 -310 {flags=graph
 y1 = -0.0059
 y2 = 11
 divy = 6
-x1=0.00853103
-x2=0.00916896
+x1=0.00562909
+x2=0.0165959
 divx=10
 node="i(v.x1.vu)
 i(v.x0.vu)
@@ -33,8 +52,8 @@ B 2 1200 -830 1880 -520 {flags=graph
 y1 = -49
 y2 = 58
 divy = 12
-x1=0.00853103
-x2=0.00916896
+x1=0.00562909
+x2=0.0165959
 divx=10
 node="outp
 outm
@@ -49,8 +68,8 @@ B 2 1200 -1020 1880 -830 {flags=graph
 y1 = 0
 y2 = 830
 divy = 6
-x1=0.00853103
-x2=0.00916896
+x1=0.00562909
+x2=0.0165959
 divx=10
 
 
@@ -63,8 +82,8 @@ B 2 1200 -310 1880 -120 {flags=graph
 y1 = 0
 y2 = 840
 divy = 6
-x1=0.00853103
-x2=0.00916896
+x1=0.00562909
+x2=0.0165959
 divx=10
 
 
@@ -94,25 +113,14 @@ T {actual value
 50u} 80 -290 0 0 0.4 0.4 {}
 T {actual value
 200} 860 -1280 0 0 0.4 0.4 {}
-T {Different type of annotators.} 740 -960 0 0 0.4 0.4 {}
-T {In this annotator (push method) 
-the annotated value is "pushed"
-into it as an attribute by the
-tcl annotate script. This attribute
-is persistent and may be saved to file.} 780 -920 0 0 0.2 0.2 {layer=4}
-T {This annotator uses a "pull"
-method, calling a tcl procedure 
-to return the operating point data.
-This information is not persistent,
-however when used in multiple instances
-each with different bias points these
-annotator dinamically show the correct 
-data.} 780 -830 0 0 0.2 0.2 {layer=4}
 T {Select one or more graphs (and no other objects)
 and use arrow keys to zoom / pan waveforms} 1110 -1120 0 0 0.3 0.3 {}
+T {@spice_get_voltage} 761.875 -786.09375 0 0 0.8 0.8 {layer=15
+name=p9}
+T {@spice_get_voltage} 761.875 -206.09375 0 0 0.8 0.8 {layer=15
+name=p14}
 N 70 -1220 70 -1200 {lab=#net1}
 N 70 -1080 70 -1060 {lab=#net2}
-N 300 -1140 310 -1140 {lab=VSS}
 N 710 -700 860 -700 {lab=OUTM}
 N 500 -1150 570 -1150 {lab=VSS}
 N 570 -1150 570 -1140 {lab=VSS}
@@ -122,9 +130,7 @@ N 610 -1200 700 -1200 {lab=REFP}
 N 260 -1070 260 -1060 {lab=VNN}
 N 260 -1140 260 -1130 {lab=VSS}
 N 70 -1060 100 -1060 {lab=#net2}
-N 300 -1060 310 -1060 {lab=VNN}
 N 70 -1220 100 -1220 {lab=#net1}
-N 300 -1220 310 -1220 {lab=VPP}
 N 260 -1140 270 -1140 {lab=VSS}
 N 240 -1220 270 -1220 {lab=VPP}
 N 240 -1060 260 -1060 {lab=VNN}
@@ -167,21 +173,15 @@ N 350 -890 400 -890 {lab=FBN}
 N 350 -430 400 -430 {lab=FB}
 N 570 -1060 610 -1060 {lab=VSS}
 N 570 -1070 570 -1060 {lab=VSS}
-N 270 -1220 300 -1220 {lab=VPP}
-N 260 -1060 300 -1060 {lab=VNN}
-N 270 -1140 300 -1140 {lab=VSS}
+N 270 -1220 310 -1220 {lab=VPP}
+N 260 -1060 310 -1060 {lab=VNN}
+N 270 -1140 310 -1140 {lab=VSS}
 N 270 -1150 270 -1140 { lab=VSS}
 N 270 -1220 270 -1210 { lab=VPP}
-N 240 -730 240 -680 { lab=VSSX}
-N 240 -270 240 -220 { lab=INX}
-N 400 -920 400 -910 { lab=FBN}
-N 400 -910 400 -890 { lab=FBN}
-N 400 -460 400 -450 { lab=FB}
-N 400 -450 400 -430 { lab=FB}
-N 240 -780 240 -760 { lab=VSSX}
-N 240 -760 240 -730 { lab=VSSX}
-N 240 -320 240 -300 { lab=INX}
-N 240 -300 240 -270 { lab=INX}
+N 400 -920 400 -890 { lab=FBN}
+N 400 -460 400 -430 { lab=FB}
+N 240 -780 240 -680 { lab=VSSX}
+N 240 -320 240 -220 { lab=INX}
 N 160 -1220 180 -1220 {lab=#net3}
 N 160 -1060 180 -1060 {lab=#net4}
 N 70 -1140 180 -1140 {lab=#net5}
@@ -201,8 +201,7 @@ C {res.sym} 130 -1220 1 1 {name=R11 m=1 value=0.3}
 C {res.sym} 130 -1060 1 1 {name=R9 m=1 value=0.3}
 C {res.sym} 550 -920 0 1 {name=R19 m=1 value='100k'
 }
-C {res.sym} 550 -860 0 1 {name=R0 m=1 value="'100k/gain'"
-floaters=true}
+C {res.sym} 550 -860 0 1 {name=R0 m=1 value="'100k/gain'"}
 C {lab_pin.sym} 550 -750 0 0 {name=p108 lab=IN}
 C {mos_power_ampli.sym} 500 -660 0 0 {name=x1}
 C {lab_pin.sym} 350 -640 0 0 {name=p2 lab=VPP}
@@ -256,7 +255,7 @@ C {lab_pin.sym} 870 -1200 0 0 {name=p27 lab=IN_INT}
 C {ammeter.sym} 210 -1220 3 0 {name=vcurrvpp  net_name=true       }
 C {ammeter.sym} 210 -1060 3 0 {name=vcurrvnn  net_name=true       }
 C {ammeter.sym} 210 -1140 3 0 {name=vcurrvss  net_name=true       }
-C {launcher.sym} 780 -120 0 0 {name=h2
+C {launcher.sym} 710 -70 0 0 {name=h2
 descr="Ctrl-Click
 Clear all probes" 
 tclcommand="
@@ -291,11 +290,11 @@ C {ngspice_get_expr.sym} 585 -895 0 0 {name=r1
 node="[ngspice::get_current \{r19[i]\}]"
 descr = current
  }
-C {ngspice_get_expr.sym} 820 -510 2 0 {name=r29 
+C {ngspice_get_expr.sym} 830 -480 2 0 {name=r29 
 node="[format %.4g [expr \{([ngspice::get_voltage outm] - [ngspice::get_voltage outp]) * [ngspice::get_current \{r1[i]\}]\}]] "
 descr = power
 }
-C {launcher.sym} 780 -190 0 0 {name=h3
+C {launcher.sym} 710 -120 0 0 {name=h3
 descr="Load file into gaw" 
 comment="
   This launcher gets raw filename from current schematic using 'xschem get schname'
@@ -316,7 +315,7 @@ C {spice_probe.sym} 670 -1120 0 0 {name=p43 analysis=tran }
 C {spice_probe.sym} 950 -1200 0 0 {name=p44 analysis=tran }
 C {launcher.sym} 1000 -270 0 0 {name=h1
 descr="Backannotate"
-tclcommand="xschem annotate_op"}
+tclcommand="xschem annotate_op $netlist_dir/poweramp_op.raw"}
 C {ngspice_get_expr.sym} 130 -1010 0 0 {name=r19 
 node="[ngspice::get_current \{r9[i]\}]"
 descr = current
@@ -332,7 +331,7 @@ xschem raw_read $netlist_dir/poweramp.raw tran
 C {launcher.sym} 1450 -30 0 0 {name=h6
 descr="Graph Manual page"
 url="https://xschem.sourceforge.io/stefan/xschem_man/graphs.html"}
-C {simulator_commands.sym} 1020 -540 0 0 {name=COMMANDS
+C {simulator_commands.sym} 1020 -450 0 0 {name=COMMANDS
 simulator=ngspice
 only_toplevel=false 
 value="
@@ -360,7 +359,7 @@ save p(r*) p(v*)
 write poweramp.raw
 .endc
 "}
-C {simulator_commands.sym} 1020 -740 0 0 {name=COMMANDS1
+C {simulator_commands.sym} 1020 -650 0 0 {name=COMMANDS1
 simulator=xyce
 only_toplevel=false 
 value="

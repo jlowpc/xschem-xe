@@ -3,7 +3,7 @@
  * This file is part of XSCHEM,
  * a schematic capture and Spice/Vhdl/Verilog netlisting tool for circuit
  * simulation.
- * Copyright (C) 1998-2022 Stefan Frederik Schippers
+ * Copyright (C) 1998-2023 Stefan Frederik Schippers
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -185,22 +185,23 @@ void node_hash_free(void) /* remove the whole hash table  */
  int i;
 
  dbg(2, "node_hash_free(): removing hash table\n");
- for(i=0;i<HASHSIZE;i++)
+ for(i=0;i<HASHSIZE; ++i)
  {
   node_hash_free_entry( xctx->node_table[i] );
   xctx->node_table[i] = NULL;
  }
 }
 
-void traverse_node_hash()
+int traverse_node_hash()
 {
  int i;
+ int err = 0;
  Node_hashentry *entry;
  char str[2048]; /* 20161122 overflow safe */
  int incr_hi;
  
  incr_hi = tclgetboolvar("incr_hilight");
- for(i=0;i<HASHSIZE;i++)
+ for(i=0;i<HASHSIZE; ++i)
  {
   entry = xctx->node_table[i];
   while(entry)
@@ -208,36 +209,36 @@ void traverse_node_hash()
    if( !record_global_node(3, NULL, entry->token)) {
      if(entry->d.out ==0  && entry->d.inout == 0)
      {
-       my_snprintf(str, S(str), "undriven node: %s", entry->token);
+       my_snprintf(str, S(str), "Error: undriven node: %s", entry->token);
        if(!xctx->netlist_count) bus_hilight_hash_lookup(entry->token, xctx->hilight_color, XINSERT_NOREPLACE);
        if(incr_hi) incr_hilight_color();
-       statusmsg(str,2);
-       tcleval("show_infotext"); /* critical error: force ERC window showing */
+       statusmsg(str, 2);
+       err |= 1;
      }
      else if(entry->d.out + entry->d.inout + entry->d.in == 1)
      {
-       my_snprintf(str, S(str), "open net: %s", entry->token);
+       my_snprintf(str, S(str), "Warning: open net: %s", entry->token);
        if(!xctx->netlist_count) bus_hilight_hash_lookup(entry->token, xctx->hilight_color, XINSERT_NOREPLACE);
        if(incr_hi) incr_hilight_color();
        statusmsg(str,2);
      }
      else if(entry->d.out >=2 && entry->d.port>=0)  /*  era d.port>=2   03102001 */
      {
-       my_snprintf(str, S(str), "shorted output node: %s", entry->token);
+       my_snprintf(str, S(str), "Warning: shorted output node: %s", entry->token);
        if(!xctx->netlist_count) bus_hilight_hash_lookup(entry->token, xctx->hilight_color, XINSERT_NOREPLACE);
        if(incr_hi) incr_hilight_color();
        statusmsg(str,2);
      }
      else if(entry->d.in ==0 && entry->d.inout == 0)
      {
-       my_snprintf(str, S(str), "node: %s goes nowhere", entry->token);
+       my_snprintf(str, S(str), "Warning: node: %s goes nowhere", entry->token);
        if(!xctx->netlist_count) bus_hilight_hash_lookup(entry->token, xctx->hilight_color, XINSERT_NOREPLACE);
        if(incr_hi) incr_hilight_color();
        statusmsg(str,2);
      }
      else if(entry->d.out >=2 && entry->d.inout == 0 && entry->d.port>=0)  /*  era d.port>=2   03102001 */
      {
-       my_snprintf(str, S(str), "shorted output node: %s", entry->token);
+       my_snprintf(str, S(str), "Warning: shorted output node: %s", entry->token);
        if(!xctx->netlist_count) bus_hilight_hash_lookup(entry->token, xctx->hilight_color, XINSERT_NOREPLACE);
        if(incr_hi) incr_hilight_color();
        statusmsg(str,2);
@@ -249,6 +250,7 @@ void traverse_node_hash()
    entry = entry->next;
   }
  }
+ return err;
 }
 
 void print_vhdl_signals(FILE *fd)
@@ -259,7 +261,7 @@ void print_vhdl_signals(FILE *fd)
   char *class=NULL;
  
   found=0;
-  for(i=0;i<HASHSIZE;i++) {
+  for(i=0;i<HASHSIZE; ++i) {
     ptr = xctx->node_table[i];
     while(ptr) {
       if(strstr(ptr->token, ".")) {
@@ -323,7 +325,7 @@ void print_verilog_signals(FILE *fd)
  
   dbg(2, " print_verilog_signals(): entering routine\n");
   found=0;
-  for(i=0;i<HASHSIZE;i++) {
+  for(i=0;i<HASHSIZE; ++i) {
     ptr = xctx->node_table[i];
     while(ptr) {
       if(ptr->d.port == 0 ) {

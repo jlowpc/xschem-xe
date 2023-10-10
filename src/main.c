@@ -3,7 +3,7 @@
  * This file is part of XSCHEM,
  * a schematic capture and Spice/Vhdl/Verilog netlisting tool for circuit
  * simulation.
- * Copyright (C) 1998-2022 Stefan Frederik Schippers
+ * Copyright (C) 1998-2023 Stefan Frederik Schippers
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -38,7 +38,7 @@ static void sig_handler(int s){
 
   if(xctx->undo_type == 0 ) { /* on disk undo */
     my_snprintf(emergency_prefix, S(emergency_prefix), "xschem_emergencysave_%s_",
-             skip_dir(xctx->sch[xctx->currsch]));
+             get_cell(xctx->sch[xctx->currsch], 0));
     if( !(emergency_dir = create_tmpdir(emergency_prefix)) ) {
       fprintf(errfp, "xinit(): problems creating emergency save dir\n");
       tcleval("exit");
@@ -54,7 +54,7 @@ static void sig_handler(int s){
 
 
   fprintf(errfp, "\nFATAL: signal %d\n", s);
-  fprintf(errfp, "while editing: %s\n", skip_dir(xctx->sch[xctx->currsch]));
+  fprintf(errfp, "while editing: %s\n", get_cell(xctx->sch[xctx->currsch], 0));
   exit(EXIT_FAILURE);
 }
 
@@ -71,7 +71,7 @@ static void child_handler(int signum)
 int main(int argc, char **argv)
 {
   int i;
-  my_strdup(_ALLOC_ID_, &xschem_executable, argv[0]);
+  Display *display;
   signal(SIGINT, sig_handler);
   signal(SIGSEGV, sig_handler);
   signal(SIGILL, sig_handler);
@@ -83,26 +83,46 @@ int main(int argc, char **argv)
   /* 20181013 check for empty or non existing DISPLAY *before* calling Tk_Main or Tcl_Main */
 #ifdef __unix__
   if(!getenv("DISPLAY") || !getenv("DISPLAY")[0]) has_x=0;
+  else {
+    display = XOpenDisplay(NULL);
+    if(!display) {
+      has_x=0;
+      fprintf(errfp, "\n   X server connection failed, although DISPLAY shell variable is set.\n"
+                     "   A possible reason is that the X server is not running or DISPLAY shell variable\n"
+                     "   is incorrectly set.\n"
+                     "   Starting Xschem in text only mode.\n\n");
+    } else XCloseDisplay(display);
+  }
 #endif
   argc = process_options(argc, argv);
+  my_strdup(_ALLOC_ID_, &xschem_executable, argv[0]);
   if(debug_var>=1 && !has_x)
     fprintf(errfp, "main(): no DISPLAY set, assuming no X available\n");
-  /* if detach is 1 no interactive command shell is created ...
-   * using detach if no windowing exists (has_x == 0) is non sense so do nothing
+  /* if cli_opt_detach is 1 no interactive command shell is created ...
+   * using cli_opt_detach if no windowing exists (has_x == 0) is non sense so do nothing
    */
 
 
 
   cli_opt_argc = argc;
   cli_opt_argv = my_malloc(_ALLOC_ID_, cli_opt_argc * sizeof(char *));
-  for(i = 0; i < cli_opt_argc; i++) {
+  for(i = 0; i < cli_opt_argc; ++i) {
     cli_opt_argv[i] = NULL;
     my_strdup(_ALLOC_ID_, &cli_opt_argv[i], argv[i]);
   }
 
 
-  if(detach) fclose(stdin);
-  if(detach && has_x) {
+  if(cli_opt_detach) {
+    fclose(stdin);
+    #ifdef __unix__
+    freopen("/dev/null", "w", stdout);
+    freopen("/dev/null", "w", stderr);
+    #else
+    freopen("nul", "w", stdout);
+    freopen("nul", "w", stderr);
+    #endif
+  }
+  if(cli_opt_detach && has_x) {
     Tcl_FindExecutable(argv[0]); /* tcl stores executable name for its internal usage */
     interp = Tcl_CreateInterp(); /* create the tcl interpreter */
     Tcl_AppInit(interp); /* execute our init function */

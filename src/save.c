@@ -3,7 +3,7 @@
  * This file is part of XSCHEM,
  * a schematic capture and Spice/Vhdl/Verilog netlisting tool for circuit
  * simulation.
- * Copyright (C) 1998-2022 Stefan Frederik Schippers
+ * Copyright (C) 1998-2023 Stefan Frederik Schippers
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -224,9 +224,9 @@ char *base64_encode(const unsigned char *data, const size_t input_length, size_t
     encoded_data[j++] = b64_enc[(triple >> 12) & 0x3F];
     encoded_data[j++] = b64_enc[(triple >> 6) & 0x3F];
     encoded_data[j++] = b64_enc[(triple) & 0x3F];
-    cnt++;
+    ++cnt;
   }
-  for (i = 0; i < mod_table[input_length % 3]; i++)
+  for (i = 0; i < mod_table[input_length % 3]; ++i)
     encoded_data[*output_length - 1 - i] = '=';
   encoded_data[*output_length] = '\0'; /* add \0 at end so it can be used as a regular char string */
   return encoded_data;
@@ -268,7 +268,7 @@ unsigned char *base64_decode(const char *data, const size_t input_length, size_t
     if(data[i] == '\n' || data[i] == ' '  || data[i] == '\r' || data[i] == '\t') {
       dbg(1, "base64_decode(): white space: i=%d, cnt=%d, j=%d\n", i, cnt, j);
       actual_length--;
-      i++;
+      ++i;
       continue;
     }
     sextet[cnt & 3] = data[i] == '=' ? 0 : b64_dec[(int)data[i]];
@@ -278,8 +278,8 @@ unsigned char *base64_decode(const char *data, const size_t input_length, size_t
       decoded_data[j++] = (unsigned char)((triple >> 8) & 0xFF);
       decoded_data[j++] = (unsigned char)((triple) & 0xFF);
     }
-    cnt++;
-    i++;
+    ++cnt;
+    ++i;
   }
   *output_length = actual_length / 4 * 3 - padding;
   return decoded_data;
@@ -319,34 +319,64 @@ unsigned char *ascii85_encode(const unsigned char *data, const size_t input_leng
     {
       encoded_data[idx]='z';
       *output_length-=4;
-      idx++;
+      ++idx;
       continue;
     }
     encoded_data[idx] = (unsigned char)(val / pow85[4]);
     val = val - encoded_data[idx] * pow85[4];
     encoded_data[idx]=b85_enc[encoded_data[idx]];
-    idx++;
+    ++idx;
     encoded_data[idx] = (unsigned char)(val / pow85[3]);
     val = val - encoded_data[idx] * pow85[3];
     encoded_data[idx]=b85_enc[encoded_data[idx]];
-    idx++;
+    ++idx;
     encoded_data[idx] = (unsigned char)(val / pow85[2]);
     val = val - encoded_data[idx] * pow85[2];
     encoded_data[idx]=b85_enc[encoded_data[idx]];
-    idx++;
+    ++idx;
     encoded_data[idx] = (unsigned char)(val / pow85[1]);
     val = val - encoded_data[idx] * pow85[1];
     encoded_data[idx]=b85_enc[encoded_data[idx]];
-    idx++;
+    ++idx;
     encoded_data[idx] = (unsigned char)val;
     encoded_data[idx]=b85_enc[encoded_data[idx]];
-    idx++;
+    ++idx;
   }
   my_free(_ALLOC_ID_, &paddedData);
   *output_length-=padding;
   encoded_data[*output_length]=0;
   return encoded_data;
 }
+
+/* Non-square 'r x c' matrix 'a' in-place transpose */
+void transpose_matrix(double *a, int r, int c)
+{
+  double t; /* holds element to be replaced, eventually becomes next element to move */
+  int size = r * c - 1;
+  int next; /* location of 't' to be moved */
+  int begin; /* holds start of cycle */
+  int i;
+  double tmp;
+  char *done = my_calloc(_ALLOC_ID_, r, c); /* hash to mark moved elements */
+
+  done[0] = done[size] = 1; /* first and last matrix elements are not moved. */
+  i = 1;
+  while (i < size) {
+    begin = i;
+    t = a[i];
+    do {
+      next = (i * r) % size;
+      SWAP(a[next], t, tmp);
+      dbg(1, "swap %g <--> %g\n", a[next], t);
+      done[i] = 1;
+      i = next;
+    } while (i != begin);
+    /* Get Next Move */
+    for (i = 1; i < size && done[i]; i++) ;
+  }
+  my_free(_ALLOC_ID_, &done);
+}
+
 
 /* SPICE RAWFILE ROUTINES */
 /* read the binary portion of a ngspice raw simulation file
@@ -383,20 +413,20 @@ static void read_binary_block(FILE *fd)
     if(ac) {
       for(v = 0; v < xctx->graph_nvars; v += 2) { /*AC analysis: calculate magnitude */
         if( v == 0 )  /* sweep var */
-          xctx->graph_values[v][offset + p] = (float)sqrt( tmp[v] * tmp[v] + tmp[v + 1] * tmp[v + 1]);
+          xctx->graph_values[v][offset + p] = (SPICE_DATA)sqrt( tmp[v] * tmp[v] + tmp[v + 1] * tmp[v + 1]);
         else /* magnitude */
           /* avoid 0 for dB calculations */
           if(tmp[v] == 0.0 && tmp[v + 1] == 0.0) xctx->graph_values[v][offset + p] = 1e-35f;
           else xctx->graph_values[v][offset + p] = 
-                  (float)sqrt(tmp[v] * tmp[v] + tmp[v + 1] * tmp[v + 1]);
+                  (SPICE_DATA)sqrt(tmp[v] * tmp[v] + tmp[v + 1] * tmp[v + 1]);
         /* AC analysis: calculate phase */
         if(tmp[v] == 0.0 && tmp[v + 1] == 0.0) xctx->graph_values[v + 1] [offset + p] = 0.0; 
         else xctx->graph_values[v + 1] [offset + p] =
-                (float)(atan2(tmp[v + 1], tmp[v]) * 180.0 / XSCH_PI);
+                (SPICE_DATA)(atan2(tmp[v + 1], tmp[v]) * 180.0 / XSCH_PI);
       }
     } 
     else for(v = 0; v < xctx->graph_nvars; v++) {
-      xctx->graph_values[v][offset + p] = (float)tmp[v];
+      xctx->graph_values[v][offset + p] = (SPICE_DATA)tmp[v];
     }
   }
   my_free(_ALLOC_ID_, &tmp);
@@ -429,24 +459,23 @@ static int read_dataset(FILE *fd, const char *type)
 { 
   int variables = 0, i, done_points = 0;
   char *line = NULL, *varname = NULL, *lowerline = NULL;
-  char *ptr;
   int n = 0, done_header = 0, ac = 0;
   int exit_status = 0, npoints, nvars;
   int dbglev=1;
   xctx->graph_sim_type = NULL;
   dbg(1, "read_dataset(): type=%s\n", type ? type : "<NULL>");
-  while((line = my_fgets(fd))) {
+  while((line = my_fgets(fd, NULL))) {
     my_strdup2(_ALLOC_ID_, &lowerline, line);
     strtolower(lowerline);
     /* this is an ASCII raw file. We don't handle this (yet) */
     if(!strcmp(line, "Values:\n") || !strcmp(line, "Values:\r\n")) {
-      free_rawfile(0);
       dbg(dbglev, "read_dataset(): ASCII raw files can not be read. "
              "Use binary format in ngspice (set filetype=binary)\n");
       tcleval("alert_ {read_dataset(): ASCII raw files can not be read. "
              "Use binary format in ngspice (set filetype=binary)}");
       free_rawfile(0);
-      return 0;
+      exit_status = 0;
+      goto read_dataset_done;
     }
     /* after this line comes the binary blob made of nvars * npoints * sizeof(double) bytes */
     if(!strcmp(line, "Binary:\n") || !strcmp(line, "Binary:\r\n")) {
@@ -486,7 +515,8 @@ static int read_dataset(FILE *fd, const char *type)
       else xctx->graph_sim_type = "op";
       dbg(dbglev, "read_dataset(): op graph_sim_type=%s\n", xctx->graph_sim_type ? xctx->graph_sim_type : "<NULL>");
     }
-    else if(!strncmp(line, "Plotname:", 9) && strstr(lowerline, "ac analysis")) {
+    else if(!strncmp(line, "Plotname:", 9) &&
+            ( strstr(lowerline, "ac analysis") || strstr(lowerline, "sp analysis")) ) {
       ac = 1;
       if(xctx->graph_sim_type && strcmp(xctx->graph_sim_type, "ac")) xctx->graph_sim_type = NULL;
       else if(type && !strcmp(type, "ac")) xctx->graph_sim_type = "ac";
@@ -511,7 +541,8 @@ static int read_dataset(FILE *fd, const char *type)
       if(n < 1) {
         dbg(0, "read_dataset(): WAARNING: malformed raw file, aborting\n");
         free_rawfile(0);
-        return 1;
+        exit_status = 0;
+        goto read_dataset_done;
       }
       if(xctx->graph_sim_type) {
         my_realloc(_ALLOC_ID_, &xctx->graph_npoints, (xctx->graph_datasets+1) * sizeof(int));
@@ -531,13 +562,15 @@ static int read_dataset(FILE *fd, const char *type)
       if(xctx->graph_datasets > 0  && xctx->graph_nvars != nvars && xctx->graph_sim_type) {
         dbg(0, "Xschem requires all datasets to be saved with identical and same number of variables\n");
         dbg(0, "There is a mismatch, so this and following datasets will not be read\n");
-        return 1;
+        /* exit_status = 1; */ /* do not set, if something useful has been read keep exit status as is */
+        goto read_dataset_done;
       }
 
       if(n < 1) {
         dbg(0, "read_dataset(): WAARNING: malformed raw file, aborting\n");
         free_rawfile(0);
-        return 1;
+        exit_status = 0;
+        goto read_dataset_done;
       }
       if(xctx->graph_sim_type) {
         xctx->graph_nvars = nvars;
@@ -548,7 +581,8 @@ static int read_dataset(FILE *fd, const char *type)
       if(n < 1) {
         dbg(0, "read_dataset(): WAARNING: malformed raw file, aborting\n");
         free_rawfile(0);
-        return 1;
+        exit_status = 0;
+        goto read_dataset_done;
       }
       if(xctx->graph_sim_type) {
         my_realloc(_ALLOC_ID_, &xctx->graph_npoints, (xctx->graph_datasets+1) * sizeof(int));
@@ -560,6 +594,7 @@ static int read_dataset(FILE *fd, const char *type)
       }
     }
     if(xctx->graph_sim_type && !done_header && variables) {
+      char *ptr;
       /* get the list of lines with index and node name */
       if(!xctx->graph_names) xctx->graph_names = my_calloc(_ALLOC_ID_, xctx->graph_nvars, sizeof(char *));
       my_realloc(_ALLOC_ID_, &varname, strlen(line) + 1) ;
@@ -567,22 +602,23 @@ static int read_dataset(FILE *fd, const char *type)
       if(n < 2) {
         dbg(0, "read_dataset(): WAARNING: malformed raw file, aborting\n");
         free_rawfile(0);
-        return 1;
+        exit_status = 0;
+        goto read_dataset_done;
       }
       strtolower(varname);
       /* transform ':' hierarchy separators (Xyce) to '.' */
       ptr = varname;
       while(*ptr) {
         if(*ptr == ':') *ptr = '.';
-        ptr++;
+        ++ptr;
       }
       if(xctx->graph_sim_type && !strcmp(xctx->graph_sim_type, "ac")) { /* AC */
         my_strcat(_ALLOC_ID_, &xctx->graph_names[i << 1], varname);
         int_hash_lookup(&xctx->graph_raw_table, xctx->graph_names[i << 1], (i << 1), XINSERT_NOREPLACE);
         if(strstr(varname, "v(") == varname || strstr(varname, "i(") == varname)
-          my_mstrcat(664, &xctx->graph_names[(i << 1) + 1], "ph(", varname + 2, NULL);
+          my_mstrcat(_ALLOC_ID_, &xctx->graph_names[(i << 1) + 1], "ph(", varname + 2, NULL);
         else
-          my_mstrcat(540, &xctx->graph_names[(i << 1) + 1], "ph(", varname, ")", NULL);
+          my_mstrcat(_ALLOC_ID_, &xctx->graph_names[(i << 1) + 1], "ph(", varname, ")", NULL);
         int_hash_lookup(&xctx->graph_raw_table, xctx->graph_names[(i << 1) + 1], (i << 1) + 1, XINSERT_NOREPLACE);
       } else {
         my_strcat(_ALLOC_ID_, &xctx->graph_names[i], varname);
@@ -596,10 +632,12 @@ static int read_dataset(FILE *fd, const char *type)
       variables = 1 ;
     }
     my_free(_ALLOC_ID_, &line);
-  } /*  while((line = my_fgets(fd))  */
-  my_free(_ALLOC_ID_, &lowerline);
-  my_free(_ALLOC_ID_, &varname);
-  if(exit_status == 0 && xctx->graph_datasets && xctx->graph_npoints) {
+  } /*  while((line = my_fgets(fd, NULL))  */
+  read_dataset_done:
+  if(line) my_free(_ALLOC_ID_, &line);
+  if(lowerline) my_free(_ALLOC_ID_, &lowerline);
+  if(varname) my_free(_ALLOC_ID_, &varname);
+  if(exit_status == 1 && xctx->graph_datasets && xctx->graph_npoints) {
     dbg(dbglev, "raw file read: datasets=%d, last dataset points=%d, nvars=%d\n",
         xctx->graph_datasets,  xctx->graph_npoints[xctx->graph_datasets-1], xctx->graph_nvars);
   }
@@ -614,7 +652,7 @@ void free_rawfile(int dr)
   dbg(1, "free_rawfile(): clearing data\n");
   if(xctx->graph_names) {
     deleted = 1;
-    for(i = 0 ; i < xctx->graph_nvars; i++) {
+    for(i = 0 ; i < xctx->graph_nvars; ++i) {
       my_free(_ALLOC_ID_, &xctx->graph_names[i]);
     }
     my_free(_ALLOC_ID_, &xctx->graph_names);
@@ -622,7 +660,7 @@ void free_rawfile(int dr)
   if(xctx->graph_values) {
     deleted = 1;
     /* free also extra column for custom data plots */
-    for(i = 0 ; i <= xctx->graph_nvars; i++) {
+    for(i = 0 ; i <= xctx->graph_nvars; ++i) {
       my_free(_ALLOC_ID_, &xctx->graph_values[i]);
     }
     my_free(_ALLOC_ID_, &xctx->graph_values);
@@ -704,11 +742,11 @@ int raw_read(const char *f, const char *type)
 {
   int res = 0;
   FILE *fd;
-  int_hash_init(&xctx->graph_raw_table, HASHSIZE);
   if(xctx->graph_values || xctx->graph_npoints || xctx->graph_nvars || xctx->graph_datasets) {
     dbg(0, "raw_read(): must clear current raw file before loading new\n");
     return res;
   }
+  int_hash_init(&xctx->graph_raw_table, HASHSIZE);
   fd = fopen(f, fopen_read_mode);
   if(fd) {
     if((res = read_dataset(fd, type)) == 1) {
@@ -717,7 +755,7 @@ int raw_read(const char *f, const char *type)
       xctx->graph_raw_level = xctx->currsch;
       tclsetintvar("graph_raw_level",  xctx->currsch);
       xctx->graph_allpoints = 0;
-      for(i = 0; i < xctx->graph_datasets; i++) {
+      for(i = 0; i < xctx->graph_datasets; ++i) {
         xctx->graph_allpoints +=  xctx->graph_npoints[i];
       }
       dbg(0, "Raw file data read: %s\n", f);
@@ -733,6 +771,145 @@ int raw_read(const char *f, const char *type)
   return 0;
 }
 
+/* Read data organized as a table
+ * First line is the header line containing variable names.
+ * data is presented in column format after the header line
+ * First column is sweep (x-axis) variable
+ * Double empty lines start a new dataset
+ * Single empty lines are ignored
+ * Datasets can have different # of lines.
+ * new dataset do not start with a header row.
+ * Lines beginning with '#' are comments and ignored
+ *
+ *    time    var_a   var_b   var_c
+ * # this is a comment, ignored
+ *     0.0     0.0     1.8    0.3
+ *   <single empty line: ignored>
+ *     0.1     0.0     1.5    0.6
+ *     ...     ...     ...    ...
+ *   <empty line>
+ *   <Second empty line: start new dataset>
+ *     0.0     0.0     1.8    0.3
+ *     0.1     0.0     1.5    0.6
+ *     ...     ...     ...    ...
+ *
+ */
+int table_read(const char *f)
+{
+  int res = 0;
+  FILE *fd;
+  int ufd;
+  size_t lines, bytes;
+  char *line = NULL, *line_ptr, *line_save;
+  const char *line_tok;
+  
+  if(xctx->graph_values || xctx->graph_npoints || xctx->graph_nvars || xctx->graph_datasets) {
+    dbg(0, "table_read(): must clear current data file before loading new\n");
+    return 0;
+  }
+  /* quick inspect file and get upper bound of number of data lines */
+  ufd = open(f, O_RDONLY);
+  if(ufd < 0) goto err;
+  count_lines_bytes(ufd, &lines, &bytes);
+  close(ufd);
+
+  int_hash_init(&xctx->graph_raw_table, HASHSIZE);
+  fd = fopen(f, fopen_read_mode);
+  if(fd) {
+    int nline = 0;
+    int field;
+    int npoints = 0;
+    int dataset_points = 0;
+    int prev_prev_empty = 0, prev_empty = 0;
+    res = 1;
+    /* read data line by line */
+    while((line = my_fgets(fd, NULL))) {
+      int empty = 1;
+      if(line[0] == '#') {
+        goto clear;
+      }
+      line_ptr = line;
+      while(*line_ptr) { /* non empty line ? */
+        if(*line_ptr != ' ' && *line_ptr != '\t' && *line_ptr != '\n') empty = 0;
+        line_ptr++;
+      }
+      if(empty) {
+        prev_prev_empty = prev_empty;
+        prev_empty = 1;
+        goto clear;
+      }
+      if(!xctx->graph_datasets || (prev_prev_empty == 1 && prev_empty == 1) ) {
+        xctx->graph_datasets++;
+        my_realloc(_ALLOC_ID_, &xctx->graph_npoints, xctx->graph_datasets * sizeof(int));
+        dataset_points = 0;
+      }
+      prev_prev_empty = prev_empty = 0;
+      line_ptr = line;
+      field = 0;
+      #ifdef __unix__
+      while( (line_tok = strtok_r(line_ptr, " \t\n", &line_save)) ) {
+      #else
+      while( (line_tok = my_strtok_r(line_ptr, " \t\n", "", &line_save)) ) {
+      #endif
+        line_ptr = NULL;
+        /* dbg(1,"%s ", line_tok); */
+        if(nline == 0) { /* header line */
+          my_realloc(_ALLOC_ID_, &xctx->graph_names, (field + 1) * sizeof(char *));
+          xctx->graph_names[field] = NULL;
+          my_strcat(_ALLOC_ID_, &xctx->graph_names[field], line_tok);
+          int_hash_lookup(&xctx->graph_raw_table, xctx->graph_names[field], field, XINSERT_NOREPLACE);
+          xctx->graph_nvars = field + 1;
+        } else { /* data line */
+          if(field >= xctx->graph_nvars) break;
+          #if SPICE_DATA_TYPE == 1 /* float */
+          xctx->graph_values[field][npoints] = (SPICE_DATA)my_atof(line_tok);
+          #else /* double */
+          xctx->graph_values[field][npoints] = (SPICE_DATA)my_atod(line_tok);
+          #endif
+        }
+        ++field;
+      }
+      if(nline) { /* skip header line for npoints calculation*/
+        ++npoints;
+        dataset_points++;
+      }
+      xctx->graph_npoints[xctx->graph_datasets - 1] = dataset_points;
+      /* dbg(1, "\n"); */
+      ++nline;
+      if(nline == 1) {
+        int f;
+        xctx->graph_values = my_calloc(_ALLOC_ID_, xctx->graph_nvars + 1, sizeof(SPICE_DATA *));
+        for(f = 0; f <= xctx->graph_nvars; f++) { /* one extra column for wave expressions */
+          my_realloc(_ALLOC_ID_, &xctx->graph_values[f], lines * sizeof(SPICE_DATA));
+        }
+      }
+      clear:
+      my_free(_ALLOC_ID_, &line);
+    } /* while(line ....) */
+    xctx->graph_allpoints = 0;
+    if(res == 1) {
+      int i;
+      my_strdup2(_ALLOC_ID_, &xctx->graph_raw_schname, xctx->sch[xctx->currsch]);
+      xctx->graph_raw_level = xctx->currsch;
+      tclsetintvar("graph_raw_level",  xctx->currsch);
+      xctx->graph_allpoints = 0;
+      for(i = 0; i < xctx->graph_datasets; ++i) {
+        xctx->graph_allpoints +=  xctx->graph_npoints[i];
+      }
+      dbg(0, "Table file data read: %s\n", f);
+      dbg(0, "points=%d, vars=%d, datasets=%d\n",
+             xctx->graph_allpoints, xctx->graph_nvars, xctx->graph_datasets);
+    } else {
+      dbg(0, "table_read(): no useful data found\n");
+    }
+    
+    fclose(fd);
+    return res;
+  }
+  err:
+  dbg(0, "table_read(): failed to open file %s for reading\n", f);
+  return 0;
+}
 
 /* given a node XXyy try XXyy , xxyy, XXYY, v(XXyy), v(xxyy), V(XXYY) */
 int get_raw_index(const char *node)
@@ -785,14 +962,14 @@ static double ravg_store(int what , int i, int p, int last, double value)
     if(i >= imax) {
       int new_size = i + 4;
       my_realloc(_ALLOC_ID_, &arr, sizeof(double *) * new_size);
-      for(j = imax; j < new_size; j++) {
+      for(j = imax; j < new_size; ++j) {
         arr[j] = my_calloc(_ALLOC_ID_, last + 1, sizeof(double));
       }
       imax = new_size;
     }
     arr[i][p] = value;
   } else if(what == 0 && imax) {
-    for(j = 0; j < imax; j++) {
+    for(j = 0; j < imax; ++j) {
       my_free(_ALLOC_ID_, &arr[j]);
     }
     my_free(_ALLOC_ID_, &arr);
@@ -847,7 +1024,7 @@ int plot_raw_custom_data(int sweep_idx, int first, int last, const char *expr)
   const char *n;
   char *endptr, *ntok_copy = NULL, *ntok_save, *ntok_ptr;
   Stack1 stack1[STACKMAX];
-  double stack2[STACKMAX], tmp, result, avg;
+  double stack2[STACKMAX]={0}, tmp, result, avg;
   int stackptr1 = 0, stackptr2 = 0;
   SPICE_DATA *y = xctx->graph_values[xctx->graph_nvars]; /* custom plot data column */
   SPICE_DATA *x = xctx->graph_values[sweep_idx];
@@ -925,7 +1102,7 @@ int plot_raw_custom_data(int sweep_idx, int first, int last, const char *expr)
   my_free(_ALLOC_ID_, &ntok_copy);
   for(p = first ; p <= last; p++) {
     stackptr2 = 0;
-    for(i = 0; i < stackptr1; i++) {
+    for(i = 0; i < stackptr1; ++i) {
       if(stack1[i].i == NUMBER) { /* number */
         stack2[stackptr2++] = stack1[i].d;
       }
@@ -1189,8 +1366,8 @@ int plot_raw_custom_data(int sweep_idx, int first, int last, const char *expr)
             break;
         } /* switch(...) */
       } /* if(stackptr2 > 0) */
-    } /* for(i = 0; i < stackptr1; i++) */
-    y[p] = (float)stack2[0];
+    } /* for(i = 0; i < stackptr1; ++i) */
+    y[p] = (SPICE_DATA)stack2[0];
   } /* for(p = first ...) */
   ravg_store(0, 0, 0, 0, 0.0); /* clear data */
   return xctx->graph_nvars;
@@ -1205,7 +1382,7 @@ double get_raw_value(int dataset, int idx, int point)
       if(point < xctx->graph_allpoints)
         return xctx->graph_values[idx][point];
     } else {
-      for(i = 0; i < dataset; i++) {
+      for(i = 0; i < dataset; ++i) {
         ofs += xctx->graph_npoints[i];
       }
       if(ofs + point < xctx->graph_allpoints) {
@@ -1248,7 +1425,7 @@ void read_record(int firstchar, FILE *fp, int dbg_level)
     if(c == '{') {
       ungetc(c, fp);
       load_ascii_string(&str, fp);
-      dbg(dbg_level, "{%s}", str);
+      dbg(dbg_level, "{%s}", str ? str : "");
     } else {
       dbg(dbg_level, "%c", c);
     }
@@ -1298,7 +1475,7 @@ static const char *random_string(const char *prefix)
   prefix_size = strlen(prefix);
   str[0]='/';
   memcpy(str+1, prefix, prefix_size);
-  for(i=prefix_size+1; i < prefix_size + random_size+1; i++) {
+  for(i=prefix_size+1; i < prefix_size + random_size+1; ++i) {
     idx = rand()%(sizeof(charset)-1);
     str[i] = charset[idx];
   }
@@ -1319,7 +1496,7 @@ const char *create_tmpdir(char *prefix)
   static char str[PATH_MAX]; /* safe even with multiple schematics if immediately copied */
   int i;
   struct stat buf;
-  for(i=0; i<5;i++) {
+  for(i=0; i<5; ++i) {
     my_snprintf(str, S(str), "%s%s", tclgetvar("XSCHEM_TMP_DIR"), random_string(prefix));
     if(stat(str, &buf) && !mkdir(str, 0700) ) { /* dir must not exist */
       dbg(1, "create_tmpdir(): created dir: %s\n", str);
@@ -1345,7 +1522,7 @@ FILE *open_tmpfile(char *prefix, char **filename)
   int i;
   FILE *fd;
   struct stat buf;
-  for(i=0; i<5;i++) {
+  for(i=0; i<5; ++i) {
     my_snprintf(str, S(str), "%s%s", tclgetvar("XSCHEM_TMP_DIR"), random_string(prefix));
     *filename = str;
     if(stat(str, &buf) && (fd = fopen(str, "w")) ) { /* file must not exist */
@@ -1363,7 +1540,7 @@ void updatebbox(int count, xRect *boundbox, xRect *tmp)
 {
  RECTORDER(tmp->x1, tmp->y1, tmp->x2, tmp->y2);
  /* dbg(1, "updatebbox(): count=%d, tmp = %g %g %g %g\n",
-         count, tmp->x1, tmp->y1, tmp->x2, tmp->y2); */
+  *       count, tmp->x1, tmp->y1, tmp->x2, tmp->y2); */
  if(count==1)  *boundbox = *tmp;
  else
  {
@@ -1417,40 +1594,40 @@ static void save_embedded_symbol(xSymbol *s, FILE *fd)
   fprintf(fd, "V {}\n");
   fprintf(fd, "S {}\n");
   fprintf(fd, "E {}\n");
-  for(c=0;c<cadlayers;c++)
+  for(c=0;c<cadlayers; ++c)
   {
    xLine *ptr;
    ptr=s->line[c];
-   for(i=0;i<s->lines[c];i++)
+   for(i=0;i<s->lines[c]; ++i)
    {
     fprintf(fd, "L %d %.16g %.16g %.16g %.16g ", c,ptr[i].x1, ptr[i].y1,ptr[i].x2,
      ptr[i].y2 );
     save_ascii_string(ptr[i].prop_ptr,fd, 1);
    }
   }
-  for(c=0;c<cadlayers;c++)
+  for(c=0;c<cadlayers; ++c)
   {
    xRect *ptr;
    ptr=s->rect[c];
-   for(i=0;i<s->rects[c];i++)
+   for(i=0;i<s->rects[c]; ++i)
    {
     fprintf(fd, "B %d %.16g %.16g %.16g %.16g ", c,ptr[i].x1, ptr[i].y1,ptr[i].x2,
      ptr[i].y2);
     save_ascii_string(ptr[i].prop_ptr,fd, 1);
    }
   }
-  for(c=0;c<cadlayers;c++)
+  for(c=0;c<cadlayers; ++c)
   {
    xArc *ptr;
    ptr=s->arc[c];
-   for(i=0;i<s->arcs[c];i++)
+   for(i=0;i<s->arcs[c]; ++i)
    {
     fprintf(fd, "A %d %.16g %.16g %.16g %.16g %.16g ", c,ptr[i].x, ptr[i].y,ptr[i].r,
      ptr[i].a, ptr[i].b);
     save_ascii_string(ptr[i].prop_ptr,fd, 1);
    }
   }
-  for(i=0;i<s->texts;i++)
+  for(i=0;i<s->texts; ++i)
   {
    xText *ptr;
    ptr = s->text;
@@ -1461,14 +1638,14 @@ static void save_embedded_symbol(xSymbol *s, FILE *fd)
      ptr[i].yscale);
    save_ascii_string(ptr[i].prop_ptr,fd, 1);
   }
-  for(c=0;c<cadlayers;c++)
+  for(c=0;c<cadlayers; ++c)
   {
    xPoly *ptr;
    ptr=s->poly[c];
-   for(i=0;i<s->polygons[c];i++)
+   for(i=0;i<s->polygons[c]; ++i)
    {
     fprintf(fd, "P %d %d ", c,ptr[i].points);
-    for(j=0;j<ptr[i].points;j++) {
+    for(j=0;j<ptr[i].points; ++j) {
       fprintf(fd, "%.16g %.16g ", ptr[i].x[j], ptr[i].y[j]);
     }
     save_ascii_string(ptr[i].prop_ptr,fd, 1);
@@ -1483,13 +1660,19 @@ static void save_inst(FILE *fd, int select_only)
  char *tmp = NULL;
  int *embedded_saved = NULL;
 
+ dbg(1, "save_inst(): saving instances\n");
  inst=xctx->inst;
  oldversion = !strcmp(xctx->file_version, "1.0");
- for(i=0;i<xctx->symbols;i++) xctx->sym[i].flags &=~EMBEDDED;
  embedded_saved = my_calloc(_ALLOC_ID_, xctx->symbols, sizeof(int));
- for(i=0;i<xctx->instances;i++)
+ for(i=0;i<xctx->instances; ++i)
  {
-   if (select_only && inst[i].sel != SELECTED) continue;
+  int ptr = inst[i].ptr;
+  dbg(1, "save_inst() %s: instance %d, name=%s\n", xctx->current_name, i, inst[i].name);
+  if(ptr == -1) {
+    dbg(0, "save_inst(): WARNING: inst %d .ptr = -1 ... current_name=%s\n", i, xctx->current_name);
+  }
+  if (select_only && inst[i].sel != SELECTED) continue;
+  if(ptr >=0) xctx->sym[ptr].flags &=~EMBEDDED;
   fputs("C ", fd);
   if(oldversion) {
     my_strdup2(_ALLOC_ID_, &tmp, add_ext(inst[i].name, ".sym"));
@@ -1500,12 +1683,12 @@ static void save_inst(FILE *fd, int select_only)
   }
   fprintf(fd, " %.16g %.16g %hd %hd ",inst[i].x0, inst[i].y0, inst[i].rot, inst[i].flip );
   save_ascii_string(inst[i].prop_ptr,fd, 1);
-  if( embedded_saved && !embedded_saved[inst[i].ptr] && inst[i].embed) {
-    embedded_saved[inst[i].ptr] = 1;
+  if(ptr >= 0 && embedded_saved && !embedded_saved[ptr] && inst[i].embed) {
+    embedded_saved[ptr] = 1;
     fprintf(fd, "[\n");
-    save_embedded_symbol( xctx->sym+inst[i].ptr, fd);
+    save_embedded_symbol( xctx->sym+ptr, fd);
     fprintf(fd, "]\n");
-    xctx->sym[inst[i].ptr].flags |= EMBEDDED;
+    xctx->sym[ptr].flags |= EMBEDDED;
   }
  }
  my_free(_ALLOC_ID_, &embedded_saved);
@@ -1517,7 +1700,7 @@ static void save_wire(FILE *fd, int select_only)
  xWire *ptr;
 
  ptr=xctx->wire;
- for(i=0;i<xctx->wires;i++)
+ for(i=0;i<xctx->wires; ++i)
  {
    if (select_only && ptr[i].sel != SELECTED) continue;
   fprintf(fd, "N %.16g %.16g %.16g %.16g ",ptr[i].x1, ptr[i].y1, ptr[i].x2,
@@ -1531,7 +1714,7 @@ static void save_text(FILE *fd, int select_only)
  int i;
  xText *ptr;
  ptr=xctx->text;
- for(i=0;i<xctx->texts;i++)
+ for(i=0;i<xctx->texts; ++i)
  {
    if (select_only && ptr[i].sel != SELECTED) continue;
   fprintf(fd, "T ");
@@ -1547,14 +1730,14 @@ static void save_polygon(FILE *fd, int select_only)
 {
     int c, i, j;
     xPoly *ptr;
-    for(c=0;c<cadlayers;c++)
+    for(c=0;c<cadlayers; ++c)
     {
      ptr=xctx->poly[c];
-     for(i=0;i<xctx->polygons[c];i++)
+     for(i=0;i<xctx->polygons[c]; ++i)
      {
        if (select_only && ptr[i].sel != SELECTED) continue;
       fprintf(fd, "P %d %d ", c,ptr[i].points);
-      for(j=0;j<ptr[i].points;j++) {
+      for(j=0;j<ptr[i].points; ++j) {
         fprintf(fd, "%.16g %.16g ", ptr[i].x[j], ptr[i].y[j]);
       }
       save_ascii_string(ptr[i].prop_ptr,fd, 1);
@@ -1566,10 +1749,10 @@ static void save_arc(FILE *fd, int select_only)
 {
     int c, i;
     xArc *ptr;
-    for(c=0;c<cadlayers;c++)
+    for(c=0;c<cadlayers; ++c)
     {
      ptr=xctx->arc[c];
-     for(i=0;i<xctx->arcs[c];i++)
+     for(i=0;i<xctx->arcs[c]; ++i)
      {
        if (select_only && ptr[i].sel != SELECTED) continue;
       fprintf(fd, "A %d %.16g %.16g %.16g %.16g %.16g ", c,ptr[i].x, ptr[i].y,ptr[i].r,
@@ -1583,10 +1766,10 @@ static void save_box(FILE *fd, int select_only)
 {
     int c, i;
     xRect *ptr;
-    for(c=0;c<cadlayers;c++)
+    for(c=0;c<cadlayers; ++c)
     {
      ptr=xctx->rect[c];
-     for(i=0;i<xctx->rects[c];i++)
+     for(i=0;i<xctx->rects[c]; ++i)
      {
        if (select_only && ptr[i].sel != SELECTED) continue;
       fprintf(fd, "B %d %.16g %.16g %.16g %.16g ", c,ptr[i].x1, ptr[i].y1,ptr[i].x2,
@@ -1600,10 +1783,10 @@ static void save_line(FILE *fd, int select_only)
 {
     int c, i;
     xLine *ptr;
-    for(c=0;c<cadlayers;c++)
+    for(c=0;c<cadlayers; ++c)
     {
      ptr=xctx->line[c];
-     for(i=0;i<xctx->lines[c];i++)
+     for(i=0;i<xctx->lines[c]; ++i)
      {
        if (select_only && ptr[i].sel != SELECTED) continue;
       fprintf(fd, "L %d %.16g %.16g %.16g %.16g ", c,ptr[i].x1, ptr[i].y1,ptr[i].x2,
@@ -1682,6 +1865,8 @@ static void load_text(FILE *fd)
   }
   xctx->text[i].prop_ptr=NULL;
   xctx->text[i].font=NULL;
+  xctx->text[i].floater_instname=NULL;
+  xctx->text[i].floater_ptr=NULL;
   xctx->text[i].sel=0;
   load_ascii_string(&xctx->text[i].prop_ptr,fd);
   set_text_flags(&xctx->text[i]);
@@ -1706,7 +1891,7 @@ static void load_wire(FILE *fd)
     ptr[i].end1 = ptr[i].end2 = ptr[i].bus = ptr[i].sel = 0;
     load_ascii_string( &ptr[i].prop_ptr, fd);
     ORDER(ptr[i].x1, ptr[i].y1, ptr[i].x2, ptr[i].y2);
-    if(!strcmp(get_tok_value(ptr[i].prop_ptr, "bus", 0), "true") ) ptr[i].bus = 1;
+    if(!strboolcmp(get_tok_value(ptr[i].prop_ptr, "bus", 0), "true") ) ptr[i].bus = 1;
     ptr[i].node = NULL;
     xctx->wires++;
 }
@@ -1742,22 +1927,18 @@ static void load_inst(int k, FILE *fd)
       read_line(fd, 0);
     } else {
       xctx->inst[i].color=-10000;
-      xctx->inst[i].flags=0;
       xctx->inst[i].sel=0;
       xctx->inst[i].ptr=-1; /*04112003 was 0 */
-      xctx->inst[i].prop_ptr=NULL;
       xctx->inst[i].instname=NULL;
+      xctx->inst[i].prop_ptr=NULL;
       xctx->inst[i].lab=NULL; /* assigned in link_symbols_to_instances */
       xctx->inst[i].node=NULL;
       load_ascii_string(&prop_ptr,fd);
       my_strdup(_ALLOC_ID_, &xctx->inst[i].prop_ptr, prop_ptr);
-      my_strdup2(_ALLOC_ID_, &xctx->inst[i].instname, get_tok_value(xctx->inst[i].prop_ptr, "name", 0));
-      if(!strcmp(get_tok_value(xctx->inst[i].prop_ptr,"highlight",0), "true"))
-        xctx->inst[i].flags |= HILIGHT_CONN;
 
+      set_inst_flags(&xctx->inst[i]);
       dbg(2, "load_inst(): n=%d name=%s prop=%s\n", i, xctx->inst[i].name? xctx->inst[i].name:"<NULL>",
                xctx->inst[i].prop_ptr? xctx->inst[i].prop_ptr:"<NULL>");
-      xctx->inst[i].embed = !strcmp(get_tok_value(xctx->inst[i].prop_ptr, "embed", 2), "true");
       xctx->instances++;
     }
     my_free(_ALLOC_ID_, &prop_ptr);
@@ -1792,7 +1973,7 @@ static void load_polygon(FILE *fd)
     ptr[i].selected_point= my_calloc(_ALLOC_ID_, points, sizeof(unsigned short));
     ptr[i].points=points;
     ptr[i].sel=0;
-    for(j=0;j<points;j++) {
+    for(j=0;j<points; ++j) {
       if(fscanf(fd, "%lf %lf ",&(ptr[i].x[j]), &(ptr[i].y[j]))<2) {
         fprintf(errfp,"WARNING: missing fields for POLYGON points, ignoring.\n");
         my_free(_ALLOC_ID_, &ptr[i].x);
@@ -1803,7 +1984,7 @@ static void load_polygon(FILE *fd)
       }
     }
     load_ascii_string( &ptr[i].prop_ptr, fd);
-    if( !strcmp(get_tok_value(ptr[i].prop_ptr,"fill",0),"true") )
+    if( !strboolcmp(get_tok_value(ptr[i].prop_ptr,"fill",0),"true") )
       ptr[i].fill =1;
     else
       ptr[i].fill =0;
@@ -1843,7 +2024,7 @@ static void load_arc(FILE *fd)
     ptr[i].prop_ptr=NULL;
     ptr[i].sel=0;
     load_ascii_string(&ptr[i].prop_ptr, fd);
-    if( !strcmp(get_tok_value(ptr[i].prop_ptr,"fill",0),"true") )
+    if( !strboolcmp(get_tok_value(ptr[i].prop_ptr,"fill",0),"true") )
       ptr[i].fill =1;
     else
       ptr[i].fill =0;
@@ -1884,7 +2065,7 @@ static void load_box(FILE *fd)
     ptr[i].prop_ptr=NULL;
     ptr[i].sel=0;
     load_ascii_string( &ptr[i].prop_ptr, fd);
-    if( !strcmp(get_tok_value(ptr[i].prop_ptr,"fill",0),"false") )
+    if( !strboolcmp(get_tok_value(ptr[i].prop_ptr,"fill",0),"false") )
       ptr[i].fill =0;
     else
       ptr[i].fill =1;
@@ -1925,7 +2106,7 @@ static void load_line(FILE *fd)
     ptr[i].sel=0;
     load_ascii_string( &ptr[i].prop_ptr, fd);
 
-    if(!strcmp(get_tok_value(ptr[i].prop_ptr, "bus", 0), "true") )
+    if(!strboolcmp(get_tok_value(ptr[i].prop_ptr, "bus", 0), "true") )
       ptr[i].bus = 1;
     else
       ptr[i].bus = 0;
@@ -2027,7 +2208,7 @@ static void read_xschem_file(FILE *fd)
       if(xctx->inst[xctx->instances-1].name) {
         my_snprintf(name_embedded, S(name_embedded), "%s/.xschem_embedded_%d_%s",
                     tclgetvar("XSCHEM_TMP_DIR"), getpid(), get_cell_w_ext(xctx->inst[xctx->instances-1].name, 0));
-        for(i=0;i<xctx->symbols;i++)
+        for(i=0;i<xctx->symbols; ++i)
         {
          dbg(1, "read_xschem_file(): sym[i].name=%s, name_embedded=%s\n", xctx->sym[i].name, name_embedded);
          dbg(1, "read_xschem_file(): inst[instances-1].name=%s\n", xctx->inst[xctx->instances-1].name);
@@ -2083,6 +2264,7 @@ static void read_xschem_file(FILE *fd)
       dbg(1, "read_xschem_file(): no file_version, assuming file_version=%s\n", xctx->file_version);
     }
   }
+  int_hash_free(&xctx->floater_inst_table);
 }
 
 void load_ascii_string(char **ptr, FILE *fd)
@@ -2116,7 +2298,7 @@ void load_ascii_string(char **ptr, FILE *fd)
     }
     str[i]=(char)c;
     escape = 0;
-    i++;
+    ++i;
   } else if(c=='{') begin=1;
  }
  dbg(2, "load_ascii_string(): string read=%s\n",str? str:"<NULL>");
@@ -2181,28 +2363,35 @@ static void make_schematic(const char *schname)
 int save_schematic(const char *schname) /* 20171020 added return value */
 {
   FILE *fd;
-  char name[PATH_MAX]; /* overflow safe 20161122 */
   struct stat buf;
   xRect *rect;
   int rects;
 
-  if( strcmp(schname,"") ) my_strncpy(xctx->sch[xctx->currsch], schname, S(xctx->sch[xctx->currsch]));
-  else return 0;
-  dbg(1, "save_schematic(): currsch=%d name=%s\n",xctx->currsch, schname);
-  dbg(1, "save_schematic(): sch[currsch]=%s\n", xctx->sch[xctx->currsch]);
-  /* dbg(1, "save_schematic(): abs_sym_path=%s\n", abs_sym_path(xctx->sch[xctx->currsch], "")); */
-  my_strncpy(name, xctx->sch[xctx->currsch], S(name));
-  set_modify(-1);
-  if(!stat(name, &buf)) {
-    if(xctx->time_last_modify && xctx->time_last_modify != buf.st_mtime) {
-      tclvareval("ask_save \"Schematic file: ", name,
-          "\nHas been changed since opening.\nSave anyway?\" 0", NULL);
-      if(strcmp(tclresult(), "yes") ) return 0;
+  if(!schname || !strcmp(schname, "")) return 0;
+
+  dbg(1, "save_schematic(): currsch=%d schname=%s\n",xctx->currsch, schname);
+  dbg(1, "save_schematic(): sch[currsch]=%s\n", xctx->sch[xctx->currsch] ? xctx->sch[xctx->currsch] : "NULL");
+
+  if(!xctx->sch[xctx->currsch]) { /* no current schematic name -> assign new name */
+    my_strdup2(_ALLOC_ID_, &xctx->sch[xctx->currsch], schname);
+    set_modify(-1); /* set title to new filename */
+  }
+  else if(strcmp(schname, xctx->sch[xctx->currsch])) { /* user asks to save to a different filename */
+    my_strdup2(_ALLOC_ID_, &xctx->sch[xctx->currsch], schname);
+    set_modify(-1); /* set title to new filename */
+  }
+  else { /* user asks to save to same filename */
+    if(!stat(xctx->sch[xctx->currsch], &buf)) {
+      if(xctx->time_last_modify && xctx->time_last_modify != buf.st_mtime) {
+        tclvareval("ask_save_optional \"Schematic file: ", xctx->sch[xctx->currsch],
+            "\nHas been changed since opening.\nSave anyway?\" 0", NULL);
+        if(strcmp(tclresult(), "yes") ) return 0;
+      }
     }
   }
-  if(!(fd=fopen(name,"w")))
+  if(!(fd=fopen(schname,"w")))
   {
-    fprintf(errfp, "save_schematic(): problems opening file %s \n",name);
+    fprintf(errfp, "save_schematic(): problems opening file %s \n",schname);
     tcleval("alert_ {file opening for write failed!} {}");
     return 0;
   }
@@ -2213,10 +2402,10 @@ int save_schematic(const char *schname) /* 20171020 added return value */
   write_xschem_file(fd);
   fclose(fd);
   /* update time stamp */
-  if(!stat(name, &buf)) {
+  if(!stat(schname, &buf)) {
     xctx->time_last_modify =  buf.st_mtime;
   }
-  my_strncpy(xctx->current_name, rel_sym_path(name), S(xctx->current_name));
+  my_strncpy(xctx->current_name, rel_sym_path(schname), S(xctx->current_name));
   /* why clear all these? */
   /* 
    * xctx->prep_hi_structs=0;
@@ -2230,41 +2419,46 @@ int save_schematic(const char *schname) /* 20171020 added return value */
   return 1;
 }
 
-/* from == -1 --> link symbols to all instances, from 0 to instances-1 */
-void link_symbols_to_instances(int from) /* from >= 0 : linking symbols from pasted schematic / clipboard */
+/* from == -1: link symbols to all instances, from 0 to instances-1
+ * from >=  0: link symbols from pasted schematic / clipboard */
+void link_symbols_to_instances(int from)
 {
   int cond, i, merge = 1;
   char *type=NULL;
+  char *name = NULL;
 
   if(from < 0 ) {
     from = 0;
     merge = 0;
   }
-  for(i = from; i < xctx->instances; i++) {
+  for(i = from; i < xctx->instances; ++i) {
     dbg(2, "link_symbols_to_instances(): inst=%d\n", i);
     dbg(2, "link_symbols_to_instances(): matching inst %d name=%s \n",i, xctx->inst[i].name);
     dbg(2, "link_symbols_to_instances(): -------\n");
-    xctx->inst[i].ptr = match_symbol(xctx->inst[i].name);
+    my_strdup2(_ALLOC_ID_, &name, tcl_hook2(translate(i, xctx->inst[i].name)));
+    xctx->inst[i].ptr = match_symbol(name);
+    my_free(_ALLOC_ID_, &name);
   }
-  for(i = from; i < xctx->instances; i++) {
+  for(i = from; i < xctx->instances; ++i) {
     type=xctx->sym[xctx->inst[i].ptr].type;
-    cond= !type || !IS_LABEL_SH_OR_PIN(type);
-    if(cond) xctx->inst[i].flags|=2; /* ordinary symbol */
-    else {
-      xctx->inst[i].flags &=~2; /* label or pin */
-      my_strdup(_ALLOC_ID_, &xctx->inst[i].lab, get_tok_value(xctx->inst[i].prop_ptr,"lab",0));
+    cond= type && IS_LABEL_SH_OR_PIN(type);
+    if(cond) {
+      xctx->inst[i].flags |= PIN_OR_LABEL; /* label or pin */
+      my_strdup2(_ALLOC_ID_, &xctx->inst[i].lab, get_tok_value(xctx->inst[i].prop_ptr,"lab",0));
     }
+    else xctx->inst[i].flags &= ~PIN_OR_LABEL; /* ordinary symbol */
   }
   /* symbol_bbox() might call translate() that might call prepare_netlist_structs() that 
    * needs .lab field set above, so this must be done last */
-  for(i = from; i < xctx->instances; i++) {
+  for(i = from; i < xctx->instances; ++i) {
     symbol_bbox(i, &xctx->inst[i].x1, &xctx->inst[i].y1, &xctx->inst[i].x2, &xctx->inst[i].y2);
     if(merge) select_element(i,SELECTED,1, 0); /* leave elements selected if a paste/copy from windows is done */
   }
 }
 
-/* ALWAYS use absolute pathname for fname!!! */
-void load_schematic(int load_symbols, const char *fname, int reset_undo) /* 20150327 added reset_undo */
+/* ALWAYS use absolute pathname for fname!!!
+ * alert = 0 --> do not show alert if file not existing */
+void load_schematic(int load_symbols, const char *fname, int reset_undo, int alert)
 {
   FILE *fd;
   char name[PATH_MAX];
@@ -2280,49 +2474,53 @@ void load_schematic(int load_symbols, const char *fname, int reset_undo) /* 2015
   if(reset_undo) xctx->prev_set_modify = -1; /* will force set_modify(0) to set window title */
   else  xctx->prev_set_modify = 0;           /* will prevent set_modify(0) from setting window title */
   if(fname && fname[0]) {
+    int generator = 0;
+    if(is_generator(fname)) generator = 1;
     my_strncpy(name, fname, S(name));
+    dbg(1, "load_schematic(): fname=%s\n", fname);
     /* remote web object specified */
-    if(strstr(fname , "http://") == fname ||
-       strstr(fname , "https://") == fname) {
+    if(is_from_web(fname)) {
       /* download into ${XSCHEM_TMP_DIR}/xschem_web */
       tclvareval("download_url {", fname, "}", NULL);
       /* build local file name of downloaded object */
       my_snprintf(name, S(name), "%s/xschem_web/%s",  tclgetvar("XSCHEM_TMP_DIR"), get_cell_w_ext(fname, 0));
       /* build current_dirname by stripping off last filename from url */
-      my_snprintf(msg, S(msg), "regsub {/\\.$} [get_directory {%s}] {}", fname);
+      my_snprintf(msg, S(msg), "get_directory {%s}", fname);
       my_strncpy(xctx->current_dirname,  tcleval(msg), S(xctx->current_dirname));
       /* local file name */
-      my_strncpy(xctx->sch[xctx->currsch], name, S(xctx->sch[xctx->currsch]));
+      my_strdup2(_ALLOC_ID_, &xctx->sch[xctx->currsch], name);
       /* local relative reference */
       my_strncpy(xctx->current_name, rel_sym_path(name), S(xctx->current_name));
 
     /* local filename specified but coming (push, pop) from web object ... */
-    } else if((strstr(xctx->current_dirname, "http://") == xctx->current_dirname ||
-               strstr(xctx->current_dirname, "https://") == xctx->current_dirname)) {
+    } else if(is_from_web(xctx->current_dirname)) {
       /* ... but not local file from web download --> reset current_dirname */
       char sympath[PATH_MAX];
       my_snprintf(sympath, S(sympath), "%s/xschem_web",  tclgetvar("XSCHEM_TMP_DIR"));
-      if(strstr(fname, sympath) != fname) {
-        my_snprintf(msg, S(msg), "regsub {/\\.$} [get_directory {%s}] {}", fname);
+      /* fname does not begin with $XSCHEM_TMP_DIR/xschem_web and fname does not exist */
+
+      if(strstr(fname, sympath) != fname /* && stat(fname, &buf)*/) { 
+        my_snprintf(msg, S(msg), "get_directory {%s}", fname);
         my_strncpy(xctx->current_dirname,  tcleval(msg), S(xctx->current_dirname));
-      }
+      } 
+
       /* local file name */
-      my_strncpy(xctx->sch[xctx->currsch], fname, S(xctx->sch[xctx->currsch]));
+      my_strdup2(_ALLOC_ID_, &xctx->sch[xctx->currsch], fname);
       /* local relative reference */
       my_strncpy(xctx->current_name, rel_sym_path(fname), S(xctx->current_name));
-    /* local file specified and not coming from web url */
-    } else {
-      /* if name is /some/path/.  remove /. at end */
-      my_snprintf(msg, S(msg), "regsub {/\\.$} [get_directory {%s}] {}", fname);
+    } else { /* local file specified and not coming from web url */
+      /* build current_dirname by stripping off last filename from url */
+      my_snprintf(msg, S(msg), "get_directory {%s}", fname);
       my_strncpy(xctx->current_dirname,  tcleval(msg), S(xctx->current_dirname));
       /* local file name */
-      my_strncpy(xctx->sch[xctx->currsch], fname, S(xctx->sch[xctx->currsch]));
+      my_strdup2(_ALLOC_ID_, &xctx->sch[xctx->currsch], fname);
       /* local relative reference */
       my_strncpy(xctx->current_name, rel_sym_path(fname), S(xctx->current_name));
     }
+
     dbg(1, "load_schematic(): opening file for loading:%s, fname=%s\n", name, fname);
     dbg(1, "load_schematic(): sch[currsch]=%s\n", xctx->sch[xctx->currsch]);
-    if(!name[0]) return;
+    if(!name[0]) return; /* empty filename */
     if(reset_undo) {
       if(!stat(name, &buf)) { /* file exists */
         xctx->time_last_modify =  buf.st_mtime;
@@ -2331,23 +2529,35 @@ void load_schematic(int load_symbols, const char *fname, int reset_undo) /* 2015
         xctx->time_last_modify = 0; /* file does not exist, set mtime to 0 (undefined)*/
       }
     }
-    if( (fd=fopen(name,fopen_read_mode))== NULL) {
-      fprintf(errfp, "load_schematic(): unable to open file: %s, fname=%s\n", name, fname );
-      my_snprintf(msg, S(msg), "update; alert_ {Unable to open file: %s}", fname);
-      tcleval(msg);
+    if(generator) {
+      char *cmd;
+      cmd = get_generator_command(fname);
+      if(cmd) {
+        fd = popen(cmd, "r");
+        my_free(_ALLOC_ID_, &cmd);
+      } else fd = NULL;
+    }
+    else fd=fopen(name,fopen_read_mode);
+    if( fd == NULL) {
+      if(alert) {
+        fprintf(errfp, "load_schematic(): unable to open file: %s, fname=%s\n", name, fname );
+        my_snprintf(msg, S(msg), "update; alert_ {Unable to open file: %s}", fname);
+        tcleval(msg);
+      }
       clear_drawing();
       if(reset_undo) set_modify(0);
     } else {
       clear_drawing();
       dbg(1, "load_schematic(): reading file: %s\n", name);
       read_xschem_file(fd);
-      fclose(fd); /* 20150326 moved before load symbols */
+      if(generator) pclose(fd);
+      else fclose(fd); /* 20150326 moved before load symbols */
       if(reset_undo) set_modify(0);
       dbg(2, "load_schematic(): loaded file:wire=%d inst=%d\n",xctx->wires , xctx->instances);
       if(load_symbols) link_symbols_to_instances(-1);
       if(reset_undo) {
         tclvareval("is_xschem_file {", xctx->sch[xctx->currsch], "}", NULL);
-        if(!strcmp(tclresult(), "SYMBOL")) {
+        if(!strcmp(tclresult(), "SYMBOL") || xctx->instances == 0) {
           xctx->save_netlist_type = xctx->netlist_type;
           xctx->netlist_type = CAD_SYMBOL_ATTRS;
           set_tcl_netlist_type();
@@ -2362,11 +2572,11 @@ void load_schematic(int load_symbols, const char *fname, int reset_undo) /* 2015
       }
     }
     dbg(1, "load_schematic(): %s, returning\n", xctx->sch[xctx->currsch]);
-  } else {
+  } else { /* fname == NULL or empty */
     /* if(reset_undo) xctx->time_last_modify = time(NULL); */ /* no file given, set mtime to current time */
     if(reset_undo) xctx->time_last_modify = 0; /* no file given, set mtime to 0 (undefined) */
     clear_drawing();
-    for(i=0;;i++) {
+    for(i=0;; ++i) {
       if(xctx->netlist_type == CAD_SYMBOL_ATTRS) {
         if(i == 0) my_snprintf(name, S(name), "%s.sym", "untitled");
         else my_snprintf(name, S(name), "%s-%d.sym", "untitled", i);
@@ -2383,7 +2593,7 @@ void load_schematic(int load_symbols, const char *fname, int reset_undo) /* 2015
     } else {
       my_strncpy(xctx->current_dirname, pwd_dir, S(xctx->current_dirname));
     }
-    my_snprintf(xctx->sch[xctx->currsch], S(xctx->sch[xctx->currsch]), "%s/%s", xctx->current_dirname, name);
+    my_mstrcat(_ALLOC_ID_, &xctx->sch[xctx->currsch],  xctx->current_dirname, "/", name, NULL);
     if(reset_undo) set_modify(0);
   }
   check_collapsing_objects();
@@ -2393,7 +2603,7 @@ void load_schematic(int load_symbols, const char *fname, int reset_undo) /* 2015
     propagate_hilights(1, 1, XINSERT_NOREPLACE);
   }
   /* warning if two symbols perfectly overlapped */
-  warning_overlapped_symbols(0);
+  /* warning_overlapped_symbols(0); */ /* do this when netlisting */
 }
 
 void clear_undo(void)
@@ -2411,7 +2621,7 @@ void delete_undo(void)
   dbg(1, "delete_undo(): undo_initialized = %d\n", xctx->undo_initialized);
   if(!xctx->undo_initialized) return;
   clear_undo();
-  for(i=0; i<MAX_UNDO; i++) {
+  for(i=0; i<MAX_UNDO; ++i) {
     my_snprintf(diff_name, S(diff_name), "%s/undo%d",xctx->undo_dirname, i);
     xunlink(diff_name);
   }
@@ -2510,6 +2720,7 @@ void push_undo(void)
 
 /* redo:
  * 0: undo (with push current state for allowing following redo) 
+ * 4: undo, do not push state for redo
  * 1: redo
  * 2: read top data from undo stack without changing undo stack
  */
@@ -2524,6 +2735,7 @@ void pop_undo(int redo, int set_modify_status)
   #endif
 
   if(xctx->no_undo) return;
+  dbg(1, "pop_undo: redo=%d, set_modify_status=%d\n", redo, set_modify_status);
   if(redo == 1) {
     if(xctx->cur_undo_ptr < xctx->head_undo_ptr) {
       dbg(1, "pop_undo(): redo; cur_undo_ptr=%d tail_undo_ptr=%d head_undo_ptr=%d\n",
@@ -2532,11 +2744,12 @@ void pop_undo(int redo, int set_modify_status)
     } else {
       return;
     }
-  } else if(redo == 0) {  /* undo */
+  } else if(redo == 0 || redo == 4) {  /* undo */
     if(xctx->cur_undo_ptr == xctx->tail_undo_ptr) return;
     dbg(1, "pop_undo(): undo; cur_undo_ptr=%d tail_undo_ptr=%d head_undo_ptr=%d\n",
        xctx->cur_undo_ptr, xctx->tail_undo_ptr, xctx->head_undo_ptr);
-    if(xctx->head_undo_ptr == xctx->cur_undo_ptr) {
+    if(redo == 0 && xctx->head_undo_ptr == xctx->cur_undo_ptr) {
+      dbg(1, "pop_undo(): doing push_undo, head=%d  cur=%d\n", xctx->head_undo_ptr, xctx->cur_undo_ptr);
       xctx->push_undo();
       xctx->head_undo_ptr--;
       xctx->cur_undo_ptr--;
@@ -2639,7 +2852,7 @@ static void get_sym_type(const char *symname, char **type,
   }
   found=0;
   /* first look in already loaded symbols in xctx->sym[] array... */
-  for(i=0;i<xctx->symbols;i++) {
+  for(i=0;i<xctx->symbols; ++i) {
     if(xctx->x_strcmp(symname, xctx->sym[i].name) == 0) {
       my_strdup2(_ALLOC_ID_, type, xctx->sym[i].type);
       found = 1;
@@ -2649,7 +2862,7 @@ static void get_sym_type(const char *symname, char **type,
   /* hash pins to get LCC schematic have same order as corresponding symbol */
   if(found && pintable) {
     *sym_n_pins = xctx->sym[i].rects[PINLAYER];
-    for (c = 0; c < xctx->sym[i].rects[PINLAYER]; c++) {
+    for (c = 0; c < xctx->sym[i].rects[PINLAYER]; ++c) {
       int_hash_lookup(pintable, get_tok_value(xctx->sym[i].rect[PINLAYER][c].prop_ptr, "name", 0), c, XINSERT);
     }
   }
@@ -2744,7 +2957,7 @@ static void align_sch_pins_with_sym(const char *name, int pos)
       }
       rect = (xRect *) my_malloc(_ALLOC_ID_, sizeof(xRect) * sym_n_pins);
       dbg(1, "align_sch_pins_with_sym(): symbol: %s\n", symname);
-      for(i=0; i < xctx->sym[pos].rects[PINLAYER]; i++) {
+      for(i=0; i < xctx->sym[pos].rects[PINLAYER]; ++i) {
         Int_hashentry *entry;
         pinname = get_tok_value(xctx->sym[pos].rect[PINLAYER][i].prop_ptr, "name", 0);
         entry = int_hash_lookup(&pintable, pinname, 0 , XLOOKUP);
@@ -2759,7 +2972,7 @@ static void align_sch_pins_with_sym(const char *name, int pos)
       }
       if(!fail) {
         /* copy rect[] ordererd array to LCC schematic instance */
-        for(i=0; i < xctx->sym[pos].rects[PINLAYER]; i++) {
+        for(i=0; i < xctx->sym[pos].rects[PINLAYER]; ++i) {
           xctx->sym[pos].rect[PINLAYER][i] = rect[i];
         }
       }
@@ -2835,39 +3048,39 @@ static void calc_symbol_bbox(int pos)
   xRect boundbox, tmp;
 
   boundbox.x1 = boundbox.x2 = boundbox.y1 = boundbox.y2 = 0;
-  for(c=0;c<cadlayers;c++)
+  for(c=0;c<cadlayers; ++c)
   {
-   for(i=0;i<xctx->sym[pos].lines[c];i++)
+   for(i=0;i<xctx->sym[pos].lines[c]; ++i)
    {
-    count++;
+    ++count;
     tmp.x1=xctx->sym[pos].line[c][i].x1;tmp.y1=xctx->sym[pos].line[c][i].y1;
     tmp.x2=xctx->sym[pos].line[c][i].x2;tmp.y2=xctx->sym[pos].line[c][i].y2;
     updatebbox(count,&boundbox,&tmp);
     dbg(2, "calc_symbol_bbox(): line[%d][%d]: %g %g %g %g\n",
 			c, i, tmp.x1,tmp.y1,tmp.x2,tmp.y2);
    }
-   for(i=0;i<xctx->sym[pos].arcs[c];i++)
+   for(i=0;i<xctx->sym[pos].arcs[c]; ++i)
    {
-    count++;
+    ++count;
     arc_bbox(xctx->sym[pos].arc[c][i].x, xctx->sym[pos].arc[c][i].y, xctx->sym[pos].arc[c][i].r,
              xctx->sym[pos].arc[c][i].a, xctx->sym[pos].arc[c][i].b,
              &tmp.x1, &tmp.y1, &tmp.x2, &tmp.y2);
     /* printf("arc bbox: %g %g %g %g\n", tmp.x1, tmp.y1, tmp.x2, tmp.y2); */
     updatebbox(count,&boundbox,&tmp);
    }
-   for(i=0;i<xctx->sym[pos].rects[c];i++)
+   for(i=0;i<xctx->sym[pos].rects[c]; ++i)
    {
-    count++;
+    ++count;
     tmp.x1=xctx->sym[pos].rect[c][i].x1;tmp.y1=xctx->sym[pos].rect[c][i].y1;
     tmp.x2=xctx->sym[pos].rect[c][i].x2;tmp.y2=xctx->sym[pos].rect[c][i].y2;
     updatebbox(count,&boundbox,&tmp);
    }
-   for(i=0;i<xctx->sym[pos].polygons[c];i++)
+   for(i=0;i<xctx->sym[pos].polygons[c]; ++i)
    {
      double x1=0., y1=0., x2=0., y2=0.;
      int k;
-     count++;
-     for(k=0; k<xctx->sym[pos].poly[c][i].points; k++) {
+     ++count;
+     for(k=0; k<xctx->sym[pos].poly[c][i].points; ++k) {
        /*fprintf(errfp, "  poly: point %d: %.16g %.16g\n", k, pp[c][i].x[k], pp[c][i].y[k]); */
        if(k==0 || xctx->sym[pos].poly[c][i].x[k] < x1) x1 = xctx->sym[pos].poly[c][i].x[k];
        if(k==0 || xctx->sym[pos].poly[c][i].y[k] < y1) y1 = xctx->sym[pos].poly[c][i].y[k];
@@ -2882,12 +3095,12 @@ static void calc_symbol_bbox(int pos)
 *   do not include symbol text in bounding box, since text length
 *   is variable from one instance to another due to '@' variable expansions
 *
-*   for(i=0;i<lastt;i++)
+*   for(i=0;i<lastt; ++i)
 *   {
      int tmp;
 *    count++;
 *    rot=tt[i].rot;flip=tt[i].flip;
-*    text_bbox(tt[i].txt_ptr, tt[i].xscale, tt[i].yscale, rot, flip,
+*    text_bbox(get_text_floater(i), tt[i].xscale, tt[i].yscale, rot, flip,
 *    tt[i].x0, tt[i].y0, &rx1,&ry1,&rx2,&ry2, &dtmp);
 *    tmp.x1=rx1;tmp.y1=ry1;tmp.x2=rx2;tmp.y2=ry2;
 *    updatebbox(count,&boundbox,&tmp);
@@ -2923,7 +3136,7 @@ void sort_symbol_pins(xRect *pin_array, int npins, const char *name)
 
   if(npins > 0) do_sort = 1; /* no pins, no sort... */
   /* do not sort if some pins don't have pinnumber attribute */
-  for(j = 0; j < npins; j++) {
+  for(j = 0; j < npins; ++j) {
     pinnumber = get_tok_value(pin_array[j].prop_ptr, "sim_pinnumber", 0);
     if(!pinnumber[0]) do_sort = 0;
   }
@@ -2935,7 +3148,25 @@ void sort_symbol_pins(xRect *pin_array, int npins, const char *name)
   }
 }
 
-/* Global (or static global) variables used:
+/* return 1 if http or https url
+ * return 2 if cached /tmp/xschem_web/... file/directory
+ * return 0 otherwise
+ */
+int is_from_web(const char *f)
+{
+  static char tmp[PATH_MAX] = "";
+  int res = 0;
+  if(!tmp[0]) my_snprintf(tmp, S(tmp), "%s/xschem_web", tclgetvar("XSCHEM_TMP_DIR"));
+  if(strstr(f, "http://") == f || strstr(f, "https://") == f) res = 1;
+  /* if(strstr(f, tmp) == f) res = 2; */
+  dbg(1, "is_from_web(%s) = %d\n", f, res);
+  return res;
+}
+
+
+/* load_sym_def(): load a symbol definition looking up 'name' in the search paths.
+ * if 'embed_fd' FILE pointer is given read from there instead of searching 'name'
+ * Global (or static global) variables used:
  * cadlayers
  * errfp
  * xctx->file_version
@@ -2971,18 +3202,26 @@ int load_sym_def(const char *name, FILE *embed_fd)
   int *lastr = my_malloc(_ALLOC_ID_, cadlayers * sizeof(int));
   int *lastp = my_malloc(_ALLOC_ID_, cadlayers * sizeof(int));
   int *lasta = my_malloc(_ALLOC_ID_, cadlayers * sizeof(int));
-  xLine **ll = my_malloc(_ALLOC_ID_, cadlayers * sizeof(xLine *));
-  xRect **bb = my_malloc(_ALLOC_ID_, cadlayers * sizeof(xRect *));
-  xArc **aa = my_malloc(_ALLOC_ID_, cadlayers * sizeof(xArc *));
-  xPoly **pp = my_malloc(_ALLOC_ID_, cadlayers * sizeof(xPoly *));
   int lastt;
-  xText *tt;
+  xLine tmpline, **ll = my_malloc(_ALLOC_ID_, cadlayers * sizeof(xLine *));
+  xRect tmprect, **bb = my_malloc(_ALLOC_ID_, cadlayers * sizeof(xRect *));
+  xPoly tmppoly, **pp = my_malloc(_ALLOC_ID_, cadlayers * sizeof(xPoly *));
+  xArc tmparc, **aa = my_malloc(_ALLOC_ID_, cadlayers * sizeof(xArc *));
+  xText tmptext, *tt;
   int endfile;
   char *skip_line;
   const char *dash;
   xSymbol * symbol;
-  int symbols, sym_n_pins=0;
+  int symbols, sym_n_pins=0, generator;
+  char *cmd = NULL;
+  char *translated_cmd = NULL;
+  int is_floater = 0;
 
+  if(!name) {
+    dbg(0, "l_s_d(): Warning: name parameter set to NULL, returning with no action\n");
+    return 0;
+  }
+  sympath[0] = '\0'; /* set to empty */
   check_symbol_storage();
   symbol = xctx->sym;
   symbols = xctx->symbols;
@@ -2992,29 +3231,34 @@ int load_sym_def(const char *name, FILE *embed_fd)
   lcc=NULL;
   my_realloc(_ALLOC_ID_, &lcc, (level + 1) * sizeof(Lcc));
   max_level = level + 1;
-  if(!strcmp(xctx->file_version,"1.0")) {
-    my_strncpy(sympath, abs_sym_path(name, ".sym"), S(sympath));
-  } else {
-    my_strncpy(sympath, abs_sym_path(name, ""), S(sympath));
-  }
-  if(!embed_fd) { /* regular symbol: open file */
+  my_strdup2(_ALLOC_ID_, &cmd, tcl_hook2(name));
+  dbg(1, "l_s_d(): cmd=%s\n", cmd);
+  generator = is_generator(cmd);
+  if(generator) {
+    translated_cmd = get_generator_command(cmd);
+    dbg(1, "l_s_d(): generator: cmd=|%s|\n", cmd);
+    dbg(1, "l_s_d(): generator: translated_cmd=|%s|\n", translated_cmd);
+    if(translated_cmd) {
+      lcc[level].fd = popen(translated_cmd, "r"); /* execute ss="/path/to/xxx par1 par2 ..." and pipe in the stdout */
+    } else {
+      lcc[level].fd = NULL;
+    }
+    my_free(_ALLOC_ID_, &translated_cmd);
+  } else if(!embed_fd) { /* regular symbol: open file */
+    if(!strcmp(xctx->file_version,"1.0")) {
+      my_strncpy(sympath, abs_sym_path(name, ".sym"), S(sympath));
+    } else {
+      my_strncpy(sympath, abs_sym_path(name, ""), S(sympath));
+    }
     if((lcc[level].fd=fopen(sympath,fopen_read_mode))==NULL) {
       /* not found: try web URL */
-      if( strstr(xctx->current_dirname, "http://") == xctx->current_dirname ||
-          strstr(xctx->current_dirname, "https://") == xctx->current_dirname) {
-        tclvareval("try_download_url {", xctx->current_dirname, "} {", name, "}", NULL);
+      if(is_from_web(xctx->current_dirname)) {
         my_snprintf(sympath, S(sympath), "%s/xschem_web/%s", tclgetvar("XSCHEM_TMP_DIR"), get_cell_w_ext(name, 0));
+        if((lcc[level].fd=fopen(sympath,fopen_read_mode))==NULL) {
+          /* not already cached in .../xschem_web/ so download */
+          tclvareval("try_download_url {", xctx->current_dirname, "} {", name, "}", NULL);
+        }
         lcc[level].fd=fopen(sympath,fopen_read_mode);
-      }
-    }
-    if(lcc[level].fd==NULL) {
-      /* issue warning only on top level symbol loading */
-      if(recursion_counter == 1) dbg(0, "l_s_d(): Symbol not found: %s\n",sympath);
-      my_snprintf(sympath, S(sympath), "%s/%s", tclgetvar("XSCHEM_SHAREDIR"), "systemlib/missing.sym");
-      if((lcc[level].fd=fopen(sympath, fopen_read_mode))==NULL)
-      {
-       fprintf(errfp, "l_s_d(): systemlib/missing.sym missing, I give up\n");
-       tcleval("exit");
       }
     }
     dbg(1, "l_s_d(): fopen1(%s), level=%d, fd=%p\n",sympath, level, lcc[level].fd);
@@ -3022,9 +3266,20 @@ int load_sym_def(const char *name, FILE *embed_fd)
     dbg(1, "l_s_d(): getting embed_fd, level=%d\n", level);
     lcc[level].fd = embed_fd;
   }
+  my_free(_ALLOC_ID_, &cmd);
+  if(lcc[level].fd==NULL) {
+    /* issue warning only on top level symbol loading */
+    if(recursion_counter == 1) dbg(0, "l_s_d(): Symbol not found: %s\n", name);
+    my_snprintf(sympath, S(sympath), "%s/%s", tclgetvar("XSCHEM_SHAREDIR"), "systemlib/missing.sym");
+    if((lcc[level].fd=fopen(sympath, fopen_read_mode))==NULL)
+    {
+     fprintf(errfp, "l_s_d(): systemlib/missing.sym missing, I give up\n");
+     tcleval("exit");
+    }
+  }
   endfile=0;
   /* initialize data for loading a new symbol */
-  for(c=0;c<cadlayers;c++)
+  for(c=0;c<cadlayers; ++c)
   {
    lasta[c] = lastl[c] = lastr[c] = lastp[c] = 0;
    ll[c] = NULL; bb[c] = NULL; pp[c] = NULL; aa[c] = NULL;
@@ -3034,7 +3289,19 @@ int load_sym_def(const char *name, FILE *embed_fd)
   symbol[symbols].prop_ptr = NULL;
   symbol[symbols].type = NULL;
   symbol[symbols].templ = NULL;
+  symbol[symbols].base_name=NULL;
   symbol[symbols].name=NULL;
+
+  symbol[symbols].line=my_calloc(_ALLOC_ID_, cadlayers, sizeof(xLine *));
+  symbol[symbols].poly=my_calloc(_ALLOC_ID_, cadlayers, sizeof(xPoly *));
+  symbol[symbols].arc=my_calloc(_ALLOC_ID_, cadlayers, sizeof(xArc *));
+  symbol[symbols].rect=my_calloc(_ALLOC_ID_, cadlayers, sizeof(xRect *));
+  symbol[symbols].lines=my_calloc(_ALLOC_ID_, cadlayers, sizeof(int));
+  symbol[symbols].rects=my_calloc(_ALLOC_ID_, cadlayers, sizeof(int));
+  symbol[symbols].arcs=my_calloc(_ALLOC_ID_, cadlayers, sizeof(int));
+  symbol[symbols].polygons=my_calloc(_ALLOC_ID_, cadlayers, sizeof(int));
+
+
   my_strdup2(_ALLOC_ID_, &symbol[symbols].name,name);
   /* read symbol from file */
   while(1)
@@ -3043,7 +3310,8 @@ int load_sym_def(const char *name, FILE *embed_fd)
    if(fscanf(lcc[level].fd," %c",tag)==EOF) {
      if (level) {
          dbg(1, "l_s_d(): fclose1, level=%d, fd=%p\n", level, lcc[level].fd);
-         fclose(lcc[level].fd);
+         if(generator) pclose(lcc[level].fd);
+         else fclose(lcc[level].fd);
          my_free(_ALLOC_ID_, &lcc[level].prop_ptr);
          my_free(_ALLOC_ID_, &lcc[level].symname);
          --level;
@@ -3078,15 +3346,9 @@ int load_sym_def(const char *name, FILE *embed_fd)
     case 'K': /* 1.2 file format: symbol attributes for schematics placed as symbols */
      if (level==0) {
        load_ascii_string(&symbol[symbols].prop_ptr, lcc[level].fd);
+       dbg(1, "load_sym_def: K prop=\n%s\n", symbol[symbols].prop_ptr);
        if(!symbol[symbols].prop_ptr) break;
-       my_strdup2(_ALLOC_ID_, &symbol[symbols].templ,
-                  get_tok_value(symbol[symbols].prop_ptr, "template", 0));
-       my_strdup2(_ALLOC_ID_, &symbol[symbols].type,
-                  get_tok_value(symbol[symbols].prop_ptr, "type",0));
-       if(!strcmp(get_tok_value(symbol[symbols].prop_ptr,"highlight",0), "true"))
-         symbol[symbols].flags |= HILIGHT_CONN;
-       else symbol[symbols].flags &= ~HILIGHT_CONN;
-
+       set_sym_flags(& symbol[symbols]);
      }
      else {
        load_ascii_string(&aux_ptr, lcc[level].fd);
@@ -3096,13 +3358,7 @@ int load_sym_def(const char *name, FILE *embed_fd)
      if (level==0 && !symbol[symbols].prop_ptr) {
        load_ascii_string(&symbol[symbols].prop_ptr, lcc[level].fd);
        if(!symbol[symbols].prop_ptr) break;
-       my_strdup2(_ALLOC_ID_, &symbol[symbols].templ,
-                  get_tok_value(symbol[symbols].prop_ptr, "template", 0));
-       my_strdup2(_ALLOC_ID_, &symbol[symbols].type,
-                  get_tok_value(symbol[symbols].prop_ptr, "type",0));
-       if(!strcmp(get_tok_value(symbol[symbols].prop_ptr,"highlight",0), "true"))
-         symbol[symbols].flags |= HILIGHT_CONN;
-       else symbol[symbols].flags &= ~HILIGHT_CONN;
+       set_sym_flags(& symbol[symbols]);
      }
      else {
        load_ascii_string(&aux_ptr, lcc[level].fd);
@@ -3115,14 +3371,30 @@ int load_sym_def(const char *name, FILE *embed_fd)
        read_line(lcc[level].fd, 0);
        continue;
      }
-     i=lastl[c];
-     my_realloc(_ALLOC_ID_, &ll[c],(i+1)*sizeof(xLine));
-     if(fscanf(lcc[level].fd, "%lf %lf %lf %lf ",&ll[c][i].x1, &ll[c][i].y1,
-        &ll[c][i].x2, &ll[c][i].y2) < 4 ) {
+
+     if(fscanf(lcc[level].fd, "%lf %lf %lf %lf ",&tmpline.x1, &tmpline.y1,
+        &tmpline.x2, &tmpline.y2) < 4 ) {
        fprintf(errfp,"l_s_d(): WARNING:  missing fields for LINE object, ignoring\n");
        read_line(lcc[level].fd, 0);
        continue;
      }
+     tmpline.prop_ptr = NULL;
+     load_ascii_string(&tmpline.prop_ptr, lcc[level].fd);
+
+     if( !strboolcmp(get_tok_value(tmpline.prop_ptr, "symbol_ignore", 0), "true")) {
+       my_free(_ALLOC_ID_, &tmpline.prop_ptr);
+       continue;
+     }
+
+     i=lastl[c];
+     my_realloc(_ALLOC_ID_, &ll[c],(i+1)*sizeof(xLine));
+
+     ll[c][i].x1 = tmpline.x1;
+     ll[c][i].y1 = tmpline.y1;
+     ll[c][i].x2 = tmpline.x2;
+     ll[c][i].y2 = tmpline.y2;
+     ll[c][i].prop_ptr = tmpline.prop_ptr;
+
      if (level>0) {
        rot = lcc[level].rot; flip = lcc[level].flip;
        ROTATION(rot, flip, 0.0, 0.0, ll[c][i].x1, ll[c][i].y1, rx1, ry1);
@@ -3131,10 +3403,8 @@ int load_sym_def(const char *name, FILE *embed_fd)
        ll[c][i].x2 = lcc[level].x0 + rx2;  ll[c][i].y2 = lcc[level].y0 + ry2;
      }
      ORDER(ll[c][i].x1, ll[c][i].y1, ll[c][i].x2, ll[c][i].y2);
-     ll[c][i].prop_ptr=NULL;
-     load_ascii_string( &ll[c][i].prop_ptr, lcc[level].fd);
      dbg(2, "l_s_d(): loaded line: ptr=%lx\n", (unsigned long)ll[c]);
-     if(!strcmp(get_tok_value(ll[c][i].prop_ptr,"bus", 0), "true") )
+     if(!strboolcmp(get_tok_value(ll[c][i].prop_ptr,"bus", 0), "true") )
        ll[c][i].bus = 1;
      else
        ll[c][i].bus = 0;
@@ -3158,25 +3428,43 @@ int load_sym_def(const char *name, FILE *embed_fd)
        read_line(lcc[level].fd, 0);
        continue;
      }
-     i=lastp[c];
-     my_realloc(_ALLOC_ID_, &pp[c],(i+1)*sizeof(xPoly));
-     pp[c][i].x = my_calloc(_ALLOC_ID_, poly_points, sizeof(double));
-     pp[c][i].y = my_calloc(_ALLOC_ID_, poly_points, sizeof(double));
-     pp[c][i].selected_point = my_calloc(_ALLOC_ID_, poly_points, sizeof(unsigned short));
-     pp[c][i].points = poly_points;
-     for(k=0;k<poly_points;k++) {
-       if(fscanf(lcc[level].fd, "%lf %lf ",&(pp[c][i].x[k]), &(pp[c][i].y[k]) ) < 2 ) {
+
+     tmppoly.x = my_calloc(_ALLOC_ID_, poly_points, sizeof(double));
+     tmppoly.y = my_calloc(_ALLOC_ID_, poly_points, sizeof(double));
+     tmppoly.selected_point = my_calloc(_ALLOC_ID_, poly_points, sizeof(unsigned short));
+     tmppoly.points = poly_points;
+     for(k=0;k<poly_points; ++k) {
+       if(fscanf(lcc[level].fd, "%lf %lf ",&(tmppoly.x[k]), &(tmppoly.y[k]) ) < 2 ) {
          fprintf(errfp,"l_s_d(): WARNING: missing fields for POLYGON object\n");
        }
        if (level>0) {
          rot = lcc[level].rot; flip = lcc[level].flip;
-         ROTATION(rot, flip, 0.0, 0.0, pp[c][i].x[k], pp[c][i].y[k], rx1, ry1);
-         pp[c][i].x[k] = lcc[level].x0 + rx1;  pp[c][i].y[k] = lcc[level].y0 + ry1;
+         ROTATION(rot, flip, 0.0, 0.0, tmppoly.x[k], tmppoly.y[k], rx1, ry1);
+         tmppoly.x[k] = lcc[level].x0 + rx1;  tmppoly.y[k] = lcc[level].y0 + ry1;
        }
      }
-     pp[c][i].prop_ptr=NULL;
-     load_ascii_string( &pp[c][i].prop_ptr, lcc[level].fd);
-     if( !strcmp(get_tok_value(pp[c][i].prop_ptr,"fill",0),"true") )
+
+     tmppoly.prop_ptr=NULL;
+     load_ascii_string( &tmppoly.prop_ptr, lcc[level].fd);
+
+     if( !strboolcmp(get_tok_value(tmppoly.prop_ptr, "symbol_ignore", 0), "true")) {
+       my_free(_ALLOC_ID_, &tmppoly.prop_ptr);
+       my_free(_ALLOC_ID_, &tmppoly.x);
+       my_free(_ALLOC_ID_, &tmppoly.y);
+       my_free(_ALLOC_ID_, &tmppoly.selected_point);
+       continue; 
+     }
+
+     i=lastp[c];
+     my_realloc(_ALLOC_ID_, &pp[c],(i+1)*sizeof(xPoly));
+
+     pp[c][i].x = tmppoly.x;
+     pp[c][i].y = tmppoly.y;
+     pp[c][i].selected_point = tmppoly.selected_point;
+     pp[c][i].prop_ptr = tmppoly.prop_ptr;
+     pp[c][i].points = poly_points;
+
+     if( !strboolcmp(get_tok_value(pp[c][i].prop_ptr,"fill",0),"true") )
        pp[c][i].fill =1;
      else
        pp[c][i].fill =0;
@@ -3199,14 +3487,31 @@ int load_sym_def(const char *name, FILE *embed_fd)
        read_line(lcc[level].fd, 0);
        continue;
      }
-     i=lasta[c];
-     my_realloc(_ALLOC_ID_, &aa[c],(i+1)*sizeof(xArc));
-     if( fscanf(lcc[level].fd, "%lf %lf %lf %lf %lf ",&aa[c][i].x, &aa[c][i].y,
-        &aa[c][i].r, &aa[c][i].a, &aa[c][i].b) < 5 ) {
+
+     if( fscanf(lcc[level].fd, "%lf %lf %lf %lf %lf ",&tmparc.x, &tmparc.y,
+        &tmparc.r, &tmparc.a, &tmparc.b) < 5 ) {
        fprintf(errfp,"l_s_d(): WARNING: missing fields for ARC object, ignoring\n");
        read_line(lcc[level].fd, 0);
        continue;
      }
+     tmparc.prop_ptr = NULL;
+     load_ascii_string( &tmparc.prop_ptr, lcc[level].fd);
+
+     if( !strboolcmp(get_tok_value(tmparc.prop_ptr, "symbol_ignore", 0), "true")) {
+       my_free(_ALLOC_ID_, &tmparc.prop_ptr);
+       continue;
+     }
+
+     i=lasta[c];
+     my_realloc(_ALLOC_ID_, &aa[c],(i+1)*sizeof(xArc));
+
+     aa[c][i].x = tmparc.x;
+     aa[c][i].y = tmparc.y;
+     aa[c][i].r = tmparc.r;
+     aa[c][i].a = tmparc.a;
+     aa[c][i].b = tmparc.b;
+     aa[c][i].prop_ptr = tmparc.prop_ptr;
+
      if (level>0) {
        rot = lcc[level].rot; flip = lcc[level].flip;
        if (flip) {
@@ -3221,9 +3526,7 @@ int load_sym_def(const char *name, FILE *embed_fd)
        aa[c][i].x = lcc[level].x0 + rx1;  aa[c][i].y = lcc[level].y0 + ry1;
        aa[c][i].a = angle;
      }
-     aa[c][i].prop_ptr=NULL;
-     load_ascii_string( &aa[c][i].prop_ptr, lcc[level].fd);
-     if( !strcmp(get_tok_value(aa[c][i].prop_ptr,"fill",0),"true") )
+     if( !strboolcmp(get_tok_value(aa[c][i].prop_ptr,"fill",0),"true") )
        aa[c][i].fill =1;
      else
        aa[c][i].fill =0;
@@ -3244,15 +3547,31 @@ int load_sym_def(const char *name, FILE *embed_fd)
        read_line(lcc[level].fd, 0);
        continue;
      }
-     if (level>0 && c == PINLAYER) c = 7; /* Don't care about pins inside SYM: set on different layer */
-     i=lastr[c];
-     my_realloc(_ALLOC_ID_, &bb[c],(i+1)*sizeof(xRect));
-     if(fscanf(lcc[level].fd, "%lf %lf %lf %lf ",&bb[c][i].x1, &bb[c][i].y1,
-        &bb[c][i].x2, &bb[c][i].y2) < 4 ) {
-       fprintf(errfp,"l_s_d(): WARNING:  missing fields for Box object, ignoring\n");
+
+     if(fscanf(lcc[level].fd, "%lf %lf %lf %lf ",&tmprect.x1, &tmprect.y1,
+        &tmprect.x2, &tmprect.y2) < 4 ) {
+       fprintf(errfp,"l_s_d(): WARNING:  missing fields for LINE object, ignoring\n");
        read_line(lcc[level].fd, 0);
        continue;
      }
+     tmprect.prop_ptr = NULL;
+     load_ascii_string(&tmprect.prop_ptr, lcc[level].fd);
+
+     if( !strboolcmp(get_tok_value(tmprect.prop_ptr, "symbol_ignore", 0), "true")) {
+       my_free(_ALLOC_ID_, &tmprect.prop_ptr);
+       continue;
+     }
+
+     if (level>0 && c == PINLAYER) c = 7; /* Don't care about pins inside SYM: set on different layer */
+     i=lastr[c];
+     my_realloc(_ALLOC_ID_, &bb[c],(i+1)*sizeof(xRect));
+
+     bb[c][i].x1 = tmprect.x1;
+     bb[c][i].y1 = tmprect.y1;
+     bb[c][i].x2 = tmprect.x2;
+     bb[c][i].y2 = tmprect.y2;
+     bb[c][i].prop_ptr = tmprect.prop_ptr;
+
      if (level>0) {
        rot = lcc[level].rot; flip = lcc[level].flip;
        ROTATION(rot, flip, 0.0, 0.0, bb[c][i].x1, bb[c][i].y1, rx1, ry1);
@@ -3261,15 +3580,13 @@ int load_sym_def(const char *name, FILE *embed_fd)
        bb[c][i].x2 = lcc[level].x0 + rx2;  bb[c][i].y2 = lcc[level].y0 + ry2;
      }
      RECTORDER(bb[c][i].x1, bb[c][i].y1, bb[c][i].x2, bb[c][i].y2);
-     bb[c][i].prop_ptr=NULL;
-     load_ascii_string( &bb[c][i].prop_ptr, lcc[level].fd);
      /* don't load graphs of LCC schematic instances */
      if(strstr(get_tok_value(bb[c][i].prop_ptr, "flags", 0), "graph")) {
        my_free(_ALLOC_ID_, &bb[c][i].prop_ptr);
        continue;
      }
      dbg(2, "l_s_d(): loaded rect: ptr=%lx\n", (unsigned long)bb[c]);
-     if( !strcmp(get_tok_value(bb[c][i].prop_ptr,"fill",0),"false") )
+     if( !strboolcmp(get_tok_value(bb[c][i].prop_ptr,"fill",0),"false") )
        bb[c][i].fill =0;
      else
        bb[c][i].fill =1;
@@ -3284,18 +3601,42 @@ int load_sym_def(const char *name, FILE *embed_fd)
      lastr[c]++;
      break;
     case 'T':
-     i=lastt;
-     my_realloc(_ALLOC_ID_, &tt,(i+1)*sizeof(xText));
-     tt[i].txt_ptr=NULL;
-     tt[i].font=NULL;
-     load_ascii_string(&tt[i].txt_ptr, lcc[level].fd);
-     dbg(1, "l_s_d(): txt1: level=%d tt[i].txt_ptr=%s, i=%d\n", level, tt[i].txt_ptr, i);
-     if(fscanf(lcc[level].fd, "%lf %lf %hd %hd %lf %lf ",&tt[i].x0, &tt[i].y0, &tt[i].rot,
-        &tt[i].flip, &tt[i].xscale, &tt[i].yscale) < 6 ) {
+     tmptext.floater_instname = tmptext.prop_ptr = tmptext.txt_ptr = tmptext.font = tmptext.floater_ptr = NULL;
+     load_ascii_string(&tmptext.txt_ptr, lcc[level].fd);
+     if(fscanf(lcc[level].fd, "%lf %lf %hd %hd %lf %lf ",&tmptext.x0, &tmptext.y0, &tmptext.rot,
+        &tmptext.flip, &tmptext.xscale, &tmptext.yscale) < 6 ) {
        fprintf(errfp,"l_s_d(): WARNING:  missing fields for Text object, ignoring\n");
        read_line(lcc[level].fd, 0);
        continue;
      }
+     load_ascii_string(&tmptext.prop_ptr, lcc[level].fd);
+
+     is_floater = 0;
+     get_tok_value(tmptext.prop_ptr, "name", 2);
+     if(xctx->tok_size) is_floater = 1; /* get rid of floater texts in LCC symbols */
+     else {
+       get_tok_value(tmptext.prop_ptr, "floater", 2);
+       if(xctx->tok_size) is_floater = 1; /* get rid of floater texts in LCC symbols */
+     }
+     if( !strboolcmp(get_tok_value(tmptext.prop_ptr, "symbol_ignore", 0), "true") || is_floater) {
+       my_free(_ALLOC_ID_, &tmptext.prop_ptr);
+       my_free(_ALLOC_ID_, &tmptext.txt_ptr);
+       continue;
+     }
+     i=lastt;
+     my_realloc(_ALLOC_ID_, &tt,(i+1)*sizeof(xText));
+     tt[i].font=NULL;
+     tt[i].txt_ptr = tmptext.txt_ptr;
+     tt[i].x0 = tmptext.x0;
+     tt[i].y0 = tmptext.y0;
+     tt[i].rot = tmptext.rot;
+     tt[i].flip = tmptext.flip;
+     tt[i].xscale = tmptext.xscale;
+     tt[i].yscale = tmptext.yscale;
+     tt[i].prop_ptr = tmptext.prop_ptr;
+     tt[i].floater_ptr = tmptext.floater_ptr;
+     tt[i].floater_instname = tmptext.floater_instname;
+     dbg(1, "l_s_d(): txt1: level=%d tt[i].txt_ptr=%s, i=%d\n", level, tt[i].txt_ptr, i);
      if (level>0) {
        const char* tmp = translate2(lcc, level, tt[i].txt_ptr);
        dbg(1, "l_s_d(): txt2: tt[i].txt_ptr=%s, i=%d\n",  tt[i].txt_ptr, i);
@@ -3310,7 +3651,7 @@ int load_sym_def(const char *name, FILE *embed_fd)
          char *path = NULL;
          if(level > 1) { /* add parent LCC instance names (X1, Xinv etc) */
            int i;
-           for(i = 1; i <level; i++) {
+           for(i = 1; i <level; ++i) {
              const char *instname = get_tok_value(lcc[i].prop_ptr, "name", 0);
              my_strcat(_ALLOC_ID_, &path, instname);
              my_strcat(_ALLOC_ID_, &path, ".");
@@ -3331,7 +3672,7 @@ int load_sym_def(const char *name, FILE *embed_fd)
          char *path = NULL;
          if(level > 1) { /* add parent LCC instance names (X1, Xinv etc) */
            int i;
-           for(i = 1; i <level; i++) {
+           for(i = 1; i <level; ++i) {
              const char *instname = get_tok_value(lcc[i].prop_ptr, "name", 0);
              my_strcat(_ALLOC_ID_, &path, instname);
              my_strcat(_ALLOC_ID_, &path, "."); 
@@ -3351,8 +3692,6 @@ int load_sym_def(const char *name, FILE *embed_fd)
                    lcc[level].rot + 2 : lcc[level].rot)) & 0x3;
        tt[i].flip = lcc[level].flip ^ tt[i].flip;
      }
-     tt[i].prop_ptr=NULL;
-     load_ascii_string(&tt[i].prop_ptr, lcc[level].fd);
      if(level > 0 && symtype && !strcmp(symtype, "label")) {
        char lay[30];
        my_snprintf(lay, S(lay), " layer=%d", WIRELAYER);
@@ -3360,17 +3699,32 @@ int load_sym_def(const char *name, FILE *embed_fd)
      }
      dbg(1, "l_s_d(): loaded text : t=%s p=%s\n", tt[i].txt_ptr, tt[i].prop_ptr ? tt[i].prop_ptr : "NULL");
      set_text_flags(&tt[i]);
-     lastt++;
+     ++lastt;
      break;
     case 'N': /* store wires as lines on layer WIRELAYER. */
-     i = lastl[WIRELAYER];
-     my_realloc(_ALLOC_ID_, &ll[WIRELAYER],(i+1)*sizeof(xLine));
-     if(fscanf(lcc[level].fd, "%lf %lf %lf %lf ",&ll[WIRELAYER][i].x1, &ll[WIRELAYER][i].y1,
-        &ll[WIRELAYER][i].x2, &ll[WIRELAYER][i].y2) < 4 ) {
+
+     tmpline.prop_ptr = NULL;
+     if(fscanf(lcc[level].fd, "%lf %lf %lf %lf ",&tmpline.x1, &tmpline.y1,
+        &tmpline.x2, &tmpline.y2) < 4 ) {
        fprintf(errfp,"l_s_d(): WARNING:  missing fields for LINE object, ignoring\n");
        read_line(lcc[level].fd, 0);
        continue;
+     }    
+     load_ascii_string(&tmpline.prop_ptr, lcc[level].fd);
+
+     if( !strboolcmp(get_tok_value(tmpline.prop_ptr, "symbol_ignore", 0), "true")) {
+       my_free(_ALLOC_ID_, &tmpline.prop_ptr);
+       continue;
      }
+    
+     i = lastl[WIRELAYER];
+     my_realloc(_ALLOC_ID_, &ll[WIRELAYER],(i+1)*sizeof(xLine));
+     ll[WIRELAYER][i].x1 = tmpline.x1;
+     ll[WIRELAYER][i].y1 = tmpline.y1;
+     ll[WIRELAYER][i].x2 = tmpline.x2;
+     ll[WIRELAYER][i].y2 = tmpline.y2;
+     ll[WIRELAYER][i].prop_ptr = tmpline.prop_ptr;
+
      if (level>0) {
        rot = lcc[level].rot; flip = lcc[level].flip;
        ROTATION(rot, flip, 0.0, 0.0, ll[WIRELAYER][i].x1, ll[WIRELAYER][i].y1, rx1, ry1);
@@ -3379,11 +3733,9 @@ int load_sym_def(const char *name, FILE *embed_fd)
        ll[WIRELAYER][i].x2 = lcc[level].x0 + rx2;  ll[WIRELAYER][i].y2 = lcc[level].y0 + ry2;
      }
      ORDER(ll[WIRELAYER][i].x1, ll[WIRELAYER][i].y1, ll[WIRELAYER][i].x2, ll[WIRELAYER][i].y2);
-     ll[WIRELAYER][i].prop_ptr=NULL;
-     load_ascii_string( &ll[WIRELAYER][i].prop_ptr, lcc[level].fd);
      dbg(2, "l_s_d(): loaded line: ptr=%lx\n", (unsigned long)ll[WIRELAYER]);
      ll[WIRELAYER][i].dash = 0;
-     if(!strcmp(get_tok_value(ll[WIRELAYER][i].prop_ptr, "bus", 0), "true"))
+     if(!strboolcmp(get_tok_value(ll[WIRELAYER][i].prop_ptr, "bus", 0), "true"))
        ll[WIRELAYER][i].bus = 1;
      else
        ll[WIRELAYER][i].bus = 0;
@@ -3401,27 +3753,34 @@ int load_sym_def(const char *name, FILE *embed_fd)
       dbg(1, "l_s_d() component: level=%d, sym=%s, prop_ptr = %s\n", level, symname, prop_ptr);
       if(level + 1 >=CADMAXHIER) {
         fprintf(errfp, "l_s_d(): Symbol recursively instantiating symbol: max depth reached, skipping\n");
-        if(has_x) tcleval("alert_ {xSymbol recursively instantiating symbol: max depth reached, skipping} {} 1");
+        if(has_x) tcleval("alert_ {Symbol recursively instantiating symbol: max depth reached, skipping} {} 1");
         endfile = 1;
         continue;
       }
 
-      filepos = xftell(lcc[level].fd); /* store file pointer position to inspect next line */
-      fd_tmp = NULL;
-      read_line(lcc[level].fd, 1);
-      fscan_ret = fscanf(lcc[level].fd, " ");
-      if(fscanf(lcc[level].fd," %c",&ch)!=EOF) {
-        if( ch == '[') {
-          fd_tmp = lcc[level].fd;
+      if(generator) {
+        /* for generators (data from a pipe) can not inspect next line (fseek/ftell) looking for
+         * embedded symbols. Assume no embedded symbol follows */
+        fd_tmp = NULL;
+        get_sym_type(symname, &symtype, NULL, fd_tmp, &sym_n_pins);
+      } else {
+        filepos = xftell(lcc[level].fd); /* store file pointer position to inspect next line */
+        fd_tmp = NULL;
+        read_line(lcc[level].fd, 1);
+        fscan_ret = fscanf(lcc[level].fd, " ");
+        if(fscanf(lcc[level].fd," %c",&ch)!=EOF) {
+          if( ch == '[') {
+            fd_tmp = lcc[level].fd;
+          }
         }
+        /* get symbol type by looking into list of loaded symbols or (if not found) by
+         * opening/closing the symbol file and getting the 'type' attribute from global symbol attributes
+         * if fd_tmp set read symbol from embedded tags '[...]' */
+        get_sym_type(symname, &symtype, NULL, fd_tmp, &sym_n_pins);
+        xfseek(lcc[level].fd, filepos, SEEK_SET); /* rewind file pointer */
       }
-      /* get symbol type by looking into list of loaded symbols or (if not found) by
-       * opening/closing the symbol file and getting the 'type' attribute from global symbol attributes
-       * if fd_tmp set read symbol from embedded tags '[...]' */
-      get_sym_type(symname, &symtype, NULL, fd_tmp, &sym_n_pins);
-      xfseek(lcc[level].fd, filepos, SEEK_SET); /* rewind file pointer */
-
       dbg(1, "l_s_d(): level=%d, symname=%s symtype=%s\n", level, symname, symtype);
+      
       if(  /* add here symbol types not to consider when loading schematic-as-symbol instances */
           !strcmp(symtype, "logo") ||
           !strcmp(symtype, "netlist_commands") ||
@@ -3436,6 +3795,7 @@ int load_sym_def(const char *name, FILE *embed_fd)
           !strcmp(symtype, "verilog_preprocessor") ||
           !strcmp(symtype, "timescale")
         ) break;
+      if(!strboolcmp(get_tok_value(prop_ptr, "symbol_ignore", 0), "true")) break;
       /* add PINLAYER boxes (symbol pins) at schematic i/o/iopin coordinates. */
       if( level==0 && IS_PIN(symtype) ) {
         add_pinlayer_boxes(lastr, bb, symtype, prop_ptr, inst_x0, inst_y0);
@@ -3454,14 +3814,16 @@ int load_sym_def(const char *name, FILE *embed_fd)
       if ((fd_tmp = fopen(sympath, fopen_read_mode)) == NULL) {
         char c;
         fprintf(errfp, "l_s_d(): unable to open file to read schematic: %s\n", sympath);
-        filepos = xftell(lcc[level].fd); /* store file pointer position to inspect next char */
-        read_line(lcc[level].fd, 1);
-        fscan_ret = fscanf(lcc[level].fd, " ");
-        if(fscanf(lcc[level].fd," %c",&c)!=EOF) {
-          if( c == '[') {
-            fd_tmp = lcc[level].fd;
-          } else {
-            xfseek(lcc[level].fd, filepos, SEEK_SET); /* rewind file pointer */
+        if(!generator) {
+          filepos = xftell(lcc[level].fd); /* store file pointer position to inspect next char */
+          read_line(lcc[level].fd, 1);
+          fscan_ret = fscanf(lcc[level].fd, " ");
+          if(fscanf(lcc[level].fd," %c",&c)!=EOF) {
+            if( c == '[') {
+              fd_tmp = lcc[level].fd;
+            } else {
+              xfseek(lcc[level].fd, filepos, SEEK_SET); /* rewind file pointer */
+            }
           }
         }
       }
@@ -3530,7 +3892,8 @@ int load_sym_def(const char *name, FILE *embed_fd)
   } /* while(1) */
   if(!embed_fd) {
     dbg(1, "l_s_d(): fclose2, level=%d, fd=%p\n", level, lcc[0].fd);
-    fclose(lcc[0].fd);
+    if(generator) pclose(lcc[0].fd);
+    else fclose(lcc[0].fd);
   }
   if(embed_fd || strstr(name, ".xschem_embedded_")) {
     symbol[symbols].flags |= EMBEDDED;
@@ -3538,7 +3901,7 @@ int load_sym_def(const char *name, FILE *embed_fd)
     symbol[symbols].flags &= ~EMBEDDED;
   }
   dbg(2, "l_s_d(): finished parsing file\n");
-  for(c=0;c<cadlayers;c++)
+  for(c=0;c<cadlayers; ++c)
   {
    symbol[symbols].arcs[c] = lasta[c];
    symbol[symbols].lines[c] = lastl[c];
@@ -3632,10 +3995,10 @@ void create_sch_from_sym(void)
   char *sch = NULL;
   size_t ln;
 
-  my_strdup(_ALLOC_ID_, &pinname[0], tcleval("rel_sym_path [find_file ipin.sym]"));
-  my_strdup(_ALLOC_ID_, &pinname[1], tcleval("rel_sym_path [find_file opin.sym]"));
-  my_strdup(_ALLOC_ID_, &pinname[2], tcleval("rel_sym_path [find_file iopin.sym]"));
-  my_strdup(_ALLOC_ID_, &generic_pin, tcleval("rel_sym_path [find_file generic_pin.sym]"));
+  my_strdup(_ALLOC_ID_, &pinname[0], tcleval("rel_sym_path [find_file_first ipin.sym]"));
+  my_strdup(_ALLOC_ID_, &pinname[1], tcleval("rel_sym_path [find_file_first opin.sym]"));
+  my_strdup(_ALLOC_ID_, &pinname[2], tcleval("rel_sym_path [find_file_first iopin.sym]"));
+  my_strdup(_ALLOC_ID_, &generic_pin, tcleval("rel_sym_path [find_file_first generic_pin.sym]"));
   
   if(pinname[0] && pinname[1] && pinname[2] && generic_pin) {
     rebuild_selected_array();
@@ -3647,7 +4010,7 @@ void create_sch_from_sym(void)
       my_strncpy(schname, abs_sym_path(sch, ""), S(schname));
       my_free(_ALLOC_ID_, &sch);
       if(!schname[0]) {
-        my_strncpy(schname, add_ext(abs_sym_path(xctx->inst[xctx->sel_array[0].n].name, ""),
+        my_strncpy(schname, add_ext(abs_sym_path(tcl_hook2(xctx->inst[xctx->sel_array[0].n].name), ""),
              ".sch"), S(schname));
       }
       if( !stat(schname, &buf) ) {
@@ -3676,7 +4039,7 @@ void create_sch_from_sym(void)
       npin = ptr->rects[GENERICLAYER];
       rct = ptr->rect[GENERICLAYER];
       ypos=0;
-      for(i=0;i<npin;i++) {
+      for(i=0;i<npin; ++i) {
         my_strdup(_ALLOC_ID_, &prop, rct[i].prop_ptr);
         if(!prop) continue;
         sub_prop=strstr(prop,"name=")+5;
@@ -3690,9 +4053,9 @@ void create_sch_from_sym(void)
       } /* for(i) */
       npin = ptr->rects[PINLAYER];
       rct = ptr->rect[PINLAYER];
-      for(j=0;j<3;j++) {
+      for(j=0;j<3; ++j) {
         if(j==1) ypos=0;
-        for(i=0;i<npin;i++) {
+        for(i=0;i<npin; ++i) {
           my_strdup(_ALLOC_ID_, &prop, rct[i].prop_ptr);
           if(!prop) continue;
           sub_prop=strstr(prop,"name=")+5;
@@ -3755,62 +4118,90 @@ void descend_symbol(void)
       if(ret == 0) clear_all_hilights();
       if(ret == -1) return; /* user cancel */
     }
-    my_snprintf(name, S(name), "%s", xctx->inst[n].name);
+    my_snprintf(name, S(name), "%s", translate(n, xctx->inst[n].name));
     /* dont allow descend in the default missing symbol */
     if((xctx->inst[n].ptr+ xctx->sym)->type &&
        !strcmp( (xctx->inst[n].ptr+ xctx->sym)->type,"missing")) return;
   }
   else return;
+
   /* build up current hierarchy path */
   my_strdup(_ALLOC_ID_,  &str, xctx->inst[n].instname);
   my_strdup(_ALLOC_ID_, &xctx->sch_path[xctx->currsch+1], xctx->sch_path[xctx->currsch]);
   my_strcat(_ALLOC_ID_, &xctx->sch_path[xctx->currsch+1], str);
   my_strcat(_ALLOC_ID_, &xctx->sch_path[xctx->currsch+1], ".");
-  xctx->sch_path_hash[xctx->currsch+1] = 0;
+  if(xctx->portmap[xctx->currsch + 1].table) str_hash_free(&xctx->portmap[xctx->currsch + 1]);
+  str_hash_init(&xctx->portmap[xctx->currsch + 1], HASHSIZE);
 
+  xctx->sch_path_hash[xctx->currsch+1] = 0;
+  my_free(_ALLOC_ID_, &str);
+
+  /* store hierarchy of inst attributes and sym templates for hierarchic parameter substitution */
   my_strdup(_ALLOC_ID_, &xctx->hier_attr[xctx->currsch].prop_ptr,
             xctx->inst[n].prop_ptr);
   my_strdup(_ALLOC_ID_, &xctx->hier_attr[xctx->currsch].templ,
             get_tok_value((xctx->inst[n].ptr+ xctx->sym)->prop_ptr, "template", 0));
-  xctx->sch_inst_number[xctx->currsch+1] = 1;
-  my_free(_ALLOC_ID_, &str);
-  xctx->previous_instance[xctx->currsch]=n;
+
+  if(!xctx->inst[n].embed)
+    /* use -1 to keep track we are descending into symbol from instance with no embed attr
+     * we use this info to avoid asking to save parent schematic when returning from a symbol
+     * created from a generator */
+    xctx->sch_inst_number[xctx->currsch] = -1;
+  else
+    xctx->sch_inst_number[xctx->currsch] = 1; /* inst number we descend into. For symbol always 1 */
+  xctx->previous_instance[xctx->currsch]=n; /* instance we are descending from */
+
+  /* store previous zoom area */
   xctx->zoom_array[xctx->currsch].x=xctx->xorigin;
   xctx->zoom_array[xctx->currsch].y=xctx->yorigin;
   xctx->zoom_array[xctx->currsch].zoom=xctx->zoom;
-  ++xctx->currsch;
+
+  ++xctx->currsch; /* increment level counter */
+
   if((xctx->inst[n].ptr+ xctx->sym)->flags & EMBEDDED || xctx->inst[n].embed) {
     /* save embedded symbol into a temporary file */
     my_snprintf(name_embedded, S(name_embedded),
       "%s/.xschem_embedded_%d_%s", tclgetvar("XSCHEM_TMP_DIR"), getpid(), get_cell_w_ext(name, 0));
     if(!(fd = fopen(name_embedded, "w")) ) {
       fprintf(errfp, "descend_symbol(): problems opening file %s \n", name_embedded);
+    } else {
+      save_embedded_symbol(xctx->inst[n].ptr+xctx->sym, fd);
+      fclose(fd);
     }
-    save_embedded_symbol(xctx->inst[n].ptr+xctx->sym, fd);
-    fclose(fd);
     unselect_all(1);
     remove_symbols(); /* must follow save (if) embedded */
     /* load_symbol(name_embedded); */
-    load_schematic(1, name_embedded, 1);
+    load_schematic(1, name_embedded, 1, 1);
   } else {
-    char sympath[PATH_MAX];
-    my_strncpy(sympath, abs_sym_path(name, ""), S(sympath));
+    char *sympath = NULL;
+    char *current_dirname_save = NULL;
+    int web_url;
     unselect_all(1);
     remove_symbols(); /* must follow save (if) embedded */
-    dbg(1, "name=%s, sympath=%s\n", name, sympath);
 
-    if( stat(sympath, &buf) && /* file does not exists ... */
-        /* ... and we are in a schematic downloaded from web ... */
-        (strstr(xctx->current_dirname, "http://") == xctx->current_dirname ||
-         strstr(xctx->current_dirname, "https://") == xctx->current_dirname)) {
+    web_url = is_from_web(xctx->current_dirname);
+
+    /* ... we are in a schematic downloaded from web ... */
+    if(web_url) {
       /* symbols have already been downloaded while loading parent schematic: set local file path */
-      my_snprintf(sympath, S(sympath), "%s/xschem_web/%s", tclgetvar("XSCHEM_TMP_DIR"), get_cell_w_ext(name, 0));
-      load_schematic(1, sympath, 1);
-    } else {
-      load_schematic(1, sympath, 1);
+      my_mstrcat(_ALLOC_ID_, &sympath, tclgetvar("XSCHEM_TMP_DIR"),
+                 "/xschem_web/", get_cell_w_ext(tcl_hook2(name), 0), NULL);
+      my_strdup(_ALLOC_ID_, &current_dirname_save, xctx->current_dirname); /* save http url */
     }
+    if(!sympath || stat(sympath, &buf)) { /* not found */
+      dbg(1, "descend_symbol: not found: %s\n", sympath);
+      my_strdup2(_ALLOC_ID_, &sympath, abs_sym_path(tcl_hook2(name), ""));
+    }
+    dbg(1, "descend_symbol(): name=%s, sympath=%s, dirname=%s\n", name, sympath, xctx->current_dirname);
+    load_schematic(1, sympath, 1, 1);
+    if(web_url) {
+      /* restore web url current_dirname that is reset by load_schematic with local path */
+      my_strncpy(xctx->current_dirname, current_dirname_save, S(xctx->current_dirname));
+      my_free(_ALLOC_ID_, &current_dirname_save);
+    }
+    my_free(_ALLOC_ID_, &sympath);
   }
-  zoom_full(1, 0, 1, 0.97);
+  zoom_full(1, 0, 1 + 2 * tclgetboolvar("zoom_full_center"), 0.97);
 }
 
 /* 20111023 align selected object to current grid setting */
@@ -3819,7 +4210,7 @@ void round_schematic_to_grid(double c_snap)
 {
  int i, c, n, p;
  rebuild_selected_array();
- for(i=0;i<xctx->lastsel;i++)
+ for(i=0;i<xctx->lastsel; ++i)
  {
    c = xctx->sel_array[i].col; n = xctx->sel_array[i].n;
    switch(xctx->sel_array[i].type)
@@ -3913,7 +4304,7 @@ void save_selection(int what)
  }
  fprintf(fd, "v {xschem version=%s file_version=%s}\n", XSCHEM_VERSION, XSCHEM_FILE_VERSION);
  fprintf(fd, "G { %.16g %.16g }\n", xctx->mousex_snap, xctx->mousey_snap);
- for(i=0;i<xctx->lastsel;i++)
+ for(i=0;i<xctx->lastsel; ++i)
  {
    c = xctx->sel_array[i].col;n = xctx->sel_array[i].n;
    switch(xctx->sel_array[i].type)
@@ -3942,7 +4333,7 @@ void save_selection(int what)
 
      case POLYGON:
       fprintf(fd, "P %d %d ", c, xctx->poly[c][n].points);
-      for(k=0; k<xctx->poly[c][n].points; k++) {
+      for(k=0; k<xctx->poly[c][n].points; ++k) {
         fprintf(fd, "%.16g %.16g ", xctx->poly[c][n].x[k], xctx->poly[c][n].y[k]);
       }
       save_ascii_string(xctx->poly[c][n].prop_ptr,fd, 1);

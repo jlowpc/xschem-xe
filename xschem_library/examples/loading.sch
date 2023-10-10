@@ -1,4 +1,23 @@
-v {xschem version=3.1.0 file_version=1.2
+v {xschem version=3.4.4 file_version=1.2
+*
+* This file is part of XSCHEM,
+* a schematic capture and Spice/Vhdl/Verilog netlisting tool for circuit
+* simulation.
+* Copyright (C) 1998-2023 Stefan Frederik Schippers
+*
+* This program is free software; you can redistribute it and/or modify
+* it under the terms of the GNU General Public License as published by
+* the Free Software Foundation; either version 2 of the License, or
+* (at your option) any later version.
+*
+* This program is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+* GNU General Public License for more details.
+*
+* You should have received a copy of the GNU General Public License
+* along with this program; if not, write to the Free Software
+* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 }
 G {}
 K {}
@@ -360,3 +379,13 @@ signal V_VX, V_VX2, V_VXS, V_SP: real;
 
 }
 C {lab_wire.sym} 430 -680 0 1 {name=l1  lab=VX sig_type=rrreal }
+C {lab_pin.sym} 110 -500 0 0 { name=p1 lab=SW2 }
+C {lab_pin.sym} 110 -520 0 0 { name=p2 lab=SW1 }
+C {lab_pin.sym} 110 -540 0 0 { name=p3 lab=SW }
+C {lab_pin.sym} 110 -560 0 0 { name=p4 lab=ING1 }
+C {lab_pin.sym} 110 -580 0 0 { name=p5 lab=ING }
+C {noconn.sym} 110 -580 0 1 {name=l10}
+C {noconn.sym} 110 -560 0 1 {name=l11}
+C {noconn.sym} 110 -540 0 1 {name=l12}
+C {noconn.sym} 110 -520 0 1 {name=l13}
+C {noconn.sym} 110 -500 0 1 {name=l14}

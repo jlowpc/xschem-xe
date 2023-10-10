@@ -3,7 +3,7 @@
  * This file is part of XSCHEM,
  * a schematic capture and Spice/Vhdl/Verilog netlisting tool for circuit
  * simulation.
- * Copyright (C) 1998-2022 Stefan Frederik Schippers
+ * Copyright (C) 1998-2023 Stefan Frederik Schippers
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -34,7 +34,7 @@ static void find_closest_net(double mx,double my)
  double threshold;
  threshold = CADWIREMINDIST * CADWIREMINDIST * xctx->zoom * xctx->zoom;
 
- for(i=0;i<xctx->wires;i++)
+ for(i=0;i<xctx->wires; ++i)
  {
   if( (tmp = dist(xctx->wire[i].x1,xctx->wire[i].y1,xctx->wire[i].x2,xctx->wire[i].y2,mx,my)) < distance )
   {
@@ -56,13 +56,13 @@ static void find_closest_polygon(double mx,double my)
  double x1, y1, x2, y2;
  double threshold;
  threshold = CADWIREMINDIST * CADWIREMINDIST * xctx->zoom * xctx->zoom;
- for(c=0;c<cadlayers;c++)
+ for(c=0;c<cadlayers; ++c)
  {
   if(!xctx->enable_layer[c]) continue;
-  for(i=0;i<xctx->polygons[c];i++)
+  for(i=0;i<xctx->polygons[c]; ++i)
   {
     /*fprintf(errfp, "points=%d\n", xctx->poly[c][i].points); */
-    for(j=0; j<xctx->poly[c][i].points-1; j++) {
+    for(j=0; j<xctx->poly[c][i].points-1; ++j) {
       x1 = xctx->poly[c][i].x[j];
       y1 = xctx->poly[c][i].y[j];
       x2 = xctx->poly[c][i].x[j+1];
@@ -91,10 +91,10 @@ static void find_closest_line(double mx,double my)
  int i,c,l=-1, col = 0;
  double threshold;
  threshold = CADWIREMINDIST * CADWIREMINDIST * xctx->zoom * xctx->zoom;
- for(c=0;c<cadlayers;c++)
+ for(c=0;c<cadlayers; ++c)
  {
   if(!xctx->enable_layer[c]) continue;
-  for(i=0;i<xctx->lines[c];i++)
+  for(i=0;i<xctx->lines[c]; ++i)
   {
    if( (tmp = dist(xctx->line[c][i].x1,xctx->line[c][i].y1,xctx->line[c][i].x2,xctx->line[c][i].y2,mx,my))
          < distance )
@@ -121,7 +121,7 @@ void find_closest_net_or_symbol_pin(double mx,double my, double *x, double *y)
   double curr_dist;
 
   curr_dist = DBL_MAX;
-  for(i=0;i<xctx->instances;i++) {
+  for(i=0;i<xctx->instances; ++i) {
     x0=xctx->inst[i].x0;
     y0=xctx->inst[i].y0;
     rot = xctx->inst[i].rot;
@@ -131,7 +131,7 @@ void find_closest_net_or_symbol_pin(double mx,double my, double *x, double *y)
 
     no_of_pin_rects = (xctx->inst[i].ptr+ xctx->sym)->rects[PINLAYER];
     if(IS_LABEL_OR_PIN(type)) no_of_pin_rects=1;
-    for(j=0; j<no_of_pin_rects; j++) {
+    for(j=0; j<no_of_pin_rects; ++j) {
       rect = ((xctx->inst[i].ptr+ xctx->sym)->rect[PINLAYER])[j];
       ROTATION(rot, flip, 0.0,0.0,rect.x1,rect.y1,x1,y1);
       ROTATION(rot, flip, 0.0,0.0,rect.x2,rect.y2,x2,y2);
@@ -149,7 +149,7 @@ void find_closest_net_or_symbol_pin(double mx,double my, double *x, double *y)
       }
     }
   }
-  for(i=0;i<xctx->wires; i++) {
+  for(i=0;i<xctx->wires; ++i) {
     xx=xctx->wire[i].x1;
     yy = xctx->wire[i].y1;
     dist = (mx - xx) * (mx - xx) + (my - yy) * (my - yy);
@@ -180,10 +180,10 @@ static void find_closest_arc(double mx,double my)
  double threshold;
  threshold = CADWIREMINDIST * CADWIREMINDIST * xctx->zoom * xctx->zoom;
 
- for(c=0;c<cadlayers;c++)
+ for(c=0;c<cadlayers; ++c)
  {
   if(!xctx->enable_layer[c]) continue;
-  for(i=0;i<xctx->arcs[c];i++)
+  for(i=0;i<xctx->arcs[c]; ++i)
   {
     dist = sqrt(pow(mx-xctx->arc[c][i].x,2) + pow(my-xctx->arc[c][i].y,2)) - xctx->arc[c][i].r;
     dist *= dist; /* square distance */
@@ -227,10 +227,10 @@ static void find_closest_box(double mx,double my)
 {
  double tmp;
  int i,c,r=-1, col = 0;
- for(c=0;c<cadlayers;c++)
+ for(c=0;c<cadlayers; ++c)
  {
   if(!xctx->enable_layer[c]) continue;
-  for(i=0;i<xctx->rects[c];i++)
+  for(i=0;i<xctx->rects[c]; ++i)
   {
    if( POINTINSIDE(mx,my,xctx->rect[c][i].x1,xctx->rect[c][i].y1,xctx->rect[c][i].x2,xctx->rect[c][i].y2) )
    {
@@ -250,11 +250,11 @@ static void find_closest_box(double mx,double my)
  }
 }
 
-static void find_closest_element(double mx,double my)
+static void find_closest_element(double mx,double my, int override_lock)
 {
  double tmp;
  int i,r=-1;
- for(i=0;i<xctx->instances;i++)
+ for(i=0;i<xctx->instances; ++i)
  {
   dbg(2, "find_closest_element(): %s: %g %g %g %g\n",
          xctx->inst[i].instname, xctx->inst[i].x1,xctx->inst[i].y1,xctx->inst[i].x2,xctx->inst[i].y2);
@@ -268,7 +268,7 @@ static void find_closest_element(double mx,double my)
     dbg(2, "find_closest_element(): finding closest element, instances=%d, dist=%.16g\n",i,tmp);
   }
  } /* end for i */
- if( r!=-1 &&  strcmp(get_tok_value(xctx->inst[r].prop_ptr, "lock", 0), "true") ) {
+ if( r!=-1 &&  (override_lock || strboolcmp(get_tok_value(xctx->inst[r].prop_ptr, "lock", 0), "true")) ) {
    sel.n = r; sel.type = ELEMENT;
  }
 }
@@ -283,14 +283,14 @@ static void find_closest_text(double mx,double my)
  int customfont;
  #endif
  threshold = CADWIREMINDIST * CADWIREMINDIST * xctx->zoom * xctx->zoom;
-  for(i=0;i<xctx->texts;i++)
+  for(i=0;i<xctx->texts; ++i)
   {
    rot = xctx->text[i].rot;
    flip = xctx->text[i].flip;
    #if HAS_CAIRO==1
    customfont = set_text_custom_font(&xctx->text[i]);
    #endif
-   text_bbox(xctx->text[i].txt_ptr,
+   text_bbox(get_text_floater(i),
              xctx->text[i].xscale, xctx->text[i].yscale, rot, flip,
               xctx->text[i].hcenter, xctx->text[i].vcenter,
              xctx->text[i].x0, xctx->text[i].y0,
@@ -312,7 +312,7 @@ static void find_closest_text(double mx,double my)
  }
 }
 
-Selected find_closest_obj(double mx,double my)
+Selected find_closest_obj(double mx,double my, int override_lock)
 {
  sel.n = 0L; sel.col = 0; sel.type = 0;
  distance = DBL_MAX;
@@ -324,7 +324,7 @@ Selected find_closest_obj(double mx,double my)
  /* dbg(1, "2 find_closest_obj(): sel.n=%d, sel.col=%d, sel.type=%d\n", sel.n, sel.col, sel.type); */
  find_closest_text(mx,my);
  find_closest_net(mx,my);
- find_closest_element(mx,my);
+ find_closest_element(mx,my, override_lock);
  return sel;    /*sel.type = 0 if nothing found */
 }
 

@@ -3,7 +3,7 @@
  * This file is part of XSCHEM,
  * a schematic capture and Spice/Vhdl/Verilog netlisting tool for circuit
  * simulation.
- * Copyright (C) 1998-2022 Stefan Frederik Schippers
+ * Copyright (C) 1998-2023 Stefan Frederik Schippers
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -40,6 +40,7 @@ typedef int myproc(
 /* variables for handling multiple windows/tabs */
 static Xschem_ctx *save_xctx[MAX_NEW_WINDOWS]; /* save pointer to current schematic context structure */
 static char window_path[MAX_NEW_WINDOWS][WINDOW_PATH_SIZE];
+/* ==0 if no additional windows/tabs, ==1 if one additional window/tab, ... */
 static int window_count = 0;
 
 /* ----------------------------------------------------------------------- */
@@ -77,6 +78,20 @@ static int client_msg(Display *disp, Window win, char *msg, /* {{{ */
     }
 }/*}}}*/
 
+Xschem_ctx **get_save_xctx(void)
+{
+  return save_xctx;
+}
+
+char *get_window_path(int i)
+{
+  return window_path[i];
+}
+
+int get_window_count(void)
+{
+  return window_count;
+}
 
 static int window_state (Display *disp, Window win, char *arg) {/*{{{*/
     char arg_copy[256]; /* overflow safe */
@@ -126,7 +141,7 @@ static int window_state (Display *disp, Window win, char *arg) {/*{{{*/
                 fputs("Invalid zero length property.\n", errfp);
                 return EXIT_FAILURE;
             }
-            for( i = 0; p2[i]; i++) tmp2[i] = (char)toupper( p2[i] );
+            for( i = 0; p2[i]; ++i) tmp2[i] = (char)toupper( p2[i] );
             tmp2[i] = '\0';
             my_snprintf(tmp_prop2, S(tmp_prop2), "_NET_WM_STATE_%s", tmp2);
             prop2 = XInternAtom(disp, tmp_prop2, False);
@@ -137,7 +152,7 @@ static int window_state (Display *disp, Window win, char *arg) {/*{{{*/
             fputs("Invalid zero length property.\n", errfp);
             return EXIT_FAILURE;
         }
-        for( i = 0; p1[i]; i++) tmp1[i] = (char)toupper( p1[i] );
+        for( i = 0; p1[i]; ++i) tmp1[i] = (char)toupper( p1[i] );
         tmp1[i] = '\0';
         my_snprintf(tmp_prop1, S(tmp_prop1), "_NET_WM_STATE_%s", tmp1);
         prop1 = XInternAtom(disp, tmp_prop1, False);
@@ -224,7 +239,7 @@ static unsigned int  find_best_color(char colorname[])
 
  if( XAllocNamedColor(display, colormap, colorname, &xcolor_exact, &xcolor) ==0 )
  {
-  for(i=0;i<=255;i++) {
+  for(i=0;i<=255; ++i) {
     xctx->xcolor_array[i].pixel=i;
     XQueryColor(display, colormap, xctx->xcolor_array+i);
   }
@@ -233,7 +248,7 @@ static unsigned int  find_best_color(char colorname[])
   XLookupColor(display, colormap, colorname, &xcolor_exact, &xcolor);
   red = xcolor.red; green = xcolor.green; blue = xcolor.blue;
   idx=0;
-  for(i = 0;i<=255; i++)
+  for(i = 0;i<=255; ++i)
   {
    r = xctx->xcolor_array[i].red ; g = xctx->xcolor_array[i].green ; b = xctx->xcolor_array[i].blue;
    deltar = (r - red);deltag = (g - green);deltab = (b - blue);
@@ -268,7 +283,7 @@ static void init_color_array(double dim, double dim_bg)
  unsigned int r, g, b;
  double tmp_dim;
 
- for(i=0;i<cadlayers;i++) {
+ for(i=0;i<cadlayers; ++i) {
    my_snprintf(s, S(s), "lindex $colors %d",i);
    tcleval(s);
    dbg(2, "init_color_array(): color:%s\n",tclresult());
@@ -297,9 +312,9 @@ static void init_color_array(double dim, double dim_bg)
 static void init_pixdata()/* populate xctx->fill_type array that is used in create_gc() to set fill styles */
 {
  int i,j, full, empty;
- for(i=0;i<cadlayers;i++) {
+ for(i=0;i<cadlayers; ++i) {
    full=1; empty=1;
-   for(j=0;j<32;j++) {
+   for(j=0;j<32; ++j) {
      if(i<sizeof(pixdata_init)/sizeof(pixdata_init[0]))
        pixdata[i][j] = pixdata_init[i][j];
      else
@@ -323,27 +338,16 @@ static void free_xschem_data()
   free_simdata();
 
   my_free(_ALLOC_ID_, &xctx->node_table);
-  my_free(_ALLOC_ID_, &xctx->inst_table);
   my_free(_ALLOC_ID_, &xctx->hilight_table);
 
   my_free(_ALLOC_ID_, &xctx->wire);
   my_free(_ALLOC_ID_, &xctx->text);
   my_free(_ALLOC_ID_, &xctx->inst);
-  for(i=0;i<cadlayers;i++) {
+  for(i=0;i<cadlayers; ++i) {
     my_free(_ALLOC_ID_, &xctx->rect[i]);
     my_free(_ALLOC_ID_, &xctx->line[i]);
     my_free(_ALLOC_ID_, &xctx->poly[i]);
     my_free(_ALLOC_ID_, &xctx->arc[i]);
-  }
-  for(i=0;i<xctx->maxs;i++) {
-    my_free(_ALLOC_ID_, &xctx->sym[i].line);
-    my_free(_ALLOC_ID_, &xctx->sym[i].rect);
-    my_free(_ALLOC_ID_, &xctx->sym[i].arc);
-    my_free(_ALLOC_ID_, &xctx->sym[i].poly);
-    my_free(_ALLOC_ID_, &xctx->sym[i].lines);
-    my_free(_ALLOC_ID_, &xctx->sym[i].polygons);
-    my_free(_ALLOC_ID_, &xctx->sym[i].arcs);
-    my_free(_ALLOC_ID_, &xctx->sym[i].rects);
   }
   my_free(_ALLOC_ID_, &xctx->sym);
   my_free(_ALLOC_ID_, &xctx->rect);
@@ -359,7 +363,9 @@ static void free_xschem_data()
   my_free(_ALLOC_ID_, &xctx->maxa);
   my_free(_ALLOC_ID_, &xctx->maxl);
   my_free(_ALLOC_ID_, &xctx->sel_array);
-  for(i=0;i<CADMAXHIER;i++) {
+  for(i=0;i<CADMAXHIER; ++i) {
+    if(xctx->portmap[i].table) str_hash_free(&xctx->portmap[i]);
+    if(xctx->sch[i]) my_free(_ALLOC_ID_, &xctx->sch[i]);
     if(xctx->sch_path[i]) my_free(_ALLOC_ID_, &xctx->sch_path[i]);
     if(xctx->hier_attr[i].templ) my_free(_ALLOC_ID_, &xctx->hier_attr[i].templ);
     if(xctx->hier_attr[i].prop_ptr) my_free(_ALLOC_ID_, &xctx->hier_attr[i].prop_ptr);
@@ -370,7 +376,7 @@ static void free_xschem_data()
   my_free(_ALLOC_ID_, &xctx->biggridpoint);
   my_free(_ALLOC_ID_, &xctx->gc);
   my_free(_ALLOC_ID_, &xctx->gcstipple);
-  for(i=0;i<cadlayers;i++) my_free(_ALLOC_ID_, &xctx->color_array[i]);
+  for(i=0;i<cadlayers; ++i) my_free(_ALLOC_ID_, &xctx->color_array[i]);
   my_free(_ALLOC_ID_, &xctx->color_array);
   my_free(_ALLOC_ID_, &xctx->enable_layer);
   my_free(_ALLOC_ID_, &xctx->active_layer);
@@ -385,7 +391,7 @@ static void free_xschem_data()
 static void create_gc(void)
 {
   int i;
-  for(i=0;i<cadlayers;i++)
+  for(i=0;i<cadlayers; ++i)
   {
     pixmap[i] = XCreateBitmapFromData(display, xctx->window, (char*)(pixdata[i]),16,16);
     xctx->gc[i] = XCreateGC(display,xctx->window,0L,NULL);
@@ -399,7 +405,7 @@ static void create_gc(void)
 static void free_gc()
 {
   int i;
-  for(i=0;i<cadlayers;i++) {
+  for(i=0;i<cadlayers; ++i) {
     XFreeGC(display,xctx->gc[i]);
     XFreeGC(display,xctx->gcstipple[i]);
   }
@@ -414,6 +420,7 @@ static void alloc_xschem_data(const char *top_path, const char *win_path)
   xctx->head_undo_ptr = 0;
   xctx->tail_undo_ptr = 0;
   xctx->undo_dirname = NULL;
+  xctx->infowindow_text = NULL;
 
   if(!strcmp(tclgetvar("undo_type"), "disk")) {
     xctx->undo_type = 0;
@@ -467,7 +474,7 @@ static void alloc_xschem_data(const char *top_path, const char *win_path)
   xctx->rectcolor= 4;  /* this is the current layer when xschem started. */
   xctx->currsch = 0;
   xctx->ui_state = 0;
-  xctx->lw = -1.0;
+  xctx->lw = 0.0;
   xctx->need_reb_sel_arr = 1;
   xctx->lastsel = 0;
   xctx->maxsel = 0;
@@ -491,16 +498,18 @@ static void alloc_xschem_data(const char *top_path, const char *win_path)
   xctx->plotfile[0] = '\0';
   xctx->netlist_unconn_cnt = 0; /* unique count of unconnected pins while netlisting */
   xctx->current_dirname[0] = '\0';
-  for(i = 0; i < NBOXES; i++) {
-    for(j = 0; j < NBOXES; j++) {
+  for(i = 0; i < NBOXES; ++i) {
+    for(j = 0; j < NBOXES; ++j) {
       xctx->instpin_spatial_table[i][j] = NULL;
       xctx->wire_spatial_table[i][j] = NULL;
       xctx->inst_spatial_table[i][j] = NULL;
     }
   }
   xctx->node_table = my_calloc(_ALLOC_ID_,  HASHSIZE, sizeof(Node_hashentry *));
-  xctx->inst_table.table = NULL;
-  xctx->inst_table.size = 0;
+  xctx->inst_name_table.table = NULL;
+  xctx->inst_name_table.size = 0;
+  xctx->floater_inst_table.table = NULL;
+  xctx->floater_inst_table.size = 0;
   xctx->hilight_table = my_calloc(_ALLOC_ID_,  HASHSIZE, sizeof(Hilight_hashentry *));
 
   xctx->inst_redraw_table = NULL;
@@ -522,6 +531,8 @@ static void alloc_xschem_data(const char *top_path, const char *win_path)
   xctx->move_rot = 0;
   xctx->move_flip = 0;
   xctx->manhattan_lines = 0;
+  xctx->kissing = 0;
+  xctx->connect_by_kissing = 0;
   xctx->x1 = xctx->y_1 = xctx->x2 = xctx->y_2 = xctx->deltax = xctx->deltay = 0.0;
   xctx->movelastsel = 0;
   xctx->rotatelocal=0;
@@ -542,16 +553,19 @@ static void alloc_xschem_data(const char *top_path, const char *win_path)
   xctx->hilight_time = 0; /* timestamp for sims */
   xctx->hilight_nets = 0;
   xctx->hilight_color = 0;
-  for(i=0;i<CADMAXHIER;i++) {
-    xctx->sch[i][0] = '\0';
+  for(i=0;i<CADMAXHIER; ++i) {
+    xctx->sch[i] = NULL;
     xctx->sch_path[i]=NULL;
     xctx->sch_path_hash[i]=0;
     xctx->hier_attr[i].prop_ptr = NULL;
     xctx->hier_attr[i].templ = NULL;
     xctx->hier_attr[i].symname = NULL;
     xctx->hier_attr[i].fd = NULL;
+    xctx->portmap[i].table = NULL;
+    xctx->portmap[i].size = 0;
   }
   my_strdup(_ALLOC_ID_, &xctx->sch_path[0],".");
+
   xctx->sch_inst_number[0] = 1;
   xctx->maxt=CADMAXTEXT;
   xctx->maxw=CADMAXWIRES;
@@ -561,21 +575,11 @@ static void alloc_xschem_data(const char *top_path, const char *win_path)
   xctx->wire=my_calloc(_ALLOC_ID_, xctx->maxw,sizeof(xWire));
   xctx->inst=my_calloc(_ALLOC_ID_, xctx->maxi , sizeof(xInstance) );
   xctx->sym=my_calloc(_ALLOC_ID_, xctx->maxs , sizeof(xSymbol) );
-  for(i=0;i<xctx->maxs;i++) {
-    xctx->sym[i].line=my_calloc(_ALLOC_ID_, cadlayers, sizeof(xLine *));
-    xctx->sym[i].poly=my_calloc(_ALLOC_ID_, cadlayers, sizeof(xPoly *));
-    xctx->sym[i].arc=my_calloc(_ALLOC_ID_, cadlayers, sizeof(xArc *));
-    xctx->sym[i].rect=my_calloc(_ALLOC_ID_, cadlayers, sizeof(xRect *));
-    xctx->sym[i].lines=my_calloc(_ALLOC_ID_, cadlayers, sizeof(int));
-    xctx->sym[i].rects=my_calloc(_ALLOC_ID_, cadlayers, sizeof(int));
-    xctx->sym[i].arcs=my_calloc(_ALLOC_ID_, cadlayers, sizeof(int));
-    xctx->sym[i].polygons=my_calloc(_ALLOC_ID_, cadlayers, sizeof(int));
-  }
   xctx->maxr=my_calloc(_ALLOC_ID_, cadlayers, sizeof(int));
   xctx->maxa=my_calloc(_ALLOC_ID_, cadlayers, sizeof(int));
   xctx->maxp=my_calloc(_ALLOC_ID_, cadlayers, sizeof(int));
   xctx->maxl=my_calloc(_ALLOC_ID_, cadlayers, sizeof(int));
-  for(i=0;i<cadlayers;i++)
+  for(i=0;i<cadlayers; ++i)
   {
     xctx->maxr[i]=CADMAXOBJECTS;
     xctx->maxp[i]=CADMAXOBJECTS;
@@ -586,7 +590,7 @@ static void alloc_xschem_data(const char *top_path, const char *win_path)
   xctx->line=my_calloc(_ALLOC_ID_, cadlayers, sizeof(xLine *));
   xctx->poly=my_calloc(_ALLOC_ID_, cadlayers, sizeof(xPoly *));
   xctx->arc=my_calloc(_ALLOC_ID_, cadlayers, sizeof(xArc *));
-  for(i=0;i<cadlayers;i++)
+  for(i=0;i<cadlayers; ++i)
   {
     xctx->rect[i]=my_calloc(_ALLOC_ID_, xctx->maxr[i],sizeof(xRect));
     xctx->arc[i]=my_calloc(_ALLOC_ID_, xctx->maxa[i],sizeof(xArc));
@@ -599,10 +603,15 @@ static void alloc_xschem_data(const char *top_path, const char *win_path)
   xctx->lines=my_calloc(_ALLOC_ID_, cadlayers, sizeof(int));
   xctx->maxsel=MAXGROUP;
   xctx->sel_array=my_calloc(_ALLOC_ID_, xctx->maxsel, sizeof(Selected));
+  xctx->first_sel.n = -1;
+  xctx->first_sel.type = 0;
+  xctx->first_sel.col = 0;
   xctx->biggridpoint=(XSegment*)my_calloc(_ALLOC_ID_, CADMAXGRIDPOINTS,sizeof(XSegment));
   xctx->gridpoint=(XPoint*)my_calloc(_ALLOC_ID_, CADMAXGRIDPOINTS,sizeof(XPoint));
   xctx->enable_drill = 0;
   xctx->prev_set_modify = -1;
+  xctx->prev_crossx = xctx->prev_crossy = 0.0;
+  xctx->mouse_inside = 0;
   xctx->pending_fullzoom = 0;
   my_strncpy(xctx->hiersep, ".", S(xctx->hiersep));
   xctx->no_undo = 0;
@@ -613,6 +622,7 @@ static void alloc_xschem_data(const char *top_path, const char *win_path)
   xctx->save_lw = 0.0;  /* used to save linewidth when selecting 'only_probes' view */
   xctx->onetime = 0; /* callback() static var */
   xctx->save_netlist_type = 0;
+  xctx->some_nets_added = 0;
   xctx->loaded_symbol = 0;
   xctx->no_draw = 0;
   xctx->bbox_set = 0; /* bbox */
@@ -624,6 +634,7 @@ static void alloc_xschem_data(const char *top_path, const char *win_path)
   xctx->gcstipple=my_calloc(_ALLOC_ID_, cadlayers, sizeof(GC));
   xctx->color_array=my_calloc(_ALLOC_ID_, cadlayers, sizeof(char*));
   xctx->enable_layer=my_calloc(_ALLOC_ID_, cadlayers, sizeof(int));
+  xctx->crosshair_layer = TEXTLAYER;
   xctx->n_active_layers = 0;
   xctx->active_layer=my_calloc(_ALLOC_ID_, cadlayers, sizeof(int));
   xctx->hide_symbols = 0;
@@ -650,6 +661,7 @@ static void delete_schematic_data(int delete_pixmap)
   unselect_all(1);
   /* clear static data in get_tok_value() must be done after unselect_all(1) 
    * as this functions re-uses get_tok_value() */
+  parse_cmd_string(NULL, NULL); /* clear static data in function */
   get_tok_value(NULL, NULL, 0); /* clear static data in function */
   /* delete inst and wire node fields, delete inst_pin spatial hash, and node hash table */
   delete_netlist_structs();
@@ -663,7 +675,10 @@ static void delete_schematic_data(int delete_pixmap)
   /* delete instances, wires, lines, rects, arcs, polys, texts, hash_inst, hash_wire, 
    * inst & wire .node fields, instance name hash */
   remove_symbols();
-  str_replace(NULL, NULL, NULL);
+  str_replace(NULL, NULL, NULL, 0);
+  escape_chars(NULL);
+  sanitize(NULL);
+  is_generator(NULL);
   free_rawfile(0);
   free_xschem_data(); /* delete the xctx struct */
 }
@@ -681,6 +696,7 @@ int compare_schematics(const char *f)
   int_hash_init(&table1, HASHSIZE);
   int_hash_init(&table2, HASHSIZE);
 
+  dbg(1, "compare_schematics(): xctx->sch_to_compare=%s\n", xctx->sch_to_compare);
   /* set filename of schematic to compare */
   if(f == NULL) {
     tcleval("load_file_dialog {Schematic to compare with} *.\\{sch,sym\\} INITIALLOADDIR");
@@ -695,15 +711,15 @@ int compare_schematics(const char *f)
   }
 
   /* HASH SCHEMATIC 1 */
-  for(i = 0; i < xctx->instances; i++) {
+  for(i = 0; i < xctx->instances; ++i) {
     l =  1024 + strlen(xctx->inst[i].prop_ptr ? xctx->inst[i].prop_ptr : "");
     my_realloc(_ALLOC_ID_, &s, l);
-    my_snprintf(s, l, "C %s %g %g %d %d %s",  xctx->inst[i].name,
+    my_snprintf(s, l, "C %s %g %g %d %d %s",  tcl_hook2(xctx->inst[i].name),
         xctx->inst[i].x0, xctx->inst[i].y0, xctx->inst[i].rot, xctx->inst[i].flip, 
         xctx->inst[i].prop_ptr ?  xctx->inst[i].prop_ptr : "");
     int_hash_lookup(&table1, s, i, XINSERT_NOREPLACE);
   }
-  for(i=0;i<xctx->wires;i++)
+  for(i=0;i<xctx->wires; ++i)
   {
     l =1024 + strlen(xctx->wire[i].prop_ptr ? xctx->wire[i].prop_ptr : "");
     my_realloc(_ALLOC_ID_, &s, l);
@@ -754,13 +770,13 @@ int compare_schematics(const char *f)
   xctx->xorigin = save_xctx->xorigin;
   xctx->yorigin = save_xctx->yorigin;
   /* Load schematic 2 for comparing */
-  load_schematic(1, xctx->sch_to_compare, 0); /* last param to 0, do not alter window title */
+  load_schematic(1, xctx->sch_to_compare, 0, 1); /* last param to 0, do not alter window title */
 
   /* HASH SCHEMATIC 2 , CHECK SCHEMATIC 2 WITH SCHEMATIC 1 */
-  for(i = 0; i < xctx->instances; i++) {
+  for(i = 0; i < xctx->instances; ++i) {
     l =  1024 + strlen(xctx->inst[i].prop_ptr ? xctx->inst[i].prop_ptr : "");
     my_realloc(_ALLOC_ID_, &s, l);
-    my_snprintf(s, l, "C %s %g %g %d %d %s",  xctx->inst[i].name,
+    my_snprintf(s, l, "C %s %g %g %d %d %s",  tcl_hook2(xctx->inst[i].name),
         xctx->inst[i].x0, xctx->inst[i].y0, xctx->inst[i].rot, xctx->inst[i].flip, 
         xctx->inst[i].prop_ptr ?  xctx->inst[i].prop_ptr : "");
     int_hash_lookup(&table2, s, i, XINSERT_NOREPLACE);
@@ -769,11 +785,12 @@ int compare_schematics(const char *f)
       dbg(1, "schematic 2 instance %d: %s mismatch or not found in schematic 1\n", i,
          xctx->inst[i].instname ? xctx->inst[i].instname : "");
       xctx->inst[i].sel = SELECTED;
+      set_first_sel(ELEMENT, i, 0);
       xctx->need_reb_sel_arr=1;
       ret = 1;
     }
   }
-  for(i=0;i<xctx->wires;i++)
+  for(i=0;i<xctx->wires; ++i)
   {
     l =1024 + strlen(xctx->wire[i].prop_ptr ? xctx->wire[i].prop_ptr : "");
     my_realloc(_ALLOC_ID_, &s, l);
@@ -785,6 +802,7 @@ int compare_schematics(const char *f)
       dbg(1, "schematic 2 net %d: %s mismatch or not found in schematic 1\n", i,
          xctx->wire[i].prop_ptr ? xctx->wire[i].prop_ptr : "");
       xctx->wire[i].sel = SELECTED;
+      set_first_sel(WIRE, i, 0);
       xctx->need_reb_sel_arr=1;
       ret = 1;
     }
@@ -803,20 +821,21 @@ int compare_schematics(const char *f)
   xctx = save_xctx;
 
   /* CHECK SCHEMATIC 1 WITH SCHEMATIC 2*/
-  for(i = 0; i < xctx->instances; i++) {
+  for(i = 0; i < xctx->instances; ++i) {
     l = 1024 + strlen(xctx->inst[i].prop_ptr ? xctx->inst[i].prop_ptr : "");
     my_realloc(_ALLOC_ID_,&s, l);
-    my_snprintf(s, l, "C %s %g %g %d %d %s",  xctx->inst[i].name,
+    my_snprintf(s, l, "C %s %g %g %d %d %s",  tcl_hook2(xctx->inst[i].name),
         xctx->inst[i].x0, xctx->inst[i].y0, xctx->inst[i].rot, xctx->inst[i].flip,
         xctx->inst[i].prop_ptr ?  xctx->inst[i].prop_ptr : "");
     found = int_hash_lookup(&table2, s, i, XLOOKUP);
     if(!found) {
       xctx->inst[i].sel = SELECTED;
+      set_first_sel(ELEMENT, i, 0);
       xctx->need_reb_sel_arr=1;
       ret = 1;
     }
   }
-  for(i=0;i<xctx->wires;i++)
+  for(i=0;i<xctx->wires; ++i)
   {
     l = 1024 + strlen(xctx->wire[i].prop_ptr ? xctx->wire[i].prop_ptr : "");
     my_realloc(_ALLOC_ID_, &s, l);
@@ -847,6 +866,9 @@ static void xwin_exit(void)
    return;
  }
  tcleval("catch { ngspice::resetdata }"); /* remove ngspice annotation data if any */
+ /* "1" parameter means to force exit even if there are modified tabs/windows */
+ if(xctx->infowindow_text) my_free(_ALLOC_ID_, &xctx->infowindow_text);
+ if(has_x) new_schematic("destroy_all", "1", NULL);
  delete_schematic_data(1);
  if(has_x) {
    Tk_DestroyWindow(mainwindow);
@@ -859,16 +881,16 @@ static void xwin_exit(void)
    if (cad_icon_pixmap) Tk_FreePixmap(display, cad_icon_pixmap);
    #endif
    #ifdef __unix__
-   for(i = 0; i < cadlayers; i++) XFreePixmap(display,pixmap[i]);
+   for(i = 0; i < cadlayers; ++i) XFreePixmap(display,pixmap[i]);
    #else
-   for(i = 0; i < cadlayers; i++) Tk_FreePixmap(display, pixmap[i]);
+   for(i = 0; i < cadlayers; ++i) Tk_FreePixmap(display, pixmap[i]);
    #endif
    my_free(_ALLOC_ID_, &pixmap);
  }
  dbg(1, "xwin_exit(): clearing drawing data structures\n");
 
  /* global context - graphic preferences/settings */
- for(i=0;i<cadlayers;i++) {
+ for(i=0;i<cadlayers; ++i) {
    my_free(_ALLOC_ID_, &pixdata[i]);
  }
  my_free(_ALLOC_ID_, &pixdata);
@@ -885,20 +907,23 @@ static void xwin_exit(void)
  tcl_hook2(NULL); /* clear static data in function */
  save_ascii_string(NULL, NULL, 0); /* clear static data in function */
  dbg(1, "xwin_exit(): removing font\n");
- for(i=0;i<127;i++) my_free(_ALLOC_ID_, &character[i]);
+ for(i=0;i<127; ++i) my_free(_ALLOC_ID_, &character[i]);
  dbg(1, "xwin_exit(): closed display\n");
  my_strncpy(cli_opt_filename, "", S(cli_opt_filename));
  my_free(_ALLOC_ID_, &xschem_executable);
  record_global_node(2, NULL, NULL); /* delete global node array */
  dbg(1, "xwin_exit(): deleted undo buffer\n");
  /* delete cmdline stuff */
- for(i = 0 ; i < cli_opt_argc; i++) {
+ for(i = 0 ; i < cli_opt_argc; ++i) {
    my_free(_ALLOC_ID_, &cli_opt_argv[i]);
  }
  my_free(_ALLOC_ID_, &cli_opt_argv);
  if(errfp!=stderr) fclose(errfp);
  errfp=stderr;
- if(!detach) printf("\n");
+ dbg(1, "xwin_exit(): closing tcp servers\n");
+ tcleval("if {[info exists xschem_server_getdata(server)]} { close $xschem_server_getdata(server) }");
+ tcleval("if {[info exists bespice_server_getdata(server)]} { close $bespice_server_getdata(server) }");
+ if(!cli_opt_detach) printf("\n");
  init_done=0; /* 20150409 to avoid multiple calls */
 }
 
@@ -927,7 +952,7 @@ static void xwin_exit(void)
  *      XAllocNamedColor fails to find the requested "color_array[i]".
  *      When all xctx->color_index[] are populated with pixel values xctx->xcolor_array[]
  *      is reset with the xschem layer colors in build_colors() using XLookupColor():
- *        for(i=0;i<cadlayers;i++) {
+ *        for(i=0;i<cadlayers; ++i) {
  *          XLookupColor(display, colormap, xctx->color_array[i], &xcolor_exact, &xcolor);
  *          xctx->xcolor_array[i] = xcolor;
  *        }
@@ -959,17 +984,17 @@ int build_colors(double dim, double dim_bg)
       tcleval("regsub -all {#} $svg_colors {0x} svg_colors");
     }
     init_color_array(dim, dim_bg);
-    for(i=0;i<cadlayers;i++)
+    if(has_x) for(i=0;i<cadlayers; ++i)
     {
      xctx->color_index[i] = find_best_color(xctx->color_array[i]);
     }
-    for(i=0;i<cadlayers;i++)
+    if(has_x) for(i=0;i<cadlayers; ++i)
     {
       XSetBackground(display, xctx->gc[i], xctx->color_index[0]); /* for dashed lines 'off' color */
       XSetForeground(display, xctx->gc[i], xctx->color_index[i]);
       XSetForeground(display, xctx->gcstipple[i], xctx->color_index[i]);
     }
-    for(i=0;i<cadlayers;i++) {
+    if(has_x) for(i=0;i<cadlayers; ++i) {
 #ifdef __unix__
       XLookupColor(display, colormap, xctx->color_array[i], &xcolor_exact, &xcolor);
       xctx->xcolor_array[i] = xcolor;
@@ -979,7 +1004,7 @@ int build_colors(double dim, double dim_bg)
       xctx->xcolor_array[i] = *xc;
 #endif
     }
-    tcleval("reconfigure_layers_menu");
+    if(has_x) tcleval("reconfigure_layers_menu");
     return 0; /* success */
 }
 
@@ -987,7 +1012,7 @@ void set_clip_mask(int what)
 {
   int i;
   if(what == SET) {
-    for(i=0;i<cadlayers;i++)
+    for(i=0;i<cadlayers; ++i)
     {
       XSetClipRectangles(display, xctx->gc[i], 0,0, xctx->xrect, 1, Unsorted);
       XSetClipRectangles(display, xctx->gcstipple[i], 0,0, xctx->xrect, 1, Unsorted);
@@ -1002,7 +1027,7 @@ void set_clip_mask(int what)
     cairo_clip(xctx->cairo_save_ctx);
     #endif
   } else if(what == END) {
-    for(i=0;i<cadlayers;i++)
+    for(i=0;i<cadlayers; ++i)
     {
      XSetClipMask(display, xctx->gc[i], None);
      XSetClipMask(display, xctx->gcstipple[i], None);
@@ -1084,7 +1109,7 @@ void toggle_fullscreen(const char *topwin)
      * pending_fullzoom does not work on the last corect ConfigureNotify event,
      * so wee zoom_full() again */
   }
-  zoom_full(1, 0, 1, 0.97); /* draw */
+  zoom_full(1, 0, 1 + 2 * tclgetboolvar("zoom_full_center"), 0.97); /* draw */
 }
 
 
@@ -1126,7 +1151,7 @@ void preview_window(const char *what, const char *win_path, const char *fname)
   /* avoid reentrant calls for example if an alert box is displayed while loading file to preview,
    * and an Expose event calls another preview draw */
   if(semaphore) return;
-  semaphore++;
+  ++semaphore;
   dbg(1, "------\n");
   if(!strcmp(what, "create")) {
     dbg(1, "preview_window() create, save ctx, win_path=%s\n", win_path);
@@ -1153,9 +1178,9 @@ void preview_window(const char *what, const char *win_path, const char *fname)
       build_colors(0.0, 0.0);
       resetwin(1, 0, 1, 0, 0);  /* create preview pixmap.  resetwin(create_pixmap, clear_pixmap, force) */
       dbg(1, "preview_window() draw, load schematic\n");
-      load_schematic(1,fname, 0);
+      load_schematic(1,fname, 0, 1);
     }
-    zoom_full(1, 0, 1, 0.97); /* draw */
+    zoom_full(1, 0, 1 + 2 * tclgetboolvar("zoom_full_center"), 0.97); /* draw */
     xctx = save_xctx;
   }
   else if(!strcmp(what, "destroy")) {
@@ -1176,6 +1201,174 @@ void preview_window(const char *what, const char *win_path, const char *fname)
   semaphore--;
 }
 
+
+static int get_tab_or_window_number(const char *win_path)
+{
+  int i, n = -1;
+  Xschem_ctx *ctx, **save_xctx = get_save_xctx();
+  for(i = 0; i < MAX_NEW_WINDOWS; ++i) {
+    if(!strcmp(win_path, window_path[i])) {
+      n = i;
+      break;
+    }
+  }
+  if(n == -1) {
+    for(i = 0; i < MAX_NEW_WINDOWS; ++i) {
+      ctx = save_xctx[i];
+      /* if only one schematic it is not yet saved in save_xctx */
+      if(get_window_count() == 0 && i == 0)  {
+        ctx = xctx;
+      }
+      if(ctx && !strcmp(win_path, get_cell_w_ext(ctx->current_name, 0))) {
+        n = i;
+        break;
+      }
+    }
+  }
+  return n;
+}
+
+/* swap primary view (.drw) with first valid tab (x1.drw, x2.drw, ...)
+ * used for window close ('xschem exit' command) */
+void swap_tabs(void)
+{
+  int wc = window_count;
+  if(!tclgetboolvar("tabbed_interface")) return;
+  if(wc) {
+    Xschem_ctx *ctx;
+    char *tmp;
+    int i = 0;
+    int j;
+    for(j = 1; j < MAX_NEW_WINDOWS; j++) {
+      if(save_xctx[j]) break;
+    }
+    if(j >= MAX_NEW_WINDOWS) {
+      dbg(0, "swap_tabs(): no tab to swap to found\n");
+      return;
+    }
+    if(!save_xctx[i]) {
+      dbg(0, "swap_tabs(): no tab to swap from found\n");
+      return;
+    }
+
+    tmp = save_xctx[i]->top_path;
+    save_xctx[i]->top_path = save_xctx[j]->top_path;
+    save_xctx[j]->top_path = tmp;
+
+    tmp = save_xctx[i]->current_win_path;
+    save_xctx[i]->current_win_path = save_xctx[j]->current_win_path;
+    save_xctx[j]->current_win_path = tmp;
+
+    ctx = save_xctx[i];
+    save_xctx[i] = save_xctx[j];
+    save_xctx[j] = ctx;
+   
+    /* update filenames on tab buttons */
+    ctx = xctx;
+    xctx = save_xctx[i];
+    set_modify(-1);
+    xctx = save_xctx[j];
+    set_modify(-1);
+    xctx = ctx;
+    set_modify(-1);
+    /* set context to tab that is about to be deleted */
+    new_schematic("switch_tab", save_xctx[j]->current_win_path, NULL);
+  }
+}
+
+/* swap primary view (.drw) with first valid tab (x1.drw, x2.drw, ...)
+ * used for window close ('xschem exit' command) */
+void swap_windows(void)
+{
+  int wc = window_count;
+  if(tclgetboolvar("tabbed_interface")) return;
+  if(wc) {
+    Xschem_ctx *ctx;
+    char *tmp;
+    char wp_i[WINDOW_PATH_SIZE], wp_j[WINDOW_PATH_SIZE];
+    Window window;
+    Pixmap save_pixmap;
+    GC gc, *gcptr;
+    int i = 0;
+    int j;
+    Tk_Window tkwin, mainwindow;
+    char geometry[80];
+
+    for(j = 1; j < MAX_NEW_WINDOWS; j++) {
+      if(save_xctx[j]) break;
+    }
+    if(j >= MAX_NEW_WINDOWS) {
+      dbg(0, "swap_windows(): no tab to swap to found\n");
+      return;
+    }
+    if(!save_xctx[i]) {
+      dbg(0, "swap_windows(): no tab to swap from found\n");
+      return;
+    }
+    dbg(1, "swap_windows(): i=%d, j=%d\n", i, j);
+
+    my_snprintf(wp_i, S(wp_i), "%s", save_xctx[i]->current_win_path); /* primary (.drw) window */
+    my_snprintf(wp_j, S(wp_j), "%s", save_xctx[j]->current_win_path); /* sub (.x?.drw) window */
+
+    mainwindow = Tk_MainWindow(interp);
+    /* get parent of wp_j window, since window manager reparents application windows to a
+     * parent window with title bar and borders. This gives accurate geometry data */
+    tkwin = Tk_Parent(Tk_NameToWindow(interp, wp_j, mainwindow));
+
+    /* get sub-window geometry and position. primary window wp_i will be sized and moved there. */
+    dbg(1, "swap_windows(): %s: %dx%d+%d+%d\n",
+            wp_j, Tk_Width(tkwin), Tk_Height(tkwin), Tk_X(tkwin), Tk_Y(tkwin));
+    my_snprintf(geometry, S(geometry), "%dx%d+%d+%d",
+            Tk_Width(tkwin), Tk_Height(tkwin), Tk_X(tkwin), Tk_Y(tkwin));
+
+    /* swap tcl contexts */
+    tclvareval("save_ctx ", xctx->current_win_path, NULL);
+    tclvareval("restore_ctx ", wp_i, NULL);
+    tclvareval("save_ctx ", "_temp", NULL);
+    tclvareval("restore_ctx ", wp_j, NULL);
+    tclvareval("save_ctx ", wp_i, NULL);
+    tclvareval("restore_ctx ", "_temp", NULL);
+    tclvareval("save_ctx ", wp_j, NULL);
+    tclvareval("delete_ctx _temp", NULL);
+
+    /* swap xschem xctx structs */
+    ctx = save_xctx[i];
+    save_xctx[i] = save_xctx[j];
+    save_xctx[j] = ctx;
+
+    /* swap window paths */
+    SWAP(save_xctx[i]->top_path, save_xctx[j]->top_path, tmp);
+    SWAP(save_xctx[i]->current_win_path, save_xctx[j]->current_win_path, tmp);
+
+    /* swap drawing stuff */
+    SWAP(save_xctx[i]->save_pixmap, save_xctx[j]->save_pixmap, save_pixmap);
+    SWAP(save_xctx[i]->window, save_xctx[j]->window, window);
+    SWAP(save_xctx[i]->gctiled, save_xctx[j]->gctiled, gc);
+    SWAP(save_xctx[i]->gc, save_xctx[j]->gc, gcptr);
+    SWAP(save_xctx[i]->gcstipple, save_xctx[j]->gcstipple, gcptr);
+
+    /* rebuld colors and pixmaps, redraw swapped schematics */
+    tclvareval("restore_ctx ", wp_i, NULL);
+    new_schematic("switch", wp_i, "");
+    tclvareval("housekeeping_ctx", NULL);
+    tclvareval("xschem build_colors", NULL);
+    resetwin(1, 1, 1, 0, 0);
+    /* move primary window to location of deleted window */
+    tclvareval("wm geometry . ", geometry, NULL);
+    draw();
+    
+    /* set context to window that is about to be deleted */
+    tclvareval("restore_ctx ", wp_j, NULL);
+    new_schematic("switch", wp_j, "");
+    tclvareval("housekeeping_ctx", NULL);
+    tclvareval("xschem build_colors", NULL);
+    resetwin(1, 1, 1, 0, 0);
+    /* draw(); */ /* avoid drawing, since usually this will be destroyed soon after */
+  }
+}
+
+
+
 /* check if filename is already loaded into a tab or window */
 /* caller should supply a win_path string for storing matching window path */
 int check_loaded(const char *f, char *win_path)
@@ -1183,11 +1376,14 @@ int check_loaded(const char *f, char *win_path)
   int i;
   Xschem_ctx *ctx;
   int found = 0;
-  for(i = 0; i < MAX_NEW_WINDOWS; i++) {
+  for(i = 0; i < MAX_NEW_WINDOWS; ++i) {
     ctx = save_xctx[i];
     dbg(1, "window_count=%d i=%d\n", window_count, i);
     /* if only one schematic it is not yet saved in save_xctx */
-    if(window_count == 0 && i == 0)  ctx = xctx;
+    if(window_count == 0 && i == 0)  {
+      ctx = xctx;
+      my_snprintf(window_path[0],  S(window_path[0]), ".drw" );
+    }
     if(ctx) {
       dbg(1, "%s <--> %s\n", ctx->sch[ctx->currsch], f);
       if(!strcmp(ctx->sch[ctx->currsch], f)) {
@@ -1202,79 +1398,88 @@ int check_loaded(const char *f, char *win_path)
   return found;
 }
 
-/* caller (via new_schematic() ) should take care of switching tcl context
- * before calling this function,  see callback()
- *
- *   tclvareval("save_ctx ", old_winpath, NULL);
- *   tclvareval("restore_ctx ", winpath, NULL);
- *   new_schematic("switch_win", winpath, "");
- *   tclvareval("housekeeping_ctx", NULL);
- */
-static void switch_window(int *window_count, const char *win_path)
+static int switch_window(int *window_count, const char *win_path, int tcl_ctx)
 {
-  int i, n;
-  Tk_Window tkwin;
-  if(!strcmp(win_path, xctx->current_win_path)) return; /* already there */
+  int n;
+  char my_win_path[80];
+  Tk_Window tkwin=NULL;
+  if(!win_path) {
+    dbg(0, "switch_window(): no filename or window path given\n");
+    return 1;
+  }
+  if(!strcmp(win_path, xctx->current_win_path)) return 0; /* already there */
+  n = get_tab_or_window_number(win_path);
+  if(n == 0) my_snprintf(my_win_path, S(my_win_path), ".drw");
+  else my_snprintf(my_win_path, S(my_win_path), ".x%d.drw", n);
+  if(n == -1) {
+    dbg(0, "new_schematic(\"switch\"...): no window to switch to found: %s\n", win_path);
+    return 1;
+  }
   if(*window_count) {
-    dbg(1, "new_schematic(\"switch_win\"...): %s\n", win_path);
-    tkwin =  Tk_NameToWindow(interp, win_path, mainwindow); /* NULL if win_path not existing */
-    if(!tkwin) dbg(0, "new_schematic(\"switch_win\",...): Warning: %s has been destroyed\n", win_path);
-    n = -1;
-    if(tkwin) for(i = 0; i < MAX_NEW_WINDOWS; i++) {
-      if(!strcmp(win_path, window_path[i])) {
-        n = i;
-        break;
+    /* build my_win_path since win_path can also be a filename */
+    dbg(1, "new_schematic(\"switch\"...): %s\n", my_win_path);
+    if(has_x) {
+      tkwin =  Tk_NameToWindow(interp, my_win_path, mainwindow); /* NULL if win_path not existing */
+      if(!tkwin) {
+        dbg(0, "new_schematic(\"switch\",...): Warning: %s has been destroyed\n", win_path);
+        return 1;
       }
-    }
-    if(n == -1) {
-      dbg(0, "new_schematic(\"switch_win\"...): no window to switch to found: %s\n", win_path);
-      return;
     }
     /* if window was closed then tkwin == 0 --> do nothing */
-    if(tkwin && n >= 0 && n < MAX_NEW_WINDOWS) {
+    if((!has_x || tkwin) && n >= 0 && n < MAX_NEW_WINDOWS) {
+      if(tcl_ctx) tclvareval("save_ctx ", xctx->current_win_path, NULL);
       xctx = save_xctx[n];
+      if(tcl_ctx) tclvareval("restore_ctx ", win_path, NULL);
+      tclvareval("housekeeping_ctx", NULL);
+      if(tcl_ctx && has_x) tclvareval("reconfigure_layers_button {}", NULL);
       set_modify(-1); /* sets window title */
-    }
+      return 0;
+    } else return 1;
   }
+  dbg(0, "No additional windows are present\n");
+  return 0;
 }
 
-static void switch_tab(int *window_count, const char *win_path)
+static int switch_tab(int *window_count, const char *win_path)
 {        
-  int i, n;
+  int n;
 
-  if(xctx->semaphore) return; /* some editing operation ongoing. do nothing */
-  if(!strcmp(win_path, xctx->current_win_path)) return; /* already there */
+  dbg(1, "switch_tab(): win_path=%s\n", win_path);
+  if(xctx->semaphore) return 1; /* some editing operation ongoing. do nothing */
+  if(!win_path) {
+    dbg(0, "switch_tab(): no filename or window path given\n");
+    return 1;
+  }
+  if(!strcmp(win_path, xctx->current_win_path)) return 0; /* already there */
+  n = get_tab_or_window_number(win_path);
+  if(n == -1) {
+    dbg(0, "new_schematic(\"switch_tab\"...): no tab to switch to found: %s\n", win_path);
+    return 1;
+  }
   if(*window_count) {
     dbg(1, "new_schematic() switch_tab: %s\n", win_path);
-    n = -1;
-    for(i = 0; i < MAX_NEW_WINDOWS; i++) {
-      if(!strcmp(win_path, window_path[i])) {
-        n = i;
-        break;
-      }
-    }
-    if(n == -1) {
-      dbg(0, "new_schematic(\"switch_tab\"...): no tab to switch to found: %s\n", win_path);
-      return;
-    }
     /* if no matching tab found --> do nothing */
     if(n >= 0 && n < MAX_NEW_WINDOWS) {
       tclvareval("save_ctx ", xctx->current_win_path, NULL);
       xctx = save_xctx[n];
       tclvareval("restore_ctx ", win_path, NULL);
       tclvareval("housekeeping_ctx", NULL);
-      tclvareval("reconfigure_layers_button {}", NULL);
+      if(has_x) tclvareval("reconfigure_layers_button {}", NULL);
       xctx->window = save_xctx[0]->window;
       resetwin(1, 1, 1, 0, 0);
       set_modify(-1); /* sets window title */
       draw();
-    }
+      return 0;
+    } else return 1;
   }
+  dbg(0, "No tabs are present\n");
+  return 0;
 }
 
-static void create_new_window(int *window_count, const char *fname)
+/* non NULL and not empty noconfirm is used to avoid warning for duplicated filenames */
+static void create_new_window(int *window_count, const char *noconfirm, const char *fname)
 {
-  Window win_id;
+  Window win_id = 0LU;
   char toppath[WINDOW_PATH_SIZE];
   char prev_window[WINDOW_PATH_SIZE];
   int i, n;
@@ -1282,7 +1487,7 @@ static void create_new_window(int *window_count, const char *fname)
   dbg(1, "new_schematic() create: fname=%s *window_count = %d\n", fname, *window_count);
   
   my_strncpy(prev_window,  xctx->current_win_path, S(prev_window));
-  if(/* *window_count && */ fname && fname[0] && check_loaded(fname, toppath)) {
+  if((!noconfirm || !noconfirm[0]) && fname && fname[0] && check_loaded(fname, toppath)) {
     char msg[PATH_MAX+100];
     my_snprintf(msg, S(msg),
        "tk_messageBox -type okcancel -icon warning -parent [xschem get topwindow] "
@@ -1297,11 +1502,10 @@ static void create_new_window(int *window_count, const char *fname)
     }
   }
   if(*window_count == 0) {
-    for(i = 0; i < MAX_NEW_WINDOWS; i++) {
+    for(i = 0; i < MAX_NEW_WINDOWS; ++i) {
       save_xctx[i] = NULL;
       my_strncpy(window_path[i], "", S(window_path[i]));
     }
-    tclvareval("save_ctx ", xctx->current_win_path, NULL);
     save_xctx[0] = xctx; /* save current schematic */
     /* window_path[0] = Tk_NameToWindow(interp, ".drw", mainwindow); */
     my_strncpy(window_path[0], xctx->current_win_path, S(window_path[0]));
@@ -1310,11 +1514,14 @@ static void create_new_window(int *window_count, const char *fname)
     dbg(0, "new_schematic(\"create\"...): no more free slots\n");
     return; /* no more free slots */
   }
+  tclvareval("save_ctx ", xctx->current_win_path, NULL);
   (*window_count)++;
-  tclvareval("[xschem get top_path].menubar.simulate configure -bg $simulate_bg", NULL);
-  tcleval(".menubar.view.menu entryconfigure {Tabbed interface} -state disabled");
+  if(has_x) {
+    tclvareval("[xschem get top_path].menubar.simulate configure -bg $simulate_bg", NULL);
+    tcleval(".menubar.view.menu entryconfigure {Tabbed interface} -state disabled");
+  }
   n = -1;
-  for(i = 1; i < MAX_NEW_WINDOWS; i++) { /* search 1st free slot */
+  for(i = 1; i < MAX_NEW_WINDOWS; ++i) { /* search 1st free slot */
     if(save_xctx[i] == NULL) {
       n = i;
       break;
@@ -1326,12 +1533,14 @@ static void create_new_window(int *window_count, const char *fname)
   }
   my_snprintf(window_path[n], S(window_path[n]), ".x%d.drw", n);
   my_snprintf(toppath, S(toppath), ".x%d", n);
-  tclvareval("toplevel ", toppath, " -bg {} -width 400 -height 400", NULL);
-  tclvareval("build_widgets ", toppath, NULL);
-  tclvareval("pack_widgets ", toppath, " ; update", NULL);
-  Tk_MakeWindowExist(Tk_NameToWindow(interp, window_path[n], mainwindow));
-  win_id = Tk_WindowId(Tk_NameToWindow(interp, window_path[n], mainwindow));
-  Tk_ChangeWindowAttributes(Tk_NameToWindow(interp, window_path[n], mainwindow), CWBackingStore, &winattr);
+  if(has_x) {
+    tclvareval("toplevel ", toppath, " -bg {} -width 400 -height 400", NULL);
+    tclvareval("build_widgets ", toppath, NULL);
+    tclvareval("pack_widgets ", toppath, " ; update", NULL);
+    Tk_MakeWindowExist(Tk_NameToWindow(interp, window_path[n], mainwindow));
+    win_id = Tk_WindowId(Tk_NameToWindow(interp, window_path[n], mainwindow));
+    Tk_ChangeWindowAttributes(Tk_NameToWindow(interp, window_path[n], mainwindow), CWBackingStore, &winattr);
+  }
   xctx = NULL;
   alloc_xschem_data(toppath, window_path[n]); /* alloc data into xctx */
   xctx->netlist_type = CAD_SPICE_NETLIST; /* for new windows start with spice netlist mode */
@@ -1339,38 +1548,41 @@ static void create_new_window(int *window_count, const char *fname)
   init_pixdata();/* populate xctx->fill_type array that is used in create_gc() to set fill styles */
   save_xctx[n] = xctx;
   dbg(1, "new_schematic() draw, load schematic\n");
-  xctx->window = win_id;
+  if(has_x) xctx->window = win_id;
   set_snap(0); /* set default value specified in xschemrc as 'snap' else CADSNAP */
   set_grid(0); /* set default value specified in xschemrc as 'grid' else CADGRID */
-  create_gc();
+  if(has_x) create_gc();
   enable_layers();
   build_colors(0.0, 0.0);
   resetwin(1, 0, 1, 0, 0);  /* create preview pixmap.  resetwin(create_pixmap, clear_pixmap, force, w, h) */
-  /* draw empty window so if following load fails due to missing file window appears correctly drawn */
-  zoom_full(1, 0, 1, 0.97);
-  load_schematic(1, fname, 1);
-  zoom_full(1, 0, 1, 0.97); /* draw */
+  xctx->zoom=CADINITIALZOOM;
+  xctx->mooz=1/CADINITIALZOOM;
+  xctx->xorigin=CADINITIALX;
+  xctx->yorigin=CADINITIALY;
+  load_schematic(1, fname, 1, 1);
+  zoom_full(1, 0, 1 + 2 * tclgetboolvar("zoom_full_center"), 0.97); /* draw */
   tclvareval("set_bindings ", window_path[n], NULL);
   tclvareval("save_ctx ", window_path[n], NULL);
   /* restore previous context,
    * because the Expose event after new window creation does a context switch prev win -> new win 
    */
   tclvareval("restore_ctx ", prev_window, NULL);
-  new_schematic("switch_win", prev_window, "");
+  new_schematic("switch", prev_window, "");
   tclvareval("housekeeping_ctx", NULL);
 
-  windowid(toppath);
+  if(has_x) windowid(toppath);
 }
 
-static void create_new_tab(int *window_count, const char *fname)
+/* non NULL and not empty noconfirm is used to avoid warning for duplicated filenames */
+static void create_new_tab(int *window_count, const char *noconfirm, const char *fname)
 {
-  int i, n;
+  int i;
   char open_path[WINDOW_PATH_SIZE];
   char nn[WINDOW_PATH_SIZE];
   char win_path[WINDOW_PATH_SIZE];
 
   dbg(1, "new_schematic() new_tab, creating...\n");
-  if(/* *window_count && */ fname && fname[0] && check_loaded(fname, open_path)) {
+  if((!noconfirm || !noconfirm[0]) && fname && fname[0] && check_loaded(fname, open_path)) {
     char msg[PATH_MAX+100];
     my_snprintf(msg, S(msg),
        "tk_messageBox -type okcancel -icon warning -parent [xschem get topwindow] "
@@ -1389,11 +1601,10 @@ static void create_new_tab(int *window_count, const char *fname)
     }
   }
   if(*window_count == 0) {
-    for(i = 0; i < MAX_NEW_WINDOWS; i++) {
+    for(i = 0; i < MAX_NEW_WINDOWS; ++i) {
       save_xctx[i] = NULL;
       my_strncpy(window_path[i], "", S(window_path[i]));
     }
-    tclvareval("save_ctx ", xctx->current_win_path, NULL);
     save_xctx[0] = xctx; /* save current schematic */
     my_strncpy(window_path[0], xctx->current_win_path, S(window_path[0]));
   }
@@ -1401,66 +1612,76 @@ static void create_new_tab(int *window_count, const char *fname)
     dbg(0, "new_schematic(\"new_tab\"...): no more free slots\n");
     return; /* no more free slots */
   }
+  tclvareval("save_ctx ", xctx->current_win_path, NULL);
   (*window_count)++;
-  tclvareval("[xschem get top_path].menubar.simulate configure -bg $simulate_bg", NULL);
-  tcleval(".menubar.view.menu entryconfigure {Tabbed interface} -state disabled");
-  n = -1;
-  for(i = 1; i < MAX_NEW_WINDOWS; i++) { /* search 1st free slot */
+  if(has_x) {
+    tclvareval("[xschem get top_path].menubar.simulate configure -bg $simulate_bg", NULL);
+    tcleval(".menubar.view.menu entryconfigure {Tabbed interface} -state disabled");
+  }
+  for(i = 1; i < MAX_NEW_WINDOWS; ++i) { /* search 1st free slot */
     if(save_xctx[i] == NULL) {
-      n = i;
       break;
     }
   }
-  if(n == -1) {
+  if(i >= MAX_NEW_WINDOWS) {
     dbg(0, "new_schematic(\"newtab\"...): no more free slots\n");
     return;
   }
   /* tcl code to create the tab button */
-  my_snprintf(nn, S(nn), "%d", n);
-  tclvareval(
-    "button ", ".tabs.x", nn, " -padx 2 -pady 0 -takefocus 0 -anchor nw -text Tab2 "
-    "-command \"xschem new_schematic switch_tab .x", nn, ".drw\"", NULL);
-  tclvareval("bind .tabs.x",nn," <ButtonPress> {swap_tabs %X %Y press}", NULL);
-  tclvareval("bind .tabs.x",nn," <ButtonRelease> {swap_tabs %X %Y release}", NULL);
-  tclvareval(
-    "if {![info exists tctx::tab_bg] } {set tctx::tab_bg [",
-    ".tabs.x", nn, " cget -bg]}", NULL);
-  tclvareval("pack ", ".tabs.x", nn, 
-    " -before ", ".tabs.add -side left", NULL);
+  my_snprintf(nn, S(nn), "%d", i);
+  if(has_x) {
+    tclvareval(
+      "button ", ".tabs.x", nn, " -padx 2 -pady 0 -takefocus 0 -anchor nw -text Tab2 "
+      "-command \"xschem new_schematic switch .x", nn, ".drw\"", NULL);
+    tclvareval("bind .tabs.x",nn," <ButtonPress> {swap_tabs %X %Y press}", NULL);
+    tclvareval("bind .tabs.x",nn," <ButtonRelease> {swap_tabs %X %Y release}", NULL);
+    tclvareval(
+      "if {![info exists tctx::tab_bg] } {set tctx::tab_bg [",
+      ".tabs.x", nn, " cget -bg]}", NULL);
+    tclvareval("pack ", ".tabs.x", nn, 
+      " -before ", ".tabs.add -side left", NULL);
+  }
   /*                                   */
 
-  my_snprintf(win_path, S(win_path), ".x%d.drw", n);
-  my_strncpy(window_path[n], win_path, S(window_path[n]));
+  my_snprintf(win_path, S(win_path), ".x%d.drw", i);
+  my_strncpy(window_path[i], win_path, S(window_path[i]));
   xctx = NULL;
   alloc_xschem_data("", win_path); /* alloc data into xctx */
   xctx->netlist_type = CAD_SPICE_NETLIST; /* for new windows start with spice netlist mode */
   tclsetvar("netlist_type","spice");
   init_pixdata();/* populate xctx->fill_type array that is used in create_gc() to set fill styles */
-  save_xctx[n] = xctx;
+  save_xctx[i] = xctx;
   dbg(1, "new_schematic() draw, load schematic\n");
   xctx->window = save_xctx[0]->window;
   set_snap(0); /* set default value specified in xschemrc as 'snap' else CADSNAP */
   set_grid(0); /* set default value specified in xschemrc as 'grid' else CADGRID */
-  create_gc();
+  if(has_x) create_gc();
   enable_layers();
   build_colors(0.0, 0.0);
   resetwin(1, 0, 1, 0, 0);  /* create pixmap.  resetwin(create_pixmap, clear_pixmap, force, w, h) */
-  /* draw empty window so if following load fails due to missing file window appears correctly drawn */
   tclvareval("housekeeping_ctx", NULL);
-  zoom_full(1, 0, 1, 0.97);
-  load_schematic(1,fname, 1);
-  zoom_full(1, 0, 1, 0.97); /* draw */
+  xctx->zoom=CADINITIALZOOM;
+  xctx->mooz=1/CADINITIALZOOM;
+  xctx->xorigin=CADINITIALX;
+  xctx->yorigin=CADINITIALY;
+  load_schematic(1,fname, 1, 1);
+  zoom_full(1, 0, 1 + 2 * tclgetboolvar("zoom_full_center"), 0.97); /* draw */
+  /* xctx->pending_fullzoom=1; */
 }
 
 static void destroy_window(int *window_count, const char *win_path)
 {
   int i, n;
   Xschem_ctx *savectx;
-  Tk_Window tkwin;
+  Tk_Window tkwin=NULL;
   savectx = xctx;
   if(*window_count) {
     int close = 0;
     dbg(1, "new_schematic() destroy {%s}\n", win_path);
+    if(!win_path) {
+      dbg(0, "destroy_window(): no window path given\n");
+      return;
+    }
     if(xctx->modified && has_x) {
       tcleval("tk_messageBox -type okcancel  -parent [xschem get topwindow] -message \""
               "[get_cell [xschem get schname] 0]"
@@ -1470,10 +1691,12 @@ static void destroy_window(int *window_count, const char *win_path)
     else close = 1;
     Tcl_ResetResult(interp);
     if(close) {
-      tkwin =  Tk_NameToWindow(interp, win_path, mainwindow); /* NULL if win_path not existing */
-      if(!tkwin) dbg(0, "new_schematic(\"destroy\", ...): Warning: %s has been destroyed\n", win_path);
+      if(has_x) {
+        tkwin =  Tk_NameToWindow(interp, win_path, mainwindow); /* NULL if win_path not existing */
+        if(!tkwin) dbg(0, "new_schematic(\"destroy\", ...): Warning: %s has been destroyed\n", win_path);
+      }
       n = -1;
-      if(tkwin) for(i = 1; i < MAX_NEW_WINDOWS; i++) {
+      if(!has_x || tkwin) for(i = 1; i < MAX_NEW_WINDOWS; ++i) {
         if(!strcmp(win_path, window_path[i])) {
           n = i;
           break;
@@ -1489,14 +1712,17 @@ static void destroy_window(int *window_count, const char *win_path)
         xctx = save_xctx[n];
         /* set saved ctx to main window if current is to be destroyed */
         if(savectx == xctx) savectx = save_xctx[0];
-        tclvareval("winfo toplevel ", win_path, NULL);
+        if(has_x) tclvareval("winfo toplevel ", win_path, NULL);
         delete_schematic_data(1);
         save_xctx[n] = NULL;
-        Tk_DestroyWindow(Tk_NameToWindow(interp, window_path[n], mainwindow));
-        tclvareval("destroy ", tclresult(), NULL);
+        if(has_x) {
+          Tk_DestroyWindow(Tk_NameToWindow(interp, window_path[n], mainwindow));
+          tclvareval("destroy ", tclresult(), NULL);
+        }
         my_strncpy(window_path[n], "", S(window_path[n]));
         (*window_count)--;
-        if(*window_count == 0) tcleval(".menubar.view.menu entryconfigure {Tabbed interface} -state normal");
+        if(has_x && *window_count == 0)
+          tcleval(".menubar.view.menu entryconfigure {Tabbed interface} -state normal");
       }
     }
     /* following 3 lines must be done also if window not closed */
@@ -1504,7 +1730,7 @@ static void destroy_window(int *window_count, const char *win_path)
     tclvareval("restore_ctx ", xctx->current_win_path, " ; housekeeping_ctx", NULL);
     set_modify(-1); /* sets window title */
   } else {
-    dbg(0, "new_schematic() destroy_tab: there are no additional tabs\n");
+    dbg(0, "new_schematic() destroy_window: there are no additional tabs\n");
   }
 }
 
@@ -1515,6 +1741,10 @@ static void destroy_tab(int *window_count, const char *win_path)
     int close = 0;
     dbg(1, "new_schematic() destroy_tab\n");
 
+    if(!win_path) {
+      dbg(0, "destroy_tab(): no window path given\n");
+      return;
+    }
     if(strcmp(win_path, xctx->current_win_path)) {
       dbg(0, "new_schematic(\"destroy_tab\", %s): must be in this tab to destroy\n", win_path);
       return;
@@ -1529,7 +1759,7 @@ static void destroy_tab(int *window_count, const char *win_path)
     Tcl_ResetResult(interp);
     if(close) {
       n = -1;
-      for(i = 1; i < MAX_NEW_WINDOWS; i++) {
+      for(i = 1; i < MAX_NEW_WINDOWS; ++i) {
         if(!strcmp(win_path, window_path[i])) {
           n = i;
           break;
@@ -1565,24 +1795,26 @@ static void destroy_tab(int *window_count, const char *win_path)
   }
 }
 
-static void destroy_all_windows(int *window_count)
+static void destroy_all_windows(int *window_count, int force)
 {
   int i;
   Xschem_ctx *savectx;
-  Tk_Window tkwin;
+  Tk_Window tkwin=NULL;
   savectx = xctx;
   if(*window_count) {
     int close;
     dbg(1, "new_schematic() destroy_all\n");
-    for(i = 1; i < MAX_NEW_WINDOWS; i++) {
+    for(i = 1; i < MAX_NEW_WINDOWS; ++i) {
       if(window_path[i][0]) {
-        tkwin =  Tk_NameToWindow(interp, window_path[i], mainwindow); /* NULL if win_path not existing */
-        if(!tkwin) dbg(0, "new_schematic(\"switch\",...): Warning: %s has been destroyed\n", window_path[i]);
+        if(has_x) {
+          tkwin = Tk_NameToWindow(interp, window_path[i], mainwindow); /* NULL if win_path not existing */
+        }
+        if(has_x && !tkwin) dbg(0, "new_schematic(\"switch\",...): Warning: %s has been destroyed\n", window_path[i]);
         else { 
           xctx = save_xctx[i];
           close = 0;
           /* reset old focused window so callback() will force repaint on expose events */
-          if(xctx->modified && has_x) {
+          if(!force && xctx->modified && has_x) {
             tcleval("tk_messageBox -type okcancel  -parent [xschem get topwindow] -message \""
                     "[get_cell [xschem get schname] 0]"
                     ": UNSAVED data: want to exit?\"");
@@ -1591,18 +1823,21 @@ static void destroy_all_windows(int *window_count)
           else close = 1;
           Tcl_ResetResult(interp);
           if(close) {
-            tclvareval("winfo toplevel ", window_path[i], NULL);
+            if(has_x) tclvareval("winfo toplevel ", window_path[i], NULL);
             delete_schematic_data(1);
             /* set saved ctx to main window if previous is about to be destroyed */
             if(savectx == save_xctx[i]) savectx = save_xctx[0];
             save_xctx[i] = NULL;
-            Tk_DestroyWindow(Tk_NameToWindow(interp, window_path[i], mainwindow));
-            tclvareval("destroy ", tclresult(), NULL);
+            if(has_x) {
+              Tk_DestroyWindow(Tk_NameToWindow(interp, window_path[i], mainwindow));
+              tclvareval("destroy ", tclresult(), NULL);
+            }
             /* delete Tcl context of deleted schematic window */
             tclvareval("delete_ctx ", window_path[i], NULL);
             my_strncpy(window_path[i], "", S(window_path[i]));
             (*window_count)--;
-            if(*window_count == 0) tcleval(".menubar.view.menu entryconfigure {Tabbed interface} -state normal");
+            if(has_x && *window_count == 0)
+               tcleval(".menubar.view.menu entryconfigure {Tabbed interface} -state normal");
           }
         }
       }
@@ -1614,7 +1849,7 @@ static void destroy_all_windows(int *window_count)
   }
 }
 
-static void destroy_all_tabs(int *window_count)
+static void destroy_all_tabs(int *window_count, int force)
 {
   int i;
   Xschem_ctx *savectx;
@@ -1622,12 +1857,12 @@ static void destroy_all_tabs(int *window_count)
   if(*window_count) {
     int close;
     dbg(1, "new_schematic() destroy_all_tabs\n");
-    for(i = 1; i < MAX_NEW_WINDOWS; i++) {
+    for(i = 1; i < MAX_NEW_WINDOWS; ++i) {
       if(window_path[i][0]) {
         xctx = save_xctx[i];
         close = 0;
         /* reset old focused window so callback() will force repaint on expose events */
-        if(xctx->modified && has_x) {
+        if(!force && xctx->modified && has_x) {
           tcleval("tk_messageBox -type okcancel  -parent [xschem get topwindow] -message \""
                   "[get_cell [xschem get schname] 0]"
                   ": UNSAVED data: want to exit?\"");
@@ -1638,14 +1873,14 @@ static void destroy_all_tabs(int *window_count)
         if(close) {
           /* delete Tcl context of deleted schematic window */
           tclvareval("delete_ctx ", window_path[i], NULL);
-          tclvareval("delete_tab ", window_path[i], NULL);
+          if(has_x) tclvareval("delete_tab ", window_path[i], NULL);
           delete_schematic_data(1);
           /* set saved ctx to main window if previous is about to be destroyed */
           if(savectx == save_xctx[i]) savectx = save_xctx[0];
           save_xctx[i] = NULL;
           my_strncpy(window_path[i], "", S(window_path[i]));
           (*window_count)--;
-          if(*window_count == 0) tcleval(".menubar.view.menu entryconfigure {Tabbed interface} -state normal");
+          if(has_x && *window_count == 0) tcleval(".menubar.view.menu entryconfigure {Tabbed interface} -state normal");
         }
       }
     }
@@ -1665,21 +1900,16 @@ static void destroy_all_tabs(int *window_count)
 int new_schematic(const char *what, const char *win_path, const char *fname)
 {
   int tabbed_interface;
-  const char *tmp;
 
-  if(!has_x) return 0;
-  tabbed_interface = 0;
-  if((tmp = tclgetvar("tabbed_interface"))) {
-    if(tmp[0] == '1') tabbed_interface = 1;
-  }
+  tabbed_interface = tclgetboolvar("tabbed_interface");
   dbg(1, "new_schematic(): current_win_path=%s, what=%s, win_path=%s\n", xctx->current_win_path, what, win_path);
   if(!strcmp(what, "ntabs")) {
     return window_count;
   } else if(!strcmp(what, "create")) {
     if(!tabbed_interface) {
-      create_new_window(&window_count, fname);
+      create_new_window(&window_count, win_path, fname);
     } else {
-      create_new_tab(&window_count, fname);
+      create_new_tab(&window_count, win_path, fname);
     }
   } else if(!strcmp(what, "destroy")) {
     if(!tabbed_interface) {
@@ -1689,14 +1919,15 @@ int new_schematic(const char *what, const char *win_path, const char *fname)
     }
   } else if(!strcmp(what, "destroy_all")) {
     if(!tabbed_interface) {
-      destroy_all_windows(&window_count);
+      destroy_all_windows(&window_count, (win_path && win_path[0]) ? 1 : 0);
     } else {
-      destroy_all_tabs(&window_count);
+      destroy_all_tabs(&window_count, (win_path && win_path[0]) ? 1 : 0);
     }
-  } else if(!strcmp(what, "switch_win")) {
-    switch_window(&window_count, win_path); /* see comments in switch_window() */
-  } else if(!strcmp(what, "switch_tab")) {
-    switch_tab(&window_count, win_path);
+  } else if(!strcmp(what, "switch")) {
+    if(tabbed_interface) return switch_tab(&window_count, win_path);
+    else return switch_window(&window_count, win_path, 1);
+  } else if(!strcmp(what, "switch_no_tcl_ctx") && !tabbed_interface) {
+    switch_window(&window_count, win_path, 0);
   }
   return window_count;
 }
@@ -1706,6 +1937,7 @@ void change_linewidth(double w)
   int i, linew;
 
   /* choose line width automatically based on zoom */
+  dbg(1, "change_linewidth(): w = %g, win_path=%s\n", w, xctx->current_win_path);
   if(w<0. || xctx->lw == -1.0) {
     double cs;
     cs = tclgetdoublevar("cadsnap");
@@ -1720,7 +1952,7 @@ void change_linewidth(double w)
   if(has_x) {
     linew = INT_WIDTH(xctx->lw);
     dbg(1, "Line width = %d\n", linew);
-    for(i=0;i<cadlayers;i++) {
+    for(i=0;i<cadlayers; ++i) {
         XSetLineAttributes (display, xctx->gc[i], linew, LineSolid, LINECAP , LINEJOIN);
     }
     XSetLineAttributes (display, xctx->gctiled, linew, LineSolid, LINECAP , LINEJOIN);
@@ -1811,7 +2043,7 @@ static void resetcairo(int create, int clear, int force_or_resize)
 /* w and h (if > 0 ) parameters force reset pixmap to w x h, regardless of window size */
 void resetwin(int create_pixmap, int clear_pixmap, int force, int w, int h)
 {
-  unsigned int width, height;
+  unsigned int width = 0, height = 0;
   int status;
   #ifndef __unix__
   HWND hwnd = Tk_GetHWND(xctx->window);
@@ -1840,6 +2072,7 @@ void resetwin(int create_pixmap, int clear_pixmap, int force, int w, int h)
       #endif
     }
     if(status) {
+       dbg(1, "resetwin(): win_path=%s\n", xctx->current_win_path);
        dbg(1, "resetwin(): create_pixmap=%d, clear_pixmap=%d, force=%d, width=%d, height=%d, pending_fullzoom=%d\n",
            create_pixmap, clear_pixmap, force, width, height, xctx->pending_fullzoom);
       /* if(wattr.map_state==IsUnmapped) return; */
@@ -1865,9 +2098,13 @@ void resetwin(int create_pixmap, int clear_pixmap, int force, int w, int h)
           #else
           Tk_FreePixmap(display, xctx->save_pixmap);
           #endif
+          xctx->save_pixmap = 0;
           XFreeGC(display,xctx->gctiled);
         }
         if(create_pixmap) {
+          XGCValues gcv;
+          unsigned long gcvm;
+
           #ifdef __unix__
           xctx->save_pixmap = XCreatePixmap(display, xctx->window,
              xctx->xrect[0].width, xctx->xrect[0].height, screendepth);
@@ -1875,19 +2112,33 @@ void resetwin(int create_pixmap, int clear_pixmap, int force, int w, int h)
           xctx->save_pixmap = Tk_GetPixmap(display, xctx->window,
              xctx->xrect[0].width, xctx->xrect[0].height, screendepth);
           #endif
-          xctx->gctiled = XCreateGC(display,xctx->window,0L, NULL);
-          XSetTile(display,xctx->gctiled, xctx->save_pixmap);
-          XSetFillStyle(display,xctx->gctiled,FillTiled);
+
+          if(fix_broken_tiled_fill || !_unix) {
+            gcv.function = GXnoop; /* disable all graphic operations with gctiled */
+            gcvm = GCFunction;
+            xctx->gctiled = XCreateGC(display,xctx->window, gcvm, &gcv); /* noop for gctiled */
+            XSetFillStyle(display,xctx->gctiled,FillSolid);
+          } else {
+            xctx->gctiled = XCreateGC(display,xctx->window,0L, NULL);
+            XSetTile(display,xctx->gctiled, xctx->save_pixmap);
+            XSetFillStyle(display,xctx->gctiled,FillTiled);
+          }
+         
           /* whenever a pixmap is recreated all GC attributes must be reissued */
           resetcairo(1, 0, 1); /* create, clear, force */
           change_linewidth(-1.0);
         }
       }
     }
-    if(xctx->pending_fullzoom > 0) {
-      dbg(1, "resetwin(): pending_fulzoom: doing zoom_full()\n");
-      zoom_full(1, 0, 1, 0.97);
-      xctx->pending_fullzoom--;
+    if(xctx->pending_fullzoom > 0 && create_pixmap) {
+      tcleval("winfo ismapped .");
+      /* if window unmapped or size has not been set by wm (width == 1 // height == 1) do not 
+       * perform the pending full_zoom */
+      if(tclresult()[0] == '1' && (width > 1 || height > 1) ) {
+        dbg(1, "resetwin(): window mapped, pending_fulzoom: doing zoom_full()\n");
+        zoom_full(1, 0, 1 + 2 * tclgetboolvar("zoom_full_center"), 0.97);
+        xctx->pending_fullzoom--;
+      }
     }
     dbg(1, "resetwin(): Window reset\n");
   } /* end if(has_x) */
@@ -1930,10 +2181,10 @@ int Tcl_AppInit(Tcl_Interp *inter)
   my_strncpy(home_dir, home_buff, S(home_dir));
 #endif
  /* set error and exit handlers */
- XSetErrorHandler(err);
  if(!interp) interp=inter;
  Tcl_Init(interp);
  if(has_x) {
+   XSetErrorHandler(err);
    Tk_Init(interp);
    tclsetvar("has_x","1");
  }
@@ -1979,6 +2230,9 @@ int Tcl_AppInit(Tcl_Interp *inter)
       "append XSCHEM_LIBRARY_PATH : [file dirname \"%s\"]/xschem_library/generators", pwd_dir);
    tcleval(tmp);
    my_snprintf(tmp, S(tmp), 
+      "append XSCHEM_LIBRARY_PATH : [file dirname \"%s\"]/xschem_library/inst_sch_select", pwd_dir);
+   tcleval(tmp);
+   my_snprintf(tmp, S(tmp), 
       "append XSCHEM_LIBRARY_PATH : [file dirname \"%s\"]/xschem_library/binto7seg", pwd_dir);
    tcleval(tmp);
    my_snprintf(tmp, S(tmp), 
@@ -1993,7 +2247,7 @@ int Tcl_AppInit(Tcl_Interp *inter)
  }
 #else
  char *up_hier=NULL, *win_xschem_library_path=NULL;
- #define WIN_XSCHEM_LIBRARY_PATH_NUM 10
+ #define WIN_XSCHEM_LIBRARY_PATH_NUM 11
  const char *WIN_XSCHEM_LIBRARY_PATH[WIN_XSCHEM_LIBRARY_PATH_NUM] = {
    /*1*/  "xschem_library",
    /*2*/  "xschem_library/devices", 
@@ -2002,9 +2256,10 @@ int Tcl_AppInit(Tcl_Interp *inter)
    /*5*/  "xschem_library/logic", 
    /*6*/  "xschem_library/xschem_simulator",
    /*7*/  "xschem_library/generators", 
-   /*8*/  "xschem_library/binto7seg", 
-   /*9*/  "xschem_library/pcb", 
-   /*10*/ "xschem_library/rom8k" };
+   /*8*/  "xschem_library/inst_sch_select", 
+   /*9*/  "xschem_library/binto7seg", 
+   /*10*/ "xschem_library/pcb", 
+   /*11*/ "xschem_library/rom8k" };
  GetModuleFileNameA(NULL, install_dir, MAX_PATH);
  change_to_unix_fn(install_dir);
  size_t dir_len=strlen(install_dir);
@@ -2064,10 +2319,15 @@ int Tcl_AppInit(Tcl_Interp *inter)
  tclsetvar("USER_CONF_DIR", user_conf_dir);
 #endif
 
- /* create USER_CONF_DIR if it was not installed */
+ /* create USER_CONF_DIR if it was not installed, also populate it with template xschemrc */
  if(stat(user_conf_dir, &buf)) {
    if(!mkdir(user_conf_dir, 0700)) {
-     dbg(1, "Tcl_AppInit(): created %s dir\n", user_conf_dir);
+     char srcfile[PATH_MAX];
+     char dstfile[PATH_MAX];
+     my_snprintf(dstfile, S(dstfile), "%s/xschemrc", user_conf_dir);
+     my_snprintf(srcfile, S(srcfile), "%s/xschemrc", tclgetvar("XSCHEM_SHAREDIR"));
+     tclvareval("file copy {", srcfile, "} {", dstfile, "}", NULL);
+     fprintf(stderr, "Created %s dir with template xschemrc\n", user_conf_dir);
    } else {
     fprintf(errfp, "Tcl_AppInit(): failure creating %s\n", user_conf_dir);
     Tcl_Exit(EXIT_FAILURE);
@@ -2225,15 +2485,16 @@ int Tcl_AppInit(Tcl_Interp *inter)
 
  /* get xschem globals from tcl variables set in xschemrc/xschem.tcl */
  cairo_font_line_spacing = tclgetdoublevar("cairo_font_line_spacing");
+
  if(color_ps==-1)
-   color_ps=atoi(tclgetvar("color_ps"));
+   color_ps=tclgetboolvar("color_ps");
  else  {
-   my_snprintf(tmp, S(tmp), "%d",color_ps);
-   tclsetvar("color_ps",tmp);
+   tclsetboolvar("color_ps", color_ps);
  }
- l_width=atoi(tclgetvar("line_width"));
- if(tclgetboolvar("change_lw")) l_width = 0.0;
- cadlayers=atoi(tclgetvar("cadlayers"));
+ l_width=tclgetdoublevar("line_width");
+ if(tclgetboolvar("change_lw")) l_width = -1.0;
+ cadlayers=tclgetintvar("cadlayers");
+ fix_broken_tiled_fill = tclgetboolvar("fix_broken_tiled_fill");
  if(debug_var==-10) debug_var=0;
  my_snprintf(tmp, S(tmp), "%.16g",CADGRID);
  tclvareval("set_ne cadgrid ", tmp, NULL);
@@ -2247,10 +2508,16 @@ int Tcl_AppInit(Tcl_Interp *inter)
  /*  [m]allocate dynamic memory */
  /*                             */
  alloc_xschem_data("", ".drw");
+ /* initialize current schematic name to empty string to avoid gazillion checks in the code for NULL */
+ my_strdup2(_ALLOC_ID_, &xctx->sch[xctx->currsch], "");
+
+ xctx->crosshair_layer = tclgetintvar("crosshair_layer");
+ if(xctx->crosshair_layer < 0 ) xctx->crosshair_layer = 2;
+ if(xctx->crosshair_layer >= cadlayers ) xctx->crosshair_layer = 2;
 
  /* global context / graphic preferences/settings */
  pixdata=my_calloc(_ALLOC_ID_, cadlayers, sizeof(char*));
- for(i=0;i<cadlayers;i++)
+ for(i=0;i<cadlayers; ++i)
  {
    pixdata[i]=my_calloc(_ALLOC_ID_, 32, sizeof(char));
  }
@@ -2296,7 +2563,7 @@ int Tcl_AppInit(Tcl_Interp *inter)
  my_strncpy(xctx->file_version, XSCHEM_FILE_VERSION, S(xctx->file_version));
  /* compile_font() needs enabled layers, these are set after xschem.tcl loading completed
   * so we temporarily enable all them here */
- for(i = 0; i < cadlayers; i++) xctx->enable_layer[i] = 1;
+ for(i = 0; i < cadlayers; ++i) xctx->enable_layer[i] = 1;
  compile_font();
  /* restore current dir after loading font */
  if(getenv("PWD")) {
@@ -2383,6 +2650,8 @@ int Tcl_AppInit(Tcl_Interp *inter)
 
 /* pass to tcl values of Alt, Shift, COntrol key masks so bind Alt-KeyPress events will work for windows */
 #ifndef __unix__
+ my_snprintf(tmp, S(tmp), "%d", Mod4Mask);
+ tclsetvar("Mod4Mask", tmp);
  my_snprintf(tmp, S(tmp), "%d", Mod1Mask);
  tclsetvar("Mod1Mask", tmp);
  my_snprintf(tmp, S(tmp), "%d", ShiftMask);
@@ -2426,12 +2695,15 @@ int Tcl_AppInit(Tcl_Interp *inter)
  /* set tcl netlist_dir if netlist_dir given on cmdline */
  if(cli_opt_netlist_dir[0]) tclsetvar("netlist_dir", cli_opt_netlist_dir);
 
- if(!set_netlist_dir(0, NULL)) {
-   const char *n;
-   n = tclgetvar("netlist_dir");
-   fprintf(errfp, "problems creating netlist directory %s\n", n ? n : "<NULL>");
- }
- if(cli_opt_initial_netlist_name[0]) my_strncpy(xctx->netlist_name, cli_opt_initial_netlist_name, S(cli_opt_initial_netlist_name));
+ /* 
+  * if(!set_netlist_dir(0, NULL)) {
+  *   const char *n;
+  *   n = tclgetvar("netlist_dir");
+  *   fprintf(errfp, "problems creating netlist directory %s\n", n ? n : "<NULL>");
+  * }
+  */
+ if(cli_opt_initial_netlist_name[0])
+    my_strncpy(xctx->netlist_name, cli_opt_initial_netlist_name, S(cli_opt_initial_netlist_name));
 
  enable_layers();
 
@@ -2449,18 +2721,22 @@ int Tcl_AppInit(Tcl_Interp *inter)
     char f[PATH_MAX];
 
    #ifdef __unix__
-   if(strstr(cli_opt_filename, "http://") == cli_opt_filename ||
-      strstr(cli_opt_filename, "https://") == cli_opt_filename) {
+   if(is_from_web(cli_opt_filename)) {
      my_snprintf(f, S(f), "%s", cli_opt_filename);
    } else if(cli_opt_filename[0] == '~' && cli_opt_filename[1] == '/') {
      my_snprintf(f, S(f), "%s%s", home_dir, cli_opt_filename + 1);
    } else if(cli_opt_filename[0] == '.' && cli_opt_filename[1] == '/') {
      my_snprintf(f, S(f), "%s%s", pwd_dir, cli_opt_filename + 1);
-   } else if(cli_opt_filename[0] !='/') {
-     my_snprintf(f, S(f), "%s/%s", pwd_dir, cli_opt_filename);
    } else {
-     my_snprintf(f, S(f), "%s", cli_opt_filename);
+     my_snprintf(f, S(f), "%s", abs_sym_path(cli_opt_filename, ""));
    }
+   /*
+    * } else if(cli_opt_filename[0] !='/') {
+    *   my_snprintf(f, S(f), "%s/%s", pwd_dir, cli_opt_filename);
+    * } else {
+    *   my_snprintf(f, S(f), "%s", cli_opt_filename);
+    * }
+    */
    #else
    my_strncpy(f, abs_sym_path(cli_opt_filename, ""), S(f));
    #endif
@@ -2468,9 +2744,10 @@ int Tcl_AppInit(Tcl_Interp *inter)
    remove_symbols();
    /* if cli_opt_do_netlist=1 call load_schematic with 'reset_undo=0' avoiding call 
       to tcl is_xschem_file that could change xctx->netlist_type to symbol */
-   load_schematic(1, f, !cli_opt_do_netlist);
+   load_schematic(1, f, !cli_opt_do_netlist, 1);
    tclvareval("update_recent_file {", f, "}", NULL);
- } else if(!cli_opt_tcl_script[0]) {
+ } else /* if(!cli_opt_tcl_script[0]) */
+ {
    char * tmp;
    char fname[PATH_MAX];
    tmp = (char *) tclgetvar("XSCHEM_START_WINDOW");
@@ -2481,11 +2758,10 @@ int Tcl_AppInit(Tcl_Interp *inter)
    my_strncpy(fname, abs_sym_path(tmp, ""), S(fname));
     /* if cli_opt_do_netlist=1 call load_schematic with 'reset_undo=0' avoiding call 
        to tcl is_xschem_file that could change xctx->netlist_type to symbol */
-   load_schematic(1, fname, !cli_opt_do_netlist);
+   load_schematic(1, fname, !cli_opt_do_netlist, 1);
  }
-
-
- zoom_full(0, 0, 1, 0.97);   /* Necessary to tell xschem the initial area to display */
+ /* Necessary to tell xschem the initial area to display */
+ zoom_full(0, 0, 1 + 2 * tclgetboolvar("zoom_full_center"), 0.97);
  xctx->pending_fullzoom=1;
  if(cli_opt_do_netlist) {
    if(debug_var>=1) {
@@ -2526,8 +2802,8 @@ int Tcl_AppInit(Tcl_Interp *inter)
      xctx->areay1 = -2;
      xctx->areaw = xctx->areax2-xctx->areax1;
      xctx->areah = xctx->areay2-xctx->areay1;
-     zoom_full(0, 0, 2, 0.97);
-     ps_draw(7);
+     zoom_full(0, 0, 2 * tclgetboolvar("zoom_full_center"), 0.97);
+     ps_draw(7, 0);
    } else if(cli_opt_do_print == 2) {
      if(!has_x) {
        dbg(0, "xschem: can not do a png export if no X11 present / Xserver running (check if DISPLAY set).\n");
@@ -2565,17 +2841,17 @@ int Tcl_AppInit(Tcl_Interp *inter)
 
  /* source tcl file given on command line with --script */
  if(cli_opt_tcl_script[0]) {
-   char str[PATH_MAX + 40];
    /* can not use tclvareval() here because if script contains 'exit'
     * program terminates before tclvareval() has a chance to cleanup
     * its dynamically allocated string
     */
-   my_snprintf(str, S(str), "update; source {%s}", cli_opt_tcl_script);
-   tcleval(str);
+   dbg(1, "executing --script file : %s\n",  cli_opt_tcl_script);
+   tcleval("update");
+   source_tcl_file(cli_opt_tcl_script);
  }
 
  /* load additional files */
- if(has_x) for(i = 2; i < cli_opt_argc; i++) {
+ for(i = 2; i < cli_opt_argc; ++i) {
    tclvareval("xschem load_new_window ",  cli_opt_argv[i], NULL);
  }
 
@@ -2584,7 +2860,10 @@ int Tcl_AppInit(Tcl_Interp *inter)
    tcleval(cli_opt_tcl_post_command);
  }
 
- if(quit) {
+ /* Execute tcl commands given in tcl variable postinit_commands if existing */
+ tcleval("eval_postinit_commands");
+
+ if(cli_opt_quit) {
    tcleval("exit");
  }
 
@@ -2594,8 +2873,8 @@ int Tcl_AppInit(Tcl_Interp *inter)
  /* */
 
 
- if(!detach && !cli_opt_no_readline) {
-   tcleval( "if {![catch {package require tclreadline}]} "
+ if(tclgetboolvar("use_tclreadline") && !cli_opt_detach && !cli_opt_no_readline) {
+   tcleval( "if {![catch {package require tclreadline}] && $tcl_interactive} "
      "{::tclreadline::readline builtincompleter 0;"
       "::tclreadline::readline customcompleter completer;"
       "::tclreadline::Loop }" 

@@ -1,4 +1,23 @@
-v {xschem version=3.1.0 file_version=1.2
+v {xschem version=3.4.4 file_version=1.2
+*
+* This file is part of XSCHEM,
+* a schematic capture and Spice/Vhdl/Verilog netlisting tool for circuit
+* simulation.
+* Copyright (C) 1998-2023 Stefan Frederik Schippers
+*
+* This program is free software; you can redistribute it and/or modify
+* it under the terms of the GNU General Public License as published by
+* the Free Software Foundation; either version 2 of the License, or
+* (at your option) any later version.
+*
+* This program is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+* GNU General Public License for more details.
+*
+* You should have received a copy of the GNU General Public License
+* along with this program; if not, write to the Free Software
+* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 }
 G {}
 K {}
@@ -45,15 +64,12 @@ A 7 884.1666666666666 -210 39.58991173406564 210.3432488842396 198.9246444160511
 P 1 10 880 -490 870 -550 950 -530 910 -510 940 -480 920 -480 910 -460 890 -500 880 -480 880 -490 {dash=3}
 P 4 6 830 -470 830 -560 820 -510 820 -550 810 -520 810 -490 {}
 P 15 11 870 -520 880 -560 900 -530 910 -550 920 -520 940 -530 920 -490 890 -500 860 -480 840 -530 870 -520 {fill=true}
-T {Welcome to XSCHEM!} 110 -1060 0 0 1 1 {layer=5}
+T {Welcome to XSCHEM!} 110 -1130 0 0 1 1 {layer=5}
 T {This is a test schematic window 
 
-On the left you see some sample circuits. You may descend into any
-of these by selecting one with a left mouse button click and
-pressing the 'e' key, or by menu 'Edit -> Push Schematic'.
-You can return here after descending into a schematic by hitting 
-'<Ctrl>-e' or by menu 'Edit -> Pop'.
-} 60 -990 0 0 0.4 0.4 {}
+On the left you see some sample circuits. You may descend into any of these by selecting one with a left mouse button click and
+pressing the 'e' key, or by menu 'Edit -> Push Schematic'. You can return here after descending into a schematic by hitting 
+'<Ctrl>-e' or by menu 'Edit -> Pop'.} 60 -1060 0 0 0.4 0.4 {}
 T {Lines} 960 -680 0 0 0.6 0.6 {layer=4}
 T {Rectangles} 960 -620 0 0 0.6 0.6 {layer=4}
 T {Polygons} 960 -530 0 0 0.6 0.6 {layer=4}
@@ -70,7 +86,7 @@ T {Arcs/Circles} 960 -240 0 0 0.6 0.6 {layer=4}
 T {Select the components here under
 and press'<Ctrl>-h' or <Ctrl>-click
 them to visit xschem websites
-or local docs} 400 -310 0 0 0.3 0.3 {slant=oblique }
+or local docs} 400 -290 0 0 0.3 0.3 {slant=oblique }
 T {SPECIAL OBJECTS} 1220 -840 0 0 0.6 0.6 {layer=7}
 T {Embedded
 PNG
@@ -81,51 +97,54 @@ that's me...)
 T {Simulation
 Graphs
 } 1530 -550 0 0 0.6 0.6 {layer=4}
-T {Bus rippers} 580 -440 0 0 0.6 0.6 {layer=4}
-N 820 -420 940 -420 {lab=#net1}
-N 860 -460 860 -370 {lab=#net2}
+T {Bus rippers} 580 -380 0 0 0.6 0.6 {layer=4}
+N 910 -420 940 -420 {lab=#net1}
+N 860 -390 860 -370 {lab=#net2}
 N 860 -390 920 -390 {lab=#net2}
 N 880 -430 910 -420 {lab=#net1}
-N 380 -370 640 -370 {lab=BUS[4:0]}
-N 510 -460 510 -380 {lab=BUS[1]}
-N 410 -420 410 -380 {lab=BUS[2]}
-C {poweramp.sym} 480 -690 0 0 {name=x1
+N 380 -310 640 -310 {lab=BUS[4:0]}
+N 510 -400 510 -320 {lab=BUS[1]}
+N 410 -350 410 -320 {lab=BUS[2]}
+N 460 -400 460 -320 {lab=BUS[2:1]}
+N 860 -460 860 -390 {lab=#net2}
+N 820 -420 910 -420 {lab=#net1}
+C {poweramp.sym} 480 -900 0 0 {name=x1
 tclcommand="xschem descend"}
-C {tesla.sym} 160 -570 0 0 {name=x2}
-C {test_ne555.sym} 160 -530 0 0 {name=x3}
-C {test_lm324.sym} 160 -490 0 0 {name=x4}
-C {osc.sym} 160 -610 0 0 {name=x5}
+C {tesla.sym} 160 -700 0 0 {name=x2}
+C {test_ne555.sym} 160 -660 0 0 {name=x3}
+C {test_lm324.sym} 160 -620 0 0 {name=x4}
+C {osc.sym} 160 -740 0 0 {name=x5}
 C {title.sym} 160 -30 0 0 {name=l1 author="Stefan Schippers"}
-C {cmos_example.sym} 160 -650 0 0 {name=x6}
-C {greycnt.sym} 160 -690 0 0 {name=x8}
-C {loading.sym} 160 -730 0 0 {name=x9}
+C {cmos_example.sym} 160 -780 0 0 {name=x6}
+C {greycnt.sym} 160 -820 0 0 {name=x8}
+C {loading.sym} 160 -860 0 0 {name=x9}
 C {inv_bsource.sym} 880 -320 0 0 {name=B1 TABLE="1.4 3.0 1.6 0.0"}
-C {launcher.sym} 460 -160 0 0 {name=h1 
+C {launcher.sym} 460 -140 0 0 {name=h1 
 descr="XSCHEM ON REPO.HU" 
 url="http://repo.hu/projects/xschem"
 program=x-www-browser}
-C {launcher.sym} 460 -110 0 0 {name=h3 
+C {launcher.sym} 460 -90 0 0 {name=h3 
 descr="Toggle light/dark 
 colorscheme" 
 tclcommand="xschem toggle_colorscheme"
 }
-C {launcher.sym} 460 -210 0 0 {name=h2 
+C {launcher.sym} 460 -190 0 0 {name=h2 
 descr="LOCAL DOCUMENTATION" 
 url="$\{XSCHEM_SHAREDIR\}/../doc/xschem/index.html"
 program=x-www-browser
 
 }
-C {rlc.sym} 160 -770 0 0 {name=x0}
-C {lab_pin.sym} 640 -370 0 1 {name=l2 sig_type=std_logic lab=BUS[4:0]}
-C {bus_connect.sym} 500 -370 0 0 {name=l3 lab=BUS[1]}
-C {bus_connect_nolab.sym} 400 -370 0 0 {name=r1}
-C {lab_pin.sym} 410 -420 3 1 {name=l4 sig_type=std_logic lab=BUS[2]}
-C {LCC_instances.sym} 160 -450 0 0 {name=x7}
-C {test_backannotated_subckt.sym} 160 -410 0 0 {name=x10}
-C {plot_manipulation.sym} 160 -370 0 0 {name=x11}
-C {logic_test.sym} 160 -330 0 0 {name=x12}
-C {simulate_ff.sym} 160 -290 0 0 {name=x13}
-C {test_mos_verilog.sym} 160 -250 0 0 {name=x14}
+C {rlc.sym} 160 -900 0 0 {name=x0}
+C {lab_pin.sym} 640 -310 0 1 {name=l2 sig_type=std_logic lab=BUS[4:0]}
+C {bus_connect.sym} 500 -310 0 0 {name=l3 lab=BUS[1]}
+C {bus_connect_nolab.sym} 400 -310 0 0 {name=r1}
+C {lab_pin.sym} 410 -350 3 1 {name=l4 sig_type=std_logic lab=BUS[2]}
+C {LCC_instances.sym} 160 -580 0 0 {name=x7}
+C {test_backannotated_subckt.sym} 160 -540 0 0 {name=x10}
+C {plot_manipulation.sym} 160 -500 0 0 {name=x11}
+C {logic_test.sym} 160 -460 0 0 {name=x12}
+C {simulate_ff.sym} 160 -420 0 0 {name=x13}
+C {test_mos_verilog.sym} 160 -380 0 0 {name=x14}
 C {launcher.sym} 1265 -225 0 0 {name=h5 
 descr=" Ctrl-Left-Click to load/
 unload waveforms" 
@@ -1458,13 +1477,21 @@ xwtAgA9ve8fHC0Dod8blIpQLQJBdgRgxavQ/AAAAgEslwD6d7SiMdxwqP41maeirFRxABH/Rb+tVM0DO
 cwtAyKwqggMC8z8AAABAXz/APixDHOviNio/cIyWTt0GHEAHmaX3NW0zQHJvU5F/bTNA3V5CW3kqoL85tJeeXUIJQIB/waNeQglAcFfF8JIdC0DY7tjwBPjxPwAAALCc
 UsA+"
 }
-C {test_ac.sym} 160 -210 0 0 {name=x15}
-C {rom8k.sym} 480 -730 0 0 {name=x17}
-C {test_doublepin.sym} 160 -170 0 0 {name=x19}
-C {classD_amp.sym} 480 -770 0 0 {name=x20}
-C {delta_sigma.sym} 480 -610 0 0 {name=x21}
-C {solar_panel.sym} 480 -570 0 0 {name=x22}
-C {test_extracted_netlist.sym} 160 -130 0 0 {name=x23
+C {test_ac.sym} 160 -340 0 0 {name=x15}
+C {rom8k.sym} 160 -180 0 0 {name=x17}
+C {test_doublepin.sym} 160 -300 0 0 {name=x19}
+C {classD_amp.sym} 160 -220 0 0 {name=x20}
+C {delta_sigma.sym} 480 -820 0 0 {name=x21}
+C {solar_panel.sym} 480 -780 0 0 {name=xsolar}
+C {test_extracted_netlist.sym} 160 -260 0 0 {name=x23
 tclcommand="xschem descend"}
-C {poweramp_lcc.sym} 480 -650 0 0 {name=x16
+C {poweramp_lcc.sym} 480 -860 0 0 {name=x16
 tclcommand="xschem descend"}
+C {test_symbolgen.sym} 480 -740 0 0 {name=x18}
+C {inst_sch_select.sym} 480 -700 0 0 {name=x24}
+C {test_bus_tap.sym} 480 -660 0 0 {name=x22}
+C {bus_tap.sym} 450 -310 1 1 {name=l5 lab=[2:1]}
+C {test_jfet.sym} 480 -620 0 0 {name=x25}
+C {test_short_option.sym} 480 -580 0 0 {name=x26}
+C {test_lvs_ignore.sym} 480 -540 0 0 {name=x27}
+C {test_generators.sym} 480 -500 0 0 {name=x28}

@@ -3,7 +3,7 @@
  * This file is part of XSCHEM,
  * a schematic capture and Spice/Vhdl/Verilog netlisting tool for circuit
  * simulation.
- * Copyright (C) 1998-2022 Stefan Frederik Schippers
+ * Copyright (C) 1998-2023 Stefan Frederik Schippers
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,7 +30,7 @@ void rebuild_selected_array() /* can be used only if new selected set is lower *
  dbg(2, "rebuild selected array\n");
  if(!xctx->need_reb_sel_arr) return;
  xctx->lastsel=0;
- for(i=0;i<xctx->texts;i++)
+ for(i=0;i<xctx->texts; ++i)
   if(xctx->text[i].sel)
   {
    check_selected_storage();
@@ -38,7 +38,7 @@ void rebuild_selected_array() /* can be used only if new selected set is lower *
    xctx->sel_array[xctx->lastsel].n = i;
    xctx->sel_array[xctx->lastsel++].col = TEXTLAYER;
   }
- for(i=0;i<xctx->instances;i++)
+ for(i=0;i<xctx->instances; ++i)
   if(xctx->inst[i].sel)
   {
    check_selected_storage();
@@ -46,7 +46,7 @@ void rebuild_selected_array() /* can be used only if new selected set is lower *
    xctx->sel_array[xctx->lastsel].n = i;
    xctx->sel_array[xctx->lastsel++].col = WIRELAYER;
   }
- for(i=0;i<xctx->wires;i++)
+ for(i=0;i<xctx->wires; ++i)
   if(xctx->wire[i].sel)
   {
    check_selected_storage();
@@ -54,9 +54,9 @@ void rebuild_selected_array() /* can be used only if new selected set is lower *
    xctx->sel_array[xctx->lastsel].n = i;
    xctx->sel_array[xctx->lastsel++].col = WIRELAYER;
   }
- for(c=0;c<cadlayers;c++)
+ for(c=0;c<cadlayers; ++c)
  {
-  for(i=0;i<xctx->arcs[c];i++)
+  for(i=0;i<xctx->arcs[c]; ++i)
    if(xctx->arc[c][i].sel)
    {
     check_selected_storage();
@@ -64,7 +64,7 @@ void rebuild_selected_array() /* can be used only if new selected set is lower *
     xctx->sel_array[xctx->lastsel].n = i;
     xctx->sel_array[xctx->lastsel++].col = c;
    }
-  for(i=0;i<xctx->rects[c];i++)
+  for(i=0;i<xctx->rects[c]; ++i)
    if(xctx->rect[c][i].sel)
    {
     check_selected_storage();
@@ -72,7 +72,7 @@ void rebuild_selected_array() /* can be used only if new selected set is lower *
     xctx->sel_array[xctx->lastsel].n = i;
     xctx->sel_array[xctx->lastsel++].col = c;
    }
-  for(i=0;i<xctx->lines[c];i++)
+  for(i=0;i<xctx->lines[c]; ++i)
    if(xctx->line[c][i].sel)
    {
     check_selected_storage();
@@ -80,7 +80,7 @@ void rebuild_selected_array() /* can be used only if new selected set is lower *
     xctx->sel_array[xctx->lastsel].n = i;
     xctx->sel_array[xctx->lastsel++].col = c;
    }
-  for(i=0;i<xctx->polygons[c];i++)
+  for(i=0;i<xctx->polygons[c]; ++i)
    if(xctx->poly[c][i].sel)
    {
     check_selected_storage();
@@ -89,8 +89,10 @@ void rebuild_selected_array() /* can be used only if new selected set is lower *
     xctx->sel_array[xctx->lastsel++].col = c;
    }
  }
- if(xctx->lastsel==0) xctx->ui_state &= ~SELECTION;
- else xctx->ui_state |= SELECTION;
+ if(xctx->lastsel==0) {
+   xctx->ui_state &= ~SELECTION;
+   set_first_sel(0, -1, 0);
+ } else xctx->ui_state |= SELECTION;
  xctx->need_reb_sel_arr=0;
 }
 
@@ -100,14 +102,14 @@ void check_collapsing_objects()
   int found=0;
 
   j=0;
-  for(i=0;i<xctx->wires;i++)
+  for(i=0;i<xctx->wires; ++i)
   {
    if(xctx->wire[i].x1==xctx->wire[i].x2 && xctx->wire[i].y1 == xctx->wire[i].y2)
    {
     my_free(_ALLOC_ID_, &xctx->wire[i].prop_ptr);
     my_free(_ALLOC_ID_, &xctx->wire[i].node);
     found=1;
-    j++;
+    ++j;
     continue;
    }
    if(j)
@@ -118,16 +120,16 @@ void check_collapsing_objects()
   xctx->wires -= j;
 
  /* option: remove degenerated lines  */
-   for(c=0;c<cadlayers;c++)
+   for(c=0;c<cadlayers; ++c)
    {
     j = 0;
-    for(i=0;i<xctx->lines[c];i++)
+    for(i=0;i<xctx->lines[c]; ++i)
     {
      if(xctx->line[c][i].x1==xctx->line[c][i].x2 && xctx->line[c][i].y1 == xctx->line[c][i].y2)
      {
       my_free(_ALLOC_ID_, &xctx->line[c][i].prop_ptr);
       found=1;
-      j++;
+      ++j;
       continue;
      }
      if(j)
@@ -137,17 +139,17 @@ void check_collapsing_objects()
     }
     xctx->lines[c] -= j;
    }
-   for(c=0;c<cadlayers;c++)
+   for(c=0;c<cadlayers; ++c)
    {
     j = 0;
-    for(i=0;i<xctx->rects[c];i++)
+    for(i=0;i<xctx->rects[c]; ++i)
     {
      if(xctx->rect[c][i].x1==xctx->rect[c][i].x2 || xctx->rect[c][i].y1 == xctx->rect[c][i].y2)
      {
       my_free(_ALLOC_ID_, &xctx->rect[c][i].prop_ptr);
       set_rect_extraptr(0, &xctx->rect[c][i]);
       found=1;
-      j++;
+      ++j;
       continue;
      }
      if(j)
@@ -169,7 +171,7 @@ static void update_symbol_bboxes(short rot, short flip)
   int i, n;
   short save_flip, save_rot;
 
-  for(i=0;i<xctx->movelastsel;i++)
+  for(i=0;i<xctx->movelastsel; ++i)
   {
     n = xctx->sel_array[i].n;
     dbg(1, "update_symbol_bboxes(): i=%d, movelastsel=%d, n=%d\n", i, xctx->movelastsel, n);
@@ -193,8 +195,16 @@ void draw_selection(GC g, int interruptable)
   int customfont;
   #endif
 
+  dbg(1,"draw_selection\n");
   if(g != xctx->gctiled) xctx->movelastsel = xctx->lastsel;
-  for(i=0;i<xctx->movelastsel;i++)
+  if(fix_broken_tiled_fill || !_unix) {
+    if(g == xctx->gctiled) {
+      MyXCopyArea(display, xctx->save_pixmap, xctx->window, xctx->gc[0], xctx->xrect[0].x, xctx->xrect[0].y,
+             xctx->xrect[0].width, xctx->xrect[0].height, xctx->xrect[0].x, xctx->xrect[0].y);
+       if(tclgetboolvar("draw_crosshair")) draw_crosshair(0);
+    }
+  }
+  for(i=0;i<xctx->movelastsel; ++i)
   {
    c = xctx->sel_array[i].col;n = xctx->sel_array[i].n;
    switch(xctx->sel_array[i].type)
@@ -210,7 +220,7 @@ void draw_selection(GC g, int interruptable)
      #if HAS_CAIRO==1
      customfont =  set_text_custom_font(&xctx->text[n]);
      #endif
-     draw_temp_string(g,ADD, xctx->text[n].txt_ptr,
+     draw_temp_string(g,ADD, get_text_floater(n),
       (xctx->text[n].rot +
       ( (xctx->move_flip && (xctx->text[n].rot & 1) ) ? xctx->move_rot+2 : xctx->move_rot) ) & 0x3,
        xctx->text[n].flip^xctx->move_flip, xctx->text[n].hcenter, xctx->text[n].vcenter,
@@ -299,7 +309,7 @@ void draw_selection(GC g, int interruptable)
       double *x = my_malloc(_ALLOC_ID_, sizeof(double) *xctx->poly[c][n].points);
       double *y = my_malloc(_ALLOC_ID_, sizeof(double) *xctx->poly[c][n].points);
       if(xctx->poly[c][n].sel==SELECTED || xctx->poly[c][n].sel==SELECTED1) {
-        for(k=0;k<xctx->poly[c][n].points; k++) {
+        for(k=0;k<xctx->poly[c][n].points; ++k) {
           if( xctx->poly[c][n].sel==SELECTED || xctx->poly[c][n].selected_point[k]) {
             if(xctx->rotatelocal) {
               ROTATION(xctx->move_rot, xctx->move_flip, xctx->poly[c][n].x[0], xctx->poly[c][n].y[0],
@@ -439,7 +449,7 @@ void draw_selection(GC g, int interruptable)
        ROTATION(xctx->move_rot, xctx->move_flip, xctx->x1, xctx->y_1,
                 xctx->inst[n].x0, xctx->inst[n].y0, xctx->rx1,xctx->ry1);
      }
-     for(k=0;k<cadlayers;k++) {
+     for(k=0;k<cadlayers; ++k) {
        draw_temp_symbol(ADD, g, n, k, xctx->move_flip,
          ( xctx->move_flip && (xctx->inst[n].rot & 1) ) ? xctx->move_rot+2 : xctx->move_rot,
          xctx->rx1-xctx->inst[n].x0+xctx->deltax,xctx->ry1-xctx->inst[n].y0+xctx->deltay);
@@ -465,7 +475,7 @@ void draw_selection(GC g, int interruptable)
      return;
    }
 #endif
-  } /* for(i=0;i<xctx->movelastsel;i++) */
+  } /* for(i=0;i<xctx->movelastsel; ++i) */
   drawtemparc(g, END, 0.0, 0.0, 0.0, 0.0, 0.0);
   drawtemprect(g, END, 0.0, 0.0, 0.0, 0.0);
   drawtempline(g, END, 0.0, 0.0, 0.0, 0.0);
@@ -493,6 +503,7 @@ void find_inst_to_be_redrawn(int what)
   xInstance * const inst = xctx->inst;
 
   int s_pnetname = tclgetboolvar("show_pin_net_names");
+  int lvs_ignore = tclgetboolvar("lvs_ignore");
 
   
   dbg(1,"find_inst_to_be_redrawn(): what=%d\n", what);
@@ -506,14 +517,30 @@ void find_inst_to_be_redrawn(int what)
     if(xctx->node_redraw_table.table == NULL)  int_hash_init(&xctx->node_redraw_table, HASHSIZE);
     if(what & 32) prepare_netlist_structs(0);
     if(!(what & 8)) {
-      for(i=0;i<xctx->lastsel;i++)
+      for(i=0;i<xctx->lastsel; ++i)
       {
         n = xctx->sel_array[i].n;
         if( xctx->sel_array[i].type == ELEMENT) {
           int p;
-          char *type=xctx->sym[xctx->inst[n].ptr].type;
+          char *type;
+          int shorted_inst;
+          if(xctx->inst[n].ptr < 0 ) continue;
+          type=xctx->sym[xctx->inst[n].ptr].type;
+          set_inst_flags(&xctx->inst[n]);
+          shorted_inst = shorted_instance(n, lvs_ignore);
           /* collect all nodes connected to instances that set node names */
-          if(type && IS_LABEL_OR_PIN(type)) {
+          if(type && 
+             (
+               IS_LABEL_OR_PIN(type) ||
+               /* some pass through symbols have type show_label (metal option)
+                *                   |                     */
+               (!strcmp(type, "show_label") && (inst[n].ptr + xctx->sym)->rects[PINLAYER] > 1) ||
+               /* bus taps */
+               !strcmp(type, "bus_tap") ||
+               /* instances that have lvs_ignore=true and global lvs_ignore is set */
+               shorted_inst
+             )
+            ) {
             for(p = 0;  p < (inst[n].ptr + xctx->sym)->rects[PINLAYER]; p++) {
               if( inst[n].node && inst[n].node[p]) {
                 dbg(1,"find_inst_to_be_redrawn(): hashing inst %s, node %s\n", inst[n].instname, inst[n].node[p]);
@@ -527,13 +554,28 @@ void find_inst_to_be_redrawn(int what)
           int_hash_lookup(&xctx->node_redraw_table,  xctx->wire[n].node, 0, XINSERT_NOREPLACE);
         }
       }
+      /* propagate all node[0] of bus taps that have node[1] hashed above */
+      for(i=0; i < xctx->instances; ++i) {
+        char *type=xctx->sym[xctx->inst[i].ptr].type;
+        /* bus taps */
+        if(type && !strcmp(type, "bus_tap")) {
+          if(int_hash_lookup(&xctx->node_redraw_table, xctx->inst[i].node[1], 0, XLOOKUP)) {
+            int_hash_lookup(&xctx->node_redraw_table, xctx->inst[i].node[0], 0, XINSERT_NOREPLACE);
+            dbg(1, "bus_tap: propagate %s\n",  xctx->inst[i].node[0]);
+          }
+        }
+      }
     } /* if(!(what & 8)) */
   
-    if(!xctx->inst_redraw_table || xctx->instances > xctx->inst_redraw_table_size) {
+    if(!xctx->inst_redraw_table) {
+       xctx->inst_redraw_table = my_calloc(_ALLOC_ID_, xctx->instances, sizeof(unsigned char));
+    } else if(xctx->instances > xctx->inst_redraw_table_size) {
       my_realloc(_ALLOC_ID_, &xctx->inst_redraw_table, xctx->instances * sizeof(unsigned char));
+      memset(xctx->inst_redraw_table + xctx->inst_redraw_table_size, 0,
+          (xctx->instances - xctx->inst_redraw_table_size) * sizeof(unsigned char));
       xctx->inst_redraw_table_size = xctx->instances;
     }
-    for(i=0; i < xctx->instances; i++) {
+    for(i=0; i < xctx->instances; ++i) {
       sym = xctx->inst[i].ptr + xctx->sym;
       rects = sym->rects[PINLAYER];
       if(what & 2 && xctx->inst_redraw_table[i]) {
@@ -555,14 +597,15 @@ void find_inst_to_be_redrawn(int what)
               symbol_bbox(i, &inst[i].x1, &inst[i].y1, &inst[i].x2, &inst[i].y2);
               bbox(ADD, xctx->inst[i].x1, xctx->inst[i].y1, xctx->inst[i].x2, xctx->inst[i].y2);
             }
-            xctx->inst_redraw_table[i] = 1;
+            xctx->inst_redraw_table[i] = 1; /* keep list of instances to be redrawn for faster lookup when
+                                             * what==2 in following calls */
             break;
           }
         }
       }
     }
   
-    if(what & 5) for(i=0;i < xctx->wires; i++) {
+    if(what & 5) for(i=0;i < xctx->wires; ++i) {
       if(xctx->wire[i].node) {
         nentry = int_hash_lookup(&xctx->node_redraw_table, xctx->wire[i].node, 0, XLOOKUP);
         if(nentry) {
@@ -586,7 +629,7 @@ void find_inst_to_be_redrawn(int what)
     }
   } /* if((s_pnetname || xctx->hilight_nets)) */
   if(!(what & 8) ) {
-    if(what & 5) for(i=0;i<xctx->lastsel;i++) { /* add bboxes of selected objects */
+    if(what & 5) for(i=0;i<xctx->lastsel; ++i) { /* add bboxes of selected objects */
       n = xctx->sel_array[i].n;
       if( xctx->sel_array[i].type == ELEMENT) {
         dbg(1, "find_inst_to_be_redrawn(): 5 bboxing inst %s\n", xctx->inst[n].instname);
@@ -617,6 +660,9 @@ void copy_objects(int what)
    xctx->rotatelocal=0;
    dbg(1, "copy_objects(): START copy\n");
    rebuild_selected_array();
+   if(xctx->connect_by_kissing == 2) xctx->kissing = connect_by_kissing();
+   else xctx->kissing = 0;
+
    save_selection(1);
    xctx->deltax = xctx->deltay = 0.0;
    xctx->movelastsel = xctx->lastsel;
@@ -628,6 +674,17 @@ void copy_objects(int what)
   {
    char *str = NULL; /* 20161122 overflow safe */
    draw_selection(xctx->gctiled,0);
+
+   if(xctx->kissing) {
+     pop_undo(0, 0);
+     if(xctx->connect_by_kissing == 2) xctx->connect_by_kissing = 0;
+   }
+
+   if(fix_broken_tiled_fill || !_unix) {
+     MyXCopyArea(display, xctx->save_pixmap, xctx->window, xctx->gc[0], xctx->xrect[0].x, xctx->xrect[0].y,
+         xctx->xrect[0].width, xctx->xrect[0].height, xctx->xrect[0].x, xctx->xrect[0].y);
+   }
+
    xctx->move_rot = xctx->move_flip = 0;
    xctx->deltax = xctx->deltay = 0.;
    xctx->ui_state&=~STARTCOPY;
@@ -661,17 +718,26 @@ void copy_objects(int what)
   if(what & END)                                 /* copy selected objects */
   {
     int l, firstw, firsti;
-    bbox(START, 0.0 , 0.0 , 0.0 , 0.0);
-    newpropcnt=0;
-    set_modify(1); xctx->push_undo(); /* 20150327 push_undo */
-    
-    firstw = firsti = 1;
+    int floaters = there_are_floaters();
 
+    set_first_sel(0, -1, 0); /* reset first selected object */
+    if(xctx->connect_by_kissing == 2) xctx->connect_by_kissing = 0;
+
+    if(!floaters) bbox(START, 0.0 , 0.0 , 0.0 , 0.0);
+    newpropcnt=0;
+
+    if( !xctx->kissing ) {
+      dbg(1, "copy_objects(): push undo state\n");
+      xctx->push_undo();
+    }
+
+    firstw = firsti = 1;
     draw_selection(xctx->gctiled,0);
     update_symbol_bboxes(0, 0);
-    find_inst_to_be_redrawn(0); /* build list before copying and recalculating prepare_netlist_structs() */
+    /* build list before copying and recalculating prepare_netlist_structs() */
+    if(!floaters) find_inst_to_be_redrawn(0);
 
-    for(i=0;i<xctx->lastsel;i++)
+    for(i=0;i<xctx->lastsel; ++i)
     {
       n = xctx->sel_array[i].n;
       if(xctx->sel_array[i].type == WIRE)
@@ -718,20 +784,20 @@ void copy_objects(int what)
           ov = INT_BUS_WIDTH(xctx->lw)> cadhalfdotsize ? INT_BUS_WIDTH(xctx->lw) : CADHALFDOTSIZE;
           if(xctx->wire[l].y1 < xctx->wire[l].y2) { y1 = xctx->wire[l].y1-ov; y2 = xctx->wire[l].y2+ov; }
           else                        { y1 = xctx->wire[l].y1+ov; y2 = xctx->wire[l].y2-ov; }
-          bbox(ADD, xctx->wire[l].x1-ov, y1 , xctx->wire[l].x2+ov , y2 );
+          if(!floaters) bbox(ADD, xctx->wire[l].x1-ov, y1 , xctx->wire[l].x2+ov , y2 );
         } else {
           double ov, y1, y2;
           ov = cadhalfdotsize;
           if(xctx->wire[l].y1 < xctx->wire[l].y2) { y1 = xctx->wire[l].y1-ov; y2 = xctx->wire[l].y2+ov; }
           else                        { y1 = xctx->wire[l].y1+ov; y2 = xctx->wire[l].y2-ov; }
-          bbox(ADD, xctx->wire[l].x1-ov, y1 , xctx->wire[l].x2+ov , y2 );
+          if(!floaters) bbox(ADD, xctx->wire[l].x1-ov, y1 , xctx->wire[l].x2+ov , y2 );
         }
       }
     }
   
-    for(k=0;k<cadlayers;k++)
+    for(k=0;k<cadlayers; ++k)
     {
-     for(i=0;i<xctx->lastsel;i++)
+     for(i=0;i<xctx->lastsel; ++i)
      {
       c = xctx->sel_array[i].col;n = xctx->sel_array[i].n;
       switch(xctx->sel_array[i].type)
@@ -779,14 +845,14 @@ void copy_objects(int what)
           if(xctx->line[c][l].y1 < xctx->line[c][l].y2) 
                { y1 = xctx->line[c][l].y1-ov; y2 = xctx->line[c][l].y2+ov; }
           else { y1 = xctx->line[c][l].y1+ov; y2 = xctx->line[c][l].y2-ov; }
-          bbox(ADD, xctx->line[c][l].x1-ov, y1 , xctx->line[c][l].x2+ov , y2 );
+          if(!floaters) bbox(ADD, xctx->line[c][l].x1-ov, y1 , xctx->line[c][l].x2+ov , y2 );
         } else {
           double ov, y1, y2;
           ov = cadhalfdotsize;
           if(xctx->line[c][l].y1 < xctx->line[c][l].y2) 
                 { y1 = xctx->line[c][l].y1-ov; y2 = xctx->line[c][l].y2+ov; }
           else  { y1 = xctx->line[c][l].y1+ov; y2 = xctx->line[c][l].y2-ov; }
-          bbox(ADD, xctx->line[c][l].x1-ov, y1 , xctx->line[c][l].x2+ov , y2 );
+          if(!floaters) bbox(ADD, xctx->line[c][l].x1-ov, y1 , xctx->line[c][l].x2+ov , y2 );
         }
         break;
   
@@ -798,7 +864,7 @@ void copy_objects(int what)
           double *x = my_malloc(_ALLOC_ID_, sizeof(double) *p->points);
           double *y = my_malloc(_ALLOC_ID_, sizeof(double) *p->points);
           int j;
-          for(j=0; j<p->points; j++) {
+          for(j=0; j<p->points; ++j) {
             if( p->sel==SELECTED || p->selected_point[j]) {
               if(xctx->rotatelocal) {
                 ROTATION(xctx->move_rot, xctx->move_flip, p->x[0], p->y[0], p->x[j], p->y[j], xctx->rx1,xctx->ry1);
@@ -816,7 +882,7 @@ void copy_objects(int what)
             if(j==0 || x[j] > bx2) bx2 = x[j];
             if(j==0 || y[j] > by2) by2 = y[j];
           }
-          bbox(ADD, bx1, by1, bx2, by2);
+          if(!floaters) bbox(ADD, bx1, by1, bx2, by2);
           xctx->sel_array[i].n=xctx->polygons[c];
           store_poly(-1, x, y, p->points, c, p->sel, p->prop_ptr);
           p->sel=0;
@@ -849,14 +915,16 @@ void copy_objects(int what)
                    xctx->arc[c][n].r, angle, xctx->arc[c][n].b, c, SELECTED, xctx->arc[c][n].prop_ptr);
      
         l = xctx->arcs[c] - 1;
-        if(xctx->arc[c][l].fill)
-          arc_bbox(xctx->arc[c][l].x, xctx->arc[c][l].y, xctx->arc[c][l].r, 0, 360,
-                   &tmp.x1, &tmp.y1, &tmp.x2, &tmp.y2);
-        else
-          arc_bbox(xctx->arc[c][l].x, xctx->arc[c][l].y, xctx->arc[c][l].r,
-                   xctx->arc[c][l].a, xctx->arc[c][n].b,
-                   &tmp.x1, &tmp.y1, &tmp.x2, &tmp.y2);
-        bbox(ADD, tmp.x1, tmp.y1, tmp.x2, tmp.y2);
+        if(!floaters) {
+          if(xctx->arc[c][l].fill) {
+            arc_bbox(xctx->arc[c][l].x, xctx->arc[c][l].y, xctx->arc[c][l].r,
+                0, 360, &tmp.x1, &tmp.y1, &tmp.x2, &tmp.y2);
+          } else {
+            arc_bbox(xctx->arc[c][l].x, xctx->arc[c][l].y, xctx->arc[c][l].r,
+                xctx->arc[c][l].a, xctx->arc[c][n].b, &tmp.x1, &tmp.y1, &tmp.x2, &tmp.y2);
+          }
+          bbox(ADD, tmp.x1, tmp.y1, tmp.x2, tmp.y2);
+        }
         break;
   
        case xRECT:
@@ -879,7 +947,7 @@ void copy_objects(int what)
         storeobject(-1, xctx->rx1+xctx->deltax, xctx->ry1+xctx->deltay,
                    xctx->rx2+xctx->deltax, xctx->ry2+xctx->deltay,xRECT, c, SELECTED, xctx->rect[c][n].prop_ptr);
         l = xctx->rects[c] - 1;
-        bbox(ADD, xctx->rect[c][l].x1, xctx->rect[c][l].y1, xctx->rect[c][l].x2, xctx->rect[c][l].y2);
+        if(!floaters) bbox(ADD, xctx->rect[c][l].x1, xctx->rect[c][l].y1, xctx->rect[c][l].x2, xctx->rect[c][l].y2);
         break;
   
        case xTEXT:
@@ -893,7 +961,7 @@ void copy_objects(int what)
              xctx->text[n].x0, xctx->text[n].y0, xctx->rx1,xctx->ry1);
         }
         xctx->text[xctx->texts].txt_ptr=NULL;
-        my_strdup(_ALLOC_ID_, &xctx->text[xctx->texts].txt_ptr,xctx->text[n].txt_ptr);
+        my_strdup2(_ALLOC_ID_, &xctx->text[xctx->texts].txt_ptr,xctx->text[n].txt_ptr);
         xctx->text[n].sel=0;
          dbg(2, "copy_objects(): current str=%s\n",
           xctx->text[xctx->texts].txt_ptr);
@@ -902,10 +970,15 @@ void copy_objects(int what)
         xctx->text[xctx->texts].rot=(xctx->text[n].rot +
          ( (xctx->move_flip && (xctx->text[n].rot & 1) ) ? xctx->move_rot+2 : xctx->move_rot) ) & 0x3;
         xctx->text[xctx->texts].flip=xctx->move_flip^xctx->text[n].flip;
+        set_first_sel(xTEXT, xctx->texts, 0);
         xctx->text[xctx->texts].sel=SELECTED;
         xctx->text[xctx->texts].prop_ptr=NULL;
         xctx->text[xctx->texts].font=NULL;
-        my_strdup(_ALLOC_ID_, &xctx->text[xctx->texts].prop_ptr, xctx->text[n].prop_ptr);
+        xctx->text[xctx->texts].floater_instname=NULL;
+        xctx->text[xctx->texts].floater_ptr=NULL;
+        my_strdup2(_ALLOC_ID_, &xctx->text[xctx->texts].prop_ptr, xctx->text[n].prop_ptr);
+        my_strdup2(_ALLOC_ID_, &xctx->text[xctx->texts].floater_ptr, xctx->text[n].floater_ptr);
+        my_strdup2(_ALLOC_ID_, &xctx->text[xctx->texts].floater_instname, xctx->text[n].floater_instname);
         set_text_flags(&xctx->text[xctx->texts]);
         xctx->text[xctx->texts].xscale=xctx->text[n].xscale;
         xctx->text[xctx->texts].yscale=xctx->text[n].yscale;
@@ -915,7 +988,7 @@ void copy_objects(int what)
         #if HAS_CAIRO==1 /* bbox after copy */
         customfont = set_text_custom_font(&xctx->text[l]);
         #endif
-        text_bbox(xctx->text[l].txt_ptr, xctx->text[l].xscale,
+        text_bbox(get_text_floater(l), xctx->text[l].xscale,
           xctx->text[l].yscale, xctx->text[l].rot,xctx->text[l].flip, 
           xctx->text[l].hcenter, xctx->text[l].vcenter,
           xctx->text[l].x0, xctx->text[l].y0,
@@ -925,7 +998,7 @@ void copy_objects(int what)
           cairo_restore(xctx->cairo_ctx);
         }
         #endif
-        bbox(ADD, xctx->rx1, xctx->ry1, xctx->rx2, xctx->ry2 );
+        if(!floaters) bbox(ADD, xctx->rx1, xctx->ry1, xctx->rx2, xctx->ry2 );
   
         xctx->sel_array[i].n=xctx->texts;
         xctx->texts++;
@@ -934,15 +1007,12 @@ void copy_objects(int what)
        default:
         break;
       } /* end switch(xctx->sel_array[i].type) */
-     } /* end for(i=0;i<xctx->lastsel;i++) */
+     } /* end for(i=0;i<xctx->lastsel; ++i) */
   
   
-    } /* end for(k=0;k<cadlayers;k++) */
+    } /* end for(k=0;k<cadlayers; ++k) */
   
-  
-  
-  
-    for(i = 0; i < xctx->lastsel; i++) {
+    for(i = 0; i < xctx->lastsel; ++i) {
       n = xctx->sel_array[i].n;
       if(xctx->sel_array[i].type == ELEMENT) {
         xctx->prep_hash_inst = 0;
@@ -963,29 +1033,32 @@ void copy_objects(int what)
         xctx->inst[xctx->instances].name=NULL;
         my_strdup2(_ALLOC_ID_, &xctx->inst[xctx->instances].name, xctx->inst[n].name);
         my_strdup(_ALLOC_ID_, &xctx->inst[xctx->instances].prop_ptr, xctx->inst[n].prop_ptr);
-        /* 
-         * my_strdup2(_ALLOC_ID_, &xctx->inst[xctx->instances].instname, get_tok_value(xctx->inst[n].prop_ptr, "name",0));
-         */
-        xctx->inst[xctx->instances].instname = NULL; /* will be set in new_prop_string() */
-        my_strdup(_ALLOC_ID_, &xctx->inst[xctx->instances].lab, xctx->inst[n].lab);
+        my_strdup2(_ALLOC_ID_, &xctx->inst[xctx->instances].lab, xctx->inst[n].lab);
         xctx->inst[n].sel=0;
         xctx->inst[xctx->instances].embed = xctx->inst[n].embed;
         xctx->inst[xctx->instances].flags = xctx->inst[n].flags;
         xctx->inst[xctx->instances].color = -10000;
         xctx->inst[xctx->instances].x0 = xctx->rx1+xctx->deltax;
         xctx->inst[xctx->instances].y0 = xctx->ry1+xctx->deltay;
+        set_first_sel(ELEMENT, xctx->instances, 0);
         xctx->inst[xctx->instances].sel = SELECTED;
         xctx->inst[xctx->instances].rot = (xctx->inst[xctx->instances].rot + ( (xctx->move_flip && 
            (xctx->inst[xctx->instances].rot & 1) ) ? xctx->move_rot+2 : xctx->move_rot) ) & 0x3;
         xctx->inst[xctx->instances].flip = (xctx->move_flip? !xctx->inst[n].flip:xctx->inst[n].flip);
+        my_strdup(_ALLOC_ID_, &xctx->inst[xctx->instances].instname, xctx->inst[n].instname);
         /* the newpropcnt argument is zero for the 1st call and used in  */
         /* new_prop_string() for cleaning some internal caches. */
-        if(!newpropcnt) hash_all_names();
-        new_prop_string(xctx->instances, xctx->inst[n].prop_ptr,newpropcnt++, 
+        if(!newpropcnt) hash_names(-1, XINSERT);
+        new_prop_string(xctx->instances, xctx->inst[n].prop_ptr,newpropcnt++, /* sets also inst[].instname */
           tclgetboolvar("disable_unique_names"));
+        hash_names(xctx->instances, XINSERT);
+        /* this is needed since no find_inst_to_be_redrawn() is executed if floaters are present */
+        if(floaters) symbol_bbox(xctx->instances,
+             &xctx->inst[xctx->instances].x1, &xctx->inst[xctx->instances].y1,
+             &xctx->inst[xctx->instances].x2, &xctx->inst[xctx->instances].y2);
         xctx->instances++;
       } /* if(xctx->sel_array[i].type == ELEMENT) */
-    }  /* for(i = 0; i < xctx->lastsel; i++) */
+    }  /* for(i = 0; i < xctx->lastsel; ++i) */
     xctx->need_reb_sel_arr=1;
     rebuild_selected_array();
     if(!firsti || !firstw) {
@@ -993,8 +1066,10 @@ void copy_objects(int what)
       xctx->prep_hi_structs=0;
     }
     /* build after copying and after recalculating prepare_netlist_structs() */
-    find_inst_to_be_redrawn(1 + 2 + 4 + 32); /* 32: call prepare_netlist_structs(0) */
-    find_inst_to_be_redrawn(16); /* clear data */
+    if(!floaters) {
+      find_inst_to_be_redrawn(1 + 2 + 4 + 32); /* 32: call prepare_netlist_structs(0) */
+      find_inst_to_be_redrawn(16); /* clear data */
+    }
     check_collapsing_objects();
     if(tclgetboolvar("autotrim_wires")) trim_wires();
     if(xctx->hilight_nets) {
@@ -1003,12 +1078,14 @@ void copy_objects(int what)
     xctx->ui_state &= ~STARTCOPY;
     xctx->x1 = xctx->y_1 = xctx->x2 = xctx->y_2 = xctx->deltax = xctx->deltay = 0;
     xctx->move_rot = xctx->move_flip = 0;
-    bbox(SET , 0.0 , 0.0 , 0.0 , 0.0);
+    set_modify(1); /* must be done before draw() if floaters are present to force cached values update */
+    if(!floaters) bbox(SET , 0.0 , 0.0 , 0.0 , 0.0);
     draw();
-    bbox(END , 0.0 , 0.0 , 0.0 , 0.0);
+    if(!floaters) bbox(END , 0.0 , 0.0 , 0.0 , 0.0);
     xctx->rotatelocal=0;
   } /* if(what & END) */
   draw_selection(xctx->gc[SELLAYER], 0);
+  if(tclgetboolvar("draw_crosshair")) draw_crosshair(0);
 }
 
 
@@ -1030,7 +1107,8 @@ void move_objects(int what, int merge, double dx, double dy)
   xctx->rotatelocal=0;
   xctx->deltax = xctx->deltay = 0.0;
   rebuild_selected_array();
-  if(tclgetboolvar("connect_by_kissing")) xctx->kissing = connect_by_kissing();
+  /* if connect_by_kissing==2 it was set in callback.c ('M' command) */
+  if(xctx->connect_by_kissing == 2) xctx->kissing = connect_by_kissing();
   else xctx->kissing = 0;
   xctx->movelastsel = xctx->lastsel;
   if(xctx->lastsel==1 && xctx->sel_array[0].type==ARC &&
@@ -1043,8 +1121,17 @@ void move_objects(int what, int merge, double dx, double dy)
  }
  if(what & ABORT)                               /* draw objects while moving */
  {
-  if(xctx->kissing) pop_undo(0, 0);
   draw_selection(xctx->gctiled,0);
+  if(xctx->kissing) {
+    pop_undo(0, 0);
+    if(xctx->connect_by_kissing == 2) xctx->connect_by_kissing = 0;
+  }
+  if(fix_broken_tiled_fill || !_unix) {
+  if(xctx->save_pixmap && xctx->window)
+      MyXCopyArea(display, xctx->save_pixmap, xctx->window, xctx->gc[0], xctx->xrect[0].x, xctx->xrect[0].y,
+          xctx->xrect[0].width, xctx->xrect[0].height, xctx->xrect[0].x, xctx->xrect[0].y);
+  }
+
   xctx->move_rot=xctx->move_flip=0;
   xctx->deltax=xctx->deltay=0.;
   xctx->ui_state &= ~STARTMOVE;
@@ -1074,9 +1161,10 @@ void move_objects(int what, int merge, double dx, double dy)
  if(what & END)                                 /* move selected objects */
  {
   int firsti, firstw;
+  int floaters = there_are_floaters();
 
-  bbox(START, 0.0 , 0.0 , 0.0 , 0.0);
-  set_modify(1);
+  if(xctx->connect_by_kissing == 2) xctx->connect_by_kissing = 0;
+  if(!floaters) bbox(START, 0.0 , 0.0 , 0.0 , 0.0);
   /* no undo push for MERGE ad PLACE, already done before */
   if( !xctx->kissing && !(xctx->ui_state & (STARTMERGE | PLACE_SYMBOL | PLACE_TEXT)) ) {
     dbg(1, "move_objects(): push undo state\n");
@@ -1098,10 +1186,10 @@ void move_objects(int what, int merge, double dx, double dy)
   firsti = firstw = 1;
   draw_selection(xctx->gctiled,0);
   update_symbol_bboxes(0, 0);
-  find_inst_to_be_redrawn(0); /* build list before moving and recalculating prepare_netlist_structs() */
-  for(k=0;k<cadlayers;k++)
+  if(!floaters) find_inst_to_be_redrawn(0); /* build list before moving and recalculating prepare_netlist_structs() */
+  for(k=0;k<cadlayers; ++k)
   {
-   for(i=0;i<xctx->lastsel;i++)
+   for(i=0;i<xctx->lastsel; ++i)
    {
     c = xctx->sel_array[i].col;n = xctx->sel_array[i].n;
     switch(xctx->sel_array[i].type)
@@ -1116,13 +1204,13 @@ void move_objects(int what, int merge, double dx, double dy)
           ov = INT_BUS_WIDTH(xctx->lw)> cadhalfdotsize ? INT_BUS_WIDTH(xctx->lw) : CADHALFDOTSIZE;
           if(wire[n].y1 < wire[n].y2) { y1 = wire[n].y1-ov; y2 = wire[n].y2+ov; }
           else                        { y1 = wire[n].y1+ov; y2 = wire[n].y2-ov; }
-          bbox(ADD, wire[n].x1-ov, y1 , wire[n].x2+ov , y2 );
+          if(!floaters) bbox(ADD, wire[n].x1-ov, y1 , wire[n].x2+ov , y2 );
         } else {
           double ov, y1, y2;
           ov = cadhalfdotsize;
           if(wire[n].y1 < wire[n].y2) { y1 = wire[n].y1-ov; y2 = wire[n].y2+ov; }
           else                        { y1 = wire[n].y1+ov; y2 = wire[n].y2-ov; }
-          bbox(ADD, wire[n].x1-ov, y1 , wire[n].x2+ov , y2 );
+          if(!floaters) bbox(ADD, wire[n].x1-ov, y1 , wire[n].x2+ov , y2 );
         }
 
         if(xctx->rotatelocal) {
@@ -1164,13 +1252,13 @@ void move_objects(int what, int merge, double dx, double dy)
           ov = INT_BUS_WIDTH(xctx->lw)> cadhalfdotsize ? INT_BUS_WIDTH(xctx->lw) : CADHALFDOTSIZE;
           if(wire[n].y1 < wire[n].y2) { y1 = wire[n].y1-ov; y2 = wire[n].y2+ov; }
           else                        { y1 = wire[n].y1+ov; y2 = wire[n].y2-ov; }
-          bbox(ADD, wire[n].x1-ov, y1 , wire[n].x2+ov , y2 );
+          if(!floaters) bbox(ADD, wire[n].x1-ov, y1 , wire[n].x2+ov , y2 );
         } else {
           double ov, y1, y2;
           ov = cadhalfdotsize;
           if(wire[n].y1 < wire[n].y2) { y1 = wire[n].y1-ov; y2 = wire[n].y2+ov; }
           else                        { y1 = wire[n].y1+ov; y2 = wire[n].y2-ov; }
-          bbox(ADD, wire[n].x1-ov, y1 , wire[n].x2+ov , y2 );
+          if(!floaters) bbox(ADD, wire[n].x1-ov, y1 , wire[n].x2+ov , y2 );
         }
       }
       break;
@@ -1183,14 +1271,14 @@ void move_objects(int what, int merge, double dx, double dy)
         if(xctx->line[c][n].y1 < xctx->line[c][n].y2)
              { y1 = xctx->line[c][n].y1-ov; y2 = xctx->line[c][n].y2+ov; }
         else { y1 = xctx->line[c][n].y1+ov; y2 = xctx->line[c][n].y2-ov; }
-        bbox(ADD, xctx->line[c][n].x1-ov, y1 , xctx->line[c][n].x2+ov , y2 );
+        if(!floaters) bbox(ADD, xctx->line[c][n].x1-ov, y1 , xctx->line[c][n].x2+ov , y2 );
       } else {
         double ov, y1, y2;
         ov = cadhalfdotsize;
         if(xctx->line[c][n].y1 < xctx->line[c][n].y2)
               { y1 = xctx->line[c][n].y1-ov; y2 = xctx->line[c][n].y2+ov; }
         else  { y1 = xctx->line[c][n].y1+ov; y2 = xctx->line[c][n].y2-ov; }
-        bbox(ADD, xctx->line[c][n].x1-ov, y1 , xctx->line[c][n].x2+ov , y2 );
+        if(!floaters) bbox(ADD, xctx->line[c][n].x1-ov, y1 , xctx->line[c][n].x2+ov , y2 );
       }
 
       if(xctx->rotatelocal) {
@@ -1234,14 +1322,14 @@ void move_objects(int what, int merge, double dx, double dy)
         if(xctx->line[c][n].y1 < xctx->line[c][n].y2)
              { y1 = xctx->line[c][n].y1-ov; y2 = xctx->line[c][n].y2+ov; }
         else { y1 = xctx->line[c][n].y1+ov; y2 = xctx->line[c][n].y2-ov; }
-        bbox(ADD, xctx->line[c][n].x1-ov, y1 , xctx->line[c][n].x2+ov , y2 );
+        if(!floaters) bbox(ADD, xctx->line[c][n].x1-ov, y1 , xctx->line[c][n].x2+ov , y2 );
       } else {
         double ov, y1, y2;
         ov = cadhalfdotsize;
         if(xctx->line[c][n].y1 < xctx->line[c][n].y2)
               { y1 = xctx->line[c][n].y1-ov; y2 = xctx->line[c][n].y2+ov; }
         else  { y1 = xctx->line[c][n].y1+ov; y2 = xctx->line[c][n].y2-ov; }
-        bbox(ADD, xctx->line[c][n].x1-ov, y1 , xctx->line[c][n].x2+ov , y2 );
+        if(!floaters) bbox(ADD, xctx->line[c][n].x1-ov, y1 , xctx->line[c][n].x2+ov , y2 );
       }
       break;
 
@@ -1254,7 +1342,7 @@ void move_objects(int what, int merge, double dx, double dy)
         double savex0, savey0;
         savex0 = p->x[0];
         savey0 = p->y[0];
-        for(j=0; j<p->points; j++) {
+        for(j=0; j<p->points; ++j) {
           if(j==0 || p->x[j] < bx1) bx1 = p->x[j];
           if(j==0 || p->y[j] < by1) by1 = p->y[j];
           if(j==0 || p->x[j] > bx2) bx2 = p->x[j];
@@ -1274,29 +1362,31 @@ void move_objects(int what, int merge, double dx, double dy)
           }
 
         }
-        bbox(ADD, bx1, by1, bx2, by2); /* bbox before move */
+        if(!floaters) bbox(ADD, bx1, by1, bx2, by2); /* bbox before move */
 
-        for(j=0; j<p->points; j++) {
+        for(j=0; j<p->points; ++j) {
           if(j==0 || p->x[j] < bx1) bx1 = p->x[j];
           if(j==0 || p->y[j] < by1) by1 = p->y[j];
           if(j==0 || p->x[j] > bx2) bx2 = p->x[j];
           if(j==0 || p->y[j] > by2) by2 = p->y[j];
         }
-        bbox(ADD, bx1, by1, bx2, by2); /* bbox after move */
+        if(!floaters) bbox(ADD, bx1, by1, bx2, by2); /* bbox after move */
       }
       break;
 
      case ARC:
       if(c!=k) break;
 
-      if(xctx->arc[c][n].fill) /* bbox before move */
-        arc_bbox(xctx->arc[c][n].x, xctx->arc[c][n].y, xctx->arc[c][n].r, 0, 360,
-                 &tmp.x1, &tmp.y1, &tmp.x2, &tmp.y2);
-      else
-        arc_bbox(xctx->arc[c][n].x, xctx->arc[c][n].y, xctx->arc[c][n].r,
-                 xctx->arc[c][n].a, xctx->arc[c][n].b,
-                 &tmp.x1, &tmp.y1, &tmp.x2, &tmp.y2);
-      bbox(ADD, tmp.x1, tmp.y1, tmp.x2, tmp.y2);
+      if(!floaters) {
+        if(xctx->arc[c][n].fill) {/* bbox before move */
+          arc_bbox(xctx->arc[c][n].x, xctx->arc[c][n].y, xctx->arc[c][n].r,
+                 0, 360, &tmp.x1, &tmp.y1, &tmp.x2, &tmp.y2);
+        } else {
+          arc_bbox(xctx->arc[c][n].x, xctx->arc[c][n].y, xctx->arc[c][n].r,
+                 xctx->arc[c][n].a, xctx->arc[c][n].b, &tmp.x1, &tmp.y1, &tmp.x2, &tmp.y2);
+        }
+        bbox(ADD, tmp.x1, tmp.y1, tmp.x2, tmp.y2);
+      }
 
       if(xctx->rotatelocal) {
         /* rotate center wrt itself: do nothing */
@@ -1339,21 +1429,23 @@ void move_objects(int what, int merge, double dx, double dy)
         xctx->arc[c][n].b = angle;
       }
 
-      if(xctx->arc[c][n].fill) /* bbox after move */
-        arc_bbox(xctx->arc[c][n].x, xctx->arc[c][n].y, xctx->arc[c][n].r, 0, 360,
-                 &tmp.x1, &tmp.y1, &tmp.x2, &tmp.y2);
-      else
-        arc_bbox(xctx->arc[c][n].x, xctx->arc[c][n].y, xctx->arc[c][n].r,
-                 xctx->arc[c][n].a, xctx->arc[c][n].b,
-                 &tmp.x1, &tmp.y1, &tmp.x2, &tmp.y2);
-      bbox(ADD, tmp.x1, tmp.y1, tmp.x2, tmp.y2);
+      if(!floaters) {
+        if(xctx->arc[c][n].fill) {/* bbox after move */
+          arc_bbox(xctx->arc[c][n].x, xctx->arc[c][n].y, xctx->arc[c][n].r,
+                 0, 360, &tmp.x1, &tmp.y1, &tmp.x2, &tmp.y2);
+        } else {
+          arc_bbox(xctx->arc[c][n].x, xctx->arc[c][n].y, xctx->arc[c][n].r,
+                 xctx->arc[c][n].a, xctx->arc[c][n].b, &tmp.x1, &tmp.y1, &tmp.x2, &tmp.y2);
+        }
+        bbox(ADD, tmp.x1, tmp.y1, tmp.x2, tmp.y2);
+      }
 
       break;
 
      case xRECT:
       if(c!=k) break;
       /* bbox before move */
-      bbox(ADD, xctx->rect[c][n].x1, xctx->rect[c][n].y1, xctx->rect[c][n].x2, xctx->rect[c][n].y2);
+      if(!floaters) bbox(ADD, xctx->rect[c][n].x1, xctx->rect[c][n].y1, xctx->rect[c][n].x2, xctx->rect[c][n].y2);
       if(xctx->rotatelocal) {
         ROTATION(xctx->move_rot, xctx->move_flip, xctx->rect[c][n].x1, xctx->rect[c][n].y1,
           xctx->rect[c][n].x1, xctx->rect[c][n].y1, xctx->rx1,xctx->ry1);
@@ -1428,7 +1520,7 @@ void move_objects(int what, int merge, double dx, double dy)
       xctx->rect[c][n].y2 = xctx->ry2;
 
       /* bbox after move */
-      bbox(ADD, xctx->rect[c][n].x1, xctx->rect[c][n].y1, xctx->rect[c][n].x2, xctx->rect[c][n].y2);
+      if(!floaters) bbox(ADD, xctx->rect[c][n].x1, xctx->rect[c][n].y1, xctx->rect[c][n].x2, xctx->rect[c][n].y2);
       break;
 
      case xTEXT:
@@ -1436,7 +1528,7 @@ void move_objects(int what, int merge, double dx, double dy)
       #if HAS_CAIRO==1  /* bbox before move */
       customfont = set_text_custom_font(&xctx->text[n]);
       #endif
-      text_bbox(xctx->text[n].txt_ptr, xctx->text[n].xscale,
+      text_bbox(get_text_floater(n), xctx->text[n].xscale,
          xctx->text[n].yscale, xctx->text[n].rot,xctx->text[n].flip, xctx->text[n].hcenter,
          xctx->text[n].vcenter, xctx->text[n].x0, xctx->text[n].y0,
          &xctx->rx1,&xctx->ry1, &xctx->rx2,&xctx->ry2, &tmpint, &dtmp);
@@ -1445,7 +1537,7 @@ void move_objects(int what, int merge, double dx, double dy)
         cairo_restore(xctx->cairo_ctx);
       }
       #endif
-      bbox(ADD, xctx->rx1, xctx->ry1, xctx->rx2, xctx->ry2 );
+      if(!floaters) bbox(ADD, xctx->rx1, xctx->ry1, xctx->rx2, xctx->ry2 );
       if(xctx->rotatelocal) {
         ROTATION(xctx->move_rot, xctx->move_flip, xctx->text[n].x0, xctx->text[n].y0,
           xctx->text[n].x0, xctx->text[n].y0, xctx->rx1,xctx->ry1);
@@ -1462,7 +1554,7 @@ void move_objects(int what, int merge, double dx, double dy)
       #if HAS_CAIRO==1  /* bbox after move */
       customfont = set_text_custom_font(&xctx->text[n]);
       #endif
-      text_bbox(xctx->text[n].txt_ptr, xctx->text[n].xscale,
+      text_bbox(get_text_floater(n), xctx->text[n].xscale,
          xctx->text[n].yscale, xctx->text[n].rot,xctx->text[n].flip, xctx->text[n].hcenter,
          xctx->text[n].vcenter, xctx->text[n].x0, xctx->text[n].y0,
          &xctx->rx1,&xctx->ry1, &xctx->rx2,&xctx->ry2, &tmpint, &dtmp);
@@ -1471,17 +1563,17 @@ void move_objects(int what, int merge, double dx, double dy)
         cairo_restore(xctx->cairo_ctx);
       }
       #endif
-      bbox(ADD, xctx->rx1, xctx->ry1, xctx->rx2, xctx->ry2 );
+      if(!floaters) bbox(ADD, xctx->rx1, xctx->ry1, xctx->rx2, xctx->ry2 );
 
       break;
 
      default:
       break;
     } /* end switch(xctx->sel_array[i].type) */
-   } /* end for(i=0;i<xctx->lastsel;i++) */
-  } /*end for(k=0;k<cadlayers;k++) */
+   } /* end for(i=0;i<xctx->lastsel; ++i) */
+  } /*end for(k=0;k<cadlayers; ++k) */
 
-  for(i = 0; i < xctx->lastsel; i++) {
+  for(i = 0; i < xctx->lastsel; ++i) {
     n = xctx->sel_array[i].n;
     if(xctx->sel_array[i].type == ELEMENT) {
       xctx->prep_hash_inst=0;
@@ -1498,6 +1590,10 @@ void move_objects(int what, int merge, double dx, double dy)
       xctx->inst[n].rot = (xctx->inst[n].rot +
        ( (xctx->move_flip && (xctx->inst[n].rot & 1) ) ? xctx->move_rot+2 : xctx->move_rot) ) & 0x3;
       xctx->inst[n].flip = xctx->move_flip ^ xctx->inst[n].flip;
+      /* this is needed since no find_inst_to_be_redrawn() is executed if floaters are present */
+      if(floaters) symbol_bbox(n,
+         &xctx->inst[n].x1, &xctx->inst[n].y1,
+         &xctx->inst[n].x2, &xctx->inst[n].y2);
     } 
   }
   if(!firsti || !firstw) {
@@ -1505,9 +1601,12 @@ void move_objects(int what, int merge, double dx, double dy)
     xctx->prep_hi_structs=0;
   }
   /* build after copying and after recalculating prepare_netlist_structs() */
-  find_inst_to_be_redrawn(1 + 2 + 4 + 32); /* 32: call prepare_netlist_structs(0) */
-  find_inst_to_be_redrawn(16); /* clear data */
+  if(!floaters) {
+    find_inst_to_be_redrawn(1 + 2 + 4 + 32); /* 32: call prepare_netlist_structs(0) */
+    find_inst_to_be_redrawn(16); /* clear data */
+  }
   check_collapsing_objects();
+  unselect_partial_sel_wires();
   if(tclgetboolvar("autotrim_wires")) trim_wires();
 
   if(xctx->hilight_nets) {
@@ -1519,10 +1618,14 @@ void move_objects(int what, int merge, double dx, double dy)
   xctx->ui_state &= ~STARTMERGE;
   xctx->move_rot=xctx->move_flip=0;
   xctx->x1=xctx->y_1=xctx->x2=xctx->y_2=xctx->deltax=xctx->deltay=0.;
-  bbox(SET , 0.0 , 0.0 , 0.0 , 0.0);
+  set_modify(1); /* must be done before draw() if floaters are present to force cached values update */
+  if(!floaters) bbox(SET , 0.0 , 0.0 , 0.0 , 0.0);
   draw();
-  bbox(END , 0.0 , 0.0 , 0.0 , 0.0);
+  if(!floaters) bbox(END , 0.0 , 0.0 , 0.0 , 0.0);
   xctx->rotatelocal=0;
+
+
  }
  draw_selection(xctx->gc[SELLAYER], 0);
+ if(tclgetboolvar("draw_crosshair")) draw_crosshair(0);
 }

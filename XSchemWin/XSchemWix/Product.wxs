@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
-	<Product Id="*" Name="Xschem" Language="1033" Version="3.1.2" Manufacturer="Xschem" UpgradeCode="0deb9c17-cbbd-491c-be3e-24446b27ccd5">
+	<Product Id="*" Name="Xschem" Language="1033" Version="3.4.4" Manufacturer="Xschem" UpgradeCode="0deb9c17-cbbd-491c-be3e-24446b27ccd5">
 		<Package InstallerVersion="200" Compressed="yes" InstallScope="perMachine" />
     <WixVariable Id="WixUILicenseRtf" 
                  Value="License.rtf" />
@@ -135,6 +135,9 @@
       <Component Id="CMPADDCUSTOMMENU">
         <File Id="ADDCUSTOMMENU" KeyPath="yes" Source="../../src/add_custom_menu.tcl" />
       </Component>
+      <Component Id="CMPMOUSEBINDINGS">
+		<File Id="MOUSEBINDINGS" KeyPath="yes" Source="../../src/mouse_bindings.tcl" />
+	  </Component>
       <Component Id="CMPKEYSHELP">
         <File Id="KEYSHELP" KeyPath="yes" Source="../../src/keys.help" />
       </Component>
@@ -189,6 +192,9 @@
       <Component Id="CMPSRCXSCHEMTCL">
         <File Id="XSCHEMTCL" KeyPath="yes" Source="../../src/xschem.tcl" />
       </Component>
+	  <Component Id="CMPSRCCREATEGRAPHMTCL">
+		<File Id="CREATEGRAPHMTCL" KeyPath="yes" Source="../../src/create_graph.tcl" />
+	  </Component>
       <Component Id="CMPMAKESCHFROMVHDLAWK">
         <File Id="MAKESCHFROMVHDLAWK" KeyPath="yes" Source="../../src/make_sch_from_vhdl.awk" />
       </Component>
@@ -237,6 +243,13 @@
       <Component Id="CMPTRADUCIAWK">
         <File Id="TRADUCIAWK" KeyPath="yes" Source="../../src/traduci.awk" />
       </Component>
+	  <Component Id="CMPPLACEPLINS">
+		<File Id="PLACEPLINS" KeyPath="yes" Source="../../src/place_pins.tcl" />
+	  </Component>
+	  <Component Id="CMPPLACESYMPINS">
+		<File Id="PLACESYMPINS" KeyPath="yes" Source="../../src/place_sym_pins.tcl" />
+	  </Component>
+		
       <Directory Id="SYSTEMLIBFOLDER" Name="systemlib">
         <Component Id="CMPSYSTEMLIBFONTSCH">
           <File Id="FONTSCH" KeyPath="yes" Source="../../src/systemlib/font.sch" />
@@ -310,6 +323,7 @@
   <Fragment>
     <ComponentGroup Id="src">
       <ComponentRef Id="CMPSRCXSCHEMTCL" />
+	  <ComponentRef Id="CMPSRCCREATEGRAPHMTCL" />
       <ComponentRef Id="CMPSRCXSCHEMRC" />
     </ComponentGroup>
     <ComponentGroup Id="share">
@@ -326,7 +340,8 @@
       <ComponentRef Id="CMPGSCHEMTOXSCHEMAWK" />
       <ComponentRef Id="CMPHSPICEBACKANNOTATE" />
       <ComponentRef Id="CMPADDCUSTOMMENU" />
-      <ComponentRef Id="CMPHERCULESTOSPICEAWK" />
+	  <ComponentRef Id="CMPMOUSEBINDINGS" />
+	  <ComponentRef Id="CMPHERCULESTOSPICEAWK" />
       <ComponentRef Id="CMPIMPORTOPUSSYMBOLSAWK" />
       <ComponentRef Id="CMPLABELCOMPACTORAWK" />
       <ComponentRef Id="CMPMAKEEDITAWK" />
@@ -351,6 +366,8 @@
       <ComponentRef Id="CMPFLATTENTEDAXAWK" />
       <ComponentRef Id="CMPTRACKMEMORYAWK" />
       <ComponentRef Id="CMPTRADUCIAWK" />
+	  <ComponentRef Id="CMPPLACEPLINS" />
+	  <ComponentRef Id="CMPPLACESYMPINS" />			
       <ComponentRef Id="CMPVERILOGAWK" />
       <ComponentRef Id="CMPVHDLAWK" />
       <ComponentRef Id="CMPXSCHEMHELP" />

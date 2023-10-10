@@ -3,7 +3,7 @@
  * This file is part of XSCHEM,
  * a schematic capture and Spice/Vhdl/Verilog netlisting tool for circuit
  * simulation.
- * Copyright (C) 1998-2022 Stefan Frederik Schippers
+ * Copyright (C) 1998-2023 Stefan Frederik Schippers
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -138,17 +138,18 @@ static void check_opt(char *opt, char *optval, int type)
         cli_opt_netlist_type=CAD_VERILOG_NETLIST;
 
     } else if( (type == SHORT && *opt == 'b') || (type == LONG && !strcmp("detach", opt)) ) {
-        detach = 1;
+        cli_opt_detach = 1;
 
     } else if( (type == SHORT && *opt == 'v') || (type == LONG && !strcmp("version", opt)) ) {
         print_version();
-
+        cli_opt_quit=1;
+        has_x=0;
     } else if( (type == SHORT && *opt == 't') || (type == LONG && !strcmp("tedax", opt)) ) {
         dbg(1, "process_options(): set netlist type to tEDAx\n");
         cli_opt_netlist_type=CAD_TEDAX_NETLIST;
 
     } else if( (type == SHORT && *opt == 'q') || (type == LONG && !strcmp("quit", opt)) ) {
-        quit=1;
+        cli_opt_quit=1;
 
     } else if( (type == SHORT && *opt == 'x') || (type == LONG && !strcmp("no_x", opt)) ) {
         has_x=0;
@@ -158,7 +159,8 @@ static void check_opt(char *opt, char *optval, int type)
 
     } else if( (type == SHORT && *opt == 'h') || (type == LONG && !strcmp("help", opt)) ) {
         help=1;
-
+        cli_opt_quit=1;
+        has_x=0;
     } else {
         fprintf(errfp, "Unknown option: %s\n", opt);
     }
@@ -169,17 +171,17 @@ int process_options(int argc, char *argv[])
   int i, arg_cnt;
   char *opt, *optval;
 
-  for(arg_cnt = i = 1; i < argc; i++) {
+  for(arg_cnt = i = 1; i < argc; ++i) {
     opt = argv[i];
     if(*opt == '-') { /* options */
-      opt++;
+      ++opt;
       if(opt && *opt=='-') { /* long options */
-        opt++;
+        ++opt;
         if(*opt) {
           optval = strchr(opt, '=');
           if(optval) {
             *optval = '\0';
-            optval++;
+            ++optval;
           }
           if(!optval && i < argc-1 && argv[i+1][0] != '-') {
             /* options requiring arguments are listed here */
@@ -242,7 +244,7 @@ int process_options(int argc, char *argv[])
           }
           check_opt(opt, optval, SHORT);
           /* printf("opt: %c, value: %s\n", *opt, optval ? optval : "no value"); */
-          opt++;
+          ++opt;
         }
       }
     } else { /* arguments */

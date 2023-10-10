@@ -1,4 +1,23 @@
-v {xschem version=3.1.0 file_version=1.2
+v {xschem version=3.4.4 file_version=1.2
+*
+* This file is part of XSCHEM,
+* a schematic capture and Spice/Vhdl/Verilog netlisting tool for circuit
+* simulation.
+* Copyright (C) 1998-2023 Stefan Frederik Schippers
+*
+* This program is free software; you can redistribute it and/or modify
+* it under the terms of the GNU General Public License as published by
+* the Free Software Foundation; either version 2 of the License, or
+* (at your option) any later version.
+*
+* This program is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+* GNU General Public License for more details.
+*
+* You should have received a copy of the GNU General Public License
+* along with this program; if not, write to the Free Software
+* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 }
 G {}
 K {}
@@ -33,8 +52,8 @@ y1 = -0.048929
 y2 = 0.999755
 divy = 3
 subdivy=1
-x1=1.30906e-07
-x2=2.4887e-07  divx=10
+x1=1.25008e-07
+x2=2.42972e-07  divx=10
 node="ldbl[0]
 ldbl[16]
 ldbl[32]
@@ -45,15 +64,16 @@ ldbl[2]
 ldbl[18]
 ldbl[34]"
 color="10 9 10 11 12 13 14 15 11" unitx=n
-jpeg_quality=25}
+jpeg_quality=35
+hilight_wave=-1}
 B 2 1840 -1160 2890 -1000 {flags=graph
 digital=0
 y1 = 0
 y2 = 1.60
 subdivy=1
 divy = 4
-x1=1.30906e-07
-x2=2.4887e-07
+x1=1.25008e-07
+x2=2.42972e-07
 divx=10
 subdivx=4
 node="ldcp
@@ -64,15 +84,16 @@ ldymsref
 xsa[14].ldqii"
 color="6 12 13 14 11 4"
 unitx=n
-jpeg_quality=25}
+jpeg_quality=35
+}
 B 2 1840 -400 2890 -240 {flags=graph
 y1 = -0.0072
 y2 = 1.6
 divy = 3
 subdivy=0
 subdivx = 1
-x1=1.30906e-07
-x2=2.4887e-07  divx=10
+x1=1.25008e-07
+x2=2.42972e-07  divx=10
 node="ldwl[0]
 ldwl[1]
 ldwl[2]
@@ -86,8 +107,8 @@ ldwl[8]
 ldwl[9]"
 color="4 5 4 5 4 5 4 5 4 5 4"  
 unitx=n 
-hilight_wave=3
-jpeg_quality=25}
+hilight_wave=-1
+jpeg_quality=35}
 B 2 1840 -1000 2890 -540 {flags=graph
 digital=1
 y1 = 0
@@ -95,8 +116,8 @@ y2 = 1.6
 ypos1=0.0990096
 ypos2=2.81842
 divy = 1
-x1=1.30906e-07
-x2=2.4887e-07
+x1=1.25008e-07
+x2=2.42972e-07
 divx=12
 subdivx=4
 node="---In/Out---
@@ -119,13 +140,14 @@ WL[15:0];ldwl[15],ldwl[14],ldwl[13],ldwl[12],ldwl[11],ldwl[10],ldwl[9],ldwl[8],l
 color="18 4 15 4 15 4 15 4 18 15 4 18 4 15 4 15 6"
  unitx=n
  ypos1=-2.20115 ypos2=2.79884
-jpeg_quality=25}
+jpeg_quality=35
+}
 B 2 1840 -1300 2890 -1160 {flags=graph
 y1 = 0
 y2 = 1.60
 divy = 4
-x1=1.30906e-07
-x2=2.4887e-07
+x1=1.25008e-07
+x2=2.42972e-07
 divx=8
 unitx=n
 node="xsa[0].ldqib
@@ -133,13 +155,14 @@ xsa[5].ldqib
 xsa[0].ldsali
 xctrl.ldq_b"
 color="4 12 7 10"
-jpeg_quality=25}
+jpeg_quality=35
+}
 B 2 1840 -240 2890 0 {flags=graph
 y1 = -0.049
 y2 = 0.00057
 divy = 5
-x1=1.30906e-07
-x2=2.4887e-07  
+x1=1.25008e-07
+x2=2.42972e-07  
 unity=m
 divx=10
 subdivx=1
@@ -148,7 +171,8 @@ node="\\"Supply current;i(vvcc)\\"
 color="8 7"
 unitx=n
 subdivy=4
-jpeg_quality=25}
+jpeg_quality=35
+}
 B 2 480 -1010 617 -950 {flags=image
 alpha=0.6
 InvertOnExport=true
@@ -191,13 +215,16 @@ C {lab_pin.sym} 410 -430 0 0 {name=p39 lab=LDYMS[15:0]}
 C {lab_pin.sym} 410 -350 0 0 {name=p26 lab=vccsa}
 C {lab_pin.sym} 410 -330 0 0 {name=p31 lab=vss}
 C {lab_pin.sym} 410 -410 0 0 {name=p40 lab=LDOE}
-C {vsource.sym} 90 -920 0 0 {name=vsa value=0}
+C {vsource.sym} 90 -920 0 0 {name=vsa value=0
+savecurrent=1}
 C {lab_pin.sym} 90 -950 0 0 {name=p44 lab=vcc}
 C {lab_pin.sym} 90 -890 0 0 {name=p45 lab=vccsa}
-C {vsource.sym} 190 -820 0 0 {name=vdec value=0}
+C {vsource.sym} 190 -820 0 0 {name=vdec value=0
+savecurrent=1}
 C {lab_pin.sym} 190 -850 0 0 {name=p48 lab=vcc}
 C {lab_pin.sym} 190 -790 0 0 {name=p49 lab=vccdec}
-C {vsource.sym} 90 -820 0 0 {name=vl value=0}
+C {vsource.sym} 90 -820 0 0 {name=vl value=0
+savecurrent=1}
 C {lab_pin.sym} 90 -850 0 0 {name=p50 lab=vcc}
 C {lab_pin.sym} 90 -790 0 0 {name=p51 lab=vccl}
 C {lab_pin.sym} 410 -390 0 0 {name=p5 lab=LDPRECH}
@@ -388,8 +415,7 @@ vvss vss 0 0
 * .op ALL  4n
 *.dc vvcc 0 2 0.1
 .print tran format=raw i(vvcc) i(vsa) i(vl) i(vdec)
-
-
+.print tran format=raw v(*)
 .print tran format=raw v(xctrl:LDCPB) 
 .print tran format=raw v(xctrl:LDCP_REF) 
 .print tran format=raw v(xctrl:LDOUTI) 
@@ -424,7 +450,7 @@ descr="Load XYCE waves"
 tclcommand="
 set_sim_defaults
 set sim(spice,default) 2 ;# 3rd simulator: Xyce
-xschem raw_read $netlist_dir/rom8k_xyce.spice.raw
+xschem raw_read $netlist_dir/rom8k.spice.raw
 "
 }
 C {launcher.sym} 590 -1250 0 0 {name=h1 

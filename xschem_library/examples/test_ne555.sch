@@ -1,4 +1,23 @@
-v {xschem version=3.1.0 file_version=1.2
+v {xschem version=3.4.4 file_version=1.2
+*
+* This file is part of XSCHEM,
+* a schematic capture and Spice/Vhdl/Verilog netlisting tool for circuit
+* simulation.
+* Copyright (C) 1998-2023 Stefan Frederik Schippers
+*
+* This program is free software; you can redistribute it and/or modify
+* it under the terms of the GNU General Public License as published by
+* the Free Software Foundation; either version 2 of the License, or
+* (at your option) any later version.
+*
+* This program is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+* GNU General Public License for more details.
+*
+* You should have received a copy of the GNU General Public License
+* along with this program; if not, write to the Free Software
+* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 }
 G {}
 K {}
@@ -18,8 +37,9 @@ x2=0.00025416
 divx=5
 subdivx=1
 node="out
-trig"
-color="4 15"
+trig
+ctrl"
+color="4 15 7"
 dataset=-1
 unitx=1
 logx=0
@@ -27,6 +47,8 @@ logy=0
 }
 T {NE555 TIMER IC EXAMPLE} 360 -490 0 0 0.4 0.4 {}
 N 130 -150 200 -150 {lab=TRIG}
+N 570 -130 570 -100 {
+lab=CTRL}
 C {code.sym} 710 -190 0 0 {
 name=STIMULI 
 value=".option SCALE=1e-6 PARHIER=LOCAL RUNLVL=6 post MODMONTE=1
@@ -70,3 +92,4 @@ C {launcher.sym} 790 -290 0 0 {name=h5
 descr="load waves" 
 tclcommand="xschem raw_read $netlist_dir/test_ne555.raw tran"
 }
+C {noconn.sym} 570 -130 2 0 {name=l2}

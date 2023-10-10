@@ -3,7 +3,7 @@
  * This file is part of XSCHEM,
  * a schematic capture and Spice/Vhdl/Verilog netlisting tool for circuit
  * simulation.
- * Copyright (C) 1998-2022 Stefan Frederik Schippers
+ * Copyright (C) 1998-2023 Stefan Frederik Schippers
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -43,11 +43,12 @@ static void merge_text(FILE *fd)
      }
      xctx->text[i].prop_ptr=NULL;
      xctx->text[i].font=NULL;
+     xctx->text[i].floater_instname=NULL;
+     xctx->text[i].floater_ptr=NULL;
      xctx->text[i].sel=0;
      load_ascii_string(&xctx->text[i].prop_ptr,fd);
      set_text_flags(&xctx->text[i]);
      select_text(i,SELECTED, 1);
-     set_modify(1);
      xctx->texts++;
 }
 
@@ -101,14 +102,13 @@ static void merge_box(FILE *fd)
     } else {
       ptr[i].dash = 0;
     }
-    if( !strcmp(get_tok_value(ptr[i].prop_ptr,"fill",0),"false") )
+    if( !strboolcmp(get_tok_value(ptr[i].prop_ptr,"fill",0),"false") )
       ptr[i].fill =0;
     else
       ptr[i].fill =1;
     set_rect_flags(&xctx->rect[c][i]); /* set cached .flags bitmask from on attributes */
     select_box(c,i, SELECTED, 1, 1);
     xctx->rects[c]++;
-    set_modify(1);
 }
 
 static void merge_arc(FILE *fd)
@@ -136,7 +136,7 @@ static void merge_arc(FILE *fd)
     ptr[i].prop_ptr=NULL;
     ptr[i].sel=0;
     load_ascii_string(&ptr[i].prop_ptr, fd);
-    if( !strcmp(get_tok_value(ptr[i].prop_ptr,"fill",0),"true") )
+    if( !strboolcmp(get_tok_value(ptr[i].prop_ptr,"fill",0),"true") )
       ptr[i].fill =1;
     else
       ptr[i].fill =0;
@@ -150,7 +150,6 @@ static void merge_arc(FILE *fd)
 
     select_arc(c,i, SELECTED, 1);
     xctx->arcs[c]++;
-    set_modify(1);
 }
 
 
@@ -182,7 +181,7 @@ static void merge_polygon(FILE *fd)
     ptr[i].selected_point= my_calloc(_ALLOC_ID_, points, sizeof(unsigned short));
     ptr[i].points=points;
     ptr[i].sel=0;
-    for(j=0;j<points;j++) {
+    for(j=0;j<points; ++j) {
       if(fscanf(fd, "%lf %lf ",&(ptr[i].x[j]), &(ptr[i].y[j]))<2) {
         fprintf(errfp,"merge_polygon(): WARNING: missing fields for POLYGON points, ignoring.\n");
         my_free(_ALLOC_ID_, &ptr[i].x);
@@ -193,7 +192,7 @@ static void merge_polygon(FILE *fd)
       }
     }
     load_ascii_string( &ptr[i].prop_ptr, fd);
-    if( !strcmp(get_tok_value(ptr[i].prop_ptr,"fill",0),"true") )
+    if( !strboolcmp(get_tok_value(ptr[i].prop_ptr,"fill",0),"true") )
       ptr[i].fill =1;
     else
       ptr[i].fill =0;
@@ -207,7 +206,6 @@ static void merge_polygon(FILE *fd)
 
     select_polygon(c,i, SELECTED, 1);
     xctx->polygons[c]++;
-    set_modify(1);
 }
 
 static void merge_line(FILE *fd)
@@ -243,7 +241,6 @@ static void merge_line(FILE *fd)
     }
     select_line(c,i, SELECTED, 1);
     xctx->lines[c]++;
-    set_modify(1);
 }
 
 static void merge_inst(int k,FILE *fd)
@@ -269,32 +266,34 @@ static void merge_inst(int k,FILE *fd)
       return;
     }
     xctx->inst[i].sel=0;
-    xctx->inst[i].flags=0;
     xctx->inst[i].color=-10000;
     xctx->inst[i].ptr=-1;
-    xctx->inst[i].prop_ptr=NULL;
     xctx->inst[i].instname=NULL;
+    xctx->inst[i].prop_ptr=NULL;
     xctx->inst[i].lab=NULL;  /* assigned in link_symbols_to_instances */
     xctx->inst[i].node=NULL;
     load_ascii_string(&prop_ptr,fd);
-    if(!k) hash_all_names();
+    my_strdup(_ALLOC_ID_, &xctx->inst[i].prop_ptr, prop_ptr);
+    set_inst_flags(&xctx->inst[i]);
+    if(!k) hash_names(-1, XINSERT);
     new_prop_string(i, prop_ptr, k, tclgetboolvar("disable_unique_names")); /* will also assign .instname */
     /* the final tmp argument is zero for the 1st call and used in */
     /* new_prop_string() for cleaning some internal caches. */
-    if(!strcmp(get_tok_value(xctx->inst[i].prop_ptr,"highlight",0), "true"))
-       xctx->inst[i].flags |= HILIGHT_CONN;
-    xctx->inst[i].embed = !strcmp(get_tok_value(xctx->inst[i].prop_ptr, "embed", 2), "true");
+    hash_names(i, XINSERT);
     my_free(_ALLOC_ID_, &prop_ptr);
     xctx->instances++;
-    set_modify(1);
 }
 
-/* merge selection if selection_load=1, otherwise ask for filename */
-/* selection_load: */
-/*                      0: ask filename to merge */
-/*                         if ext=="" else use ext as name  ... 20071215 */
-/*                      1: merge selection */
-/*                      2: merge clipboard */
+/* merge selection if selection_load=1, otherwise ask for filename
+ * selection_load:
+ *                      0: ask filename to merge
+ *                         if ext=="" else use ext as name 
+ *                      1: merge selection
+ *                      2: merge clipboard
+ *                      if bit 3 is set do not start a  move_objects(RUBBER,0,0,0)
+ *                      to avoid graphical artifacts if doing a xschem paste with x and y offsets
+ *                      from script
+ */
 void merge_file(int selection_load, const char ext[])
 {
     FILE *fd;
@@ -304,13 +303,16 @@ void merge_file(int selection_load, const char ext[])
     char tag[1]; /* overflow safe */
     char tmp[256]; /* 20161122 overflow safe */
     char *aux_ptr=NULL;
-    int got_mouse;
+    int got_mouse, generator = 0;
+    int rubber = 1;
 
-
+    rubber = !(selection_load & 8);
+    selection_load &= 7;
     if(selection_load==0)
     {
      if(!strcmp(ext,"")) {
-       my_snprintf(tmp, S(tmp), "load_file_dialog {Merge file} *.\\{sch,sym\\} INITIALLOADDIR");
+       /* my_snprintf(tmp, S(tmp), "load_file_dialog {Merge file} *.\\{sch,sym\\} INITIALLOADDIR"); */
+       my_snprintf(tmp, S(tmp), "load_file_dialog {Merge file} {} INITIALLOADDIR");
        tcleval(tmp);
        if(!strcmp(tclresult(),"")) return;
        my_strncpy(name, (char *)tclresult(), S(name));
@@ -328,7 +330,20 @@ void merge_file(int selection_load, const char ext[])
     {
       my_snprintf(name, S(name), "%s/.clipboard.sch", user_conf_dir);
     }
-    if( (fd=fopen(name, fopen_read_mode))!= NULL) {
+
+    if(is_generator(name)) generator = 1;
+
+    if(generator) {
+      char *cmd;
+      cmd = get_generator_command(name);
+      if(cmd) {
+        fd = popen(cmd, "r");
+        my_free(_ALLOC_ID_, &cmd);
+      } else fd = NULL;
+    } else {
+      fd=fopen(name, fopen_read_mode);
+    }
+    if(fd) {
      xctx->prep_hi_structs=0;
      xctx->prep_net_structs=0;
      xctx->prep_hash_inst=0;
@@ -409,15 +424,18 @@ void merge_file(int selection_load, const char ext[])
      }
      my_free(_ALLOC_ID_, &aux_ptr);
      link_symbols_to_instances(old); /* in case of paste/merge will set instances .sel to SELECTED */
-     fclose(fd);
+     if(generator) pclose(fd);
+     else fclose(fd);
+
      xctx->ui_state |= STARTMERGE;
      dbg(1, "merge_file(): loaded file:wire=%d inst=%d ui_state=%ld\n",
              xctx->wires , xctx->instances, xctx->ui_state);
      move_objects(START,0,0,0);
      xctx->mousex_snap = xctx->mx_double_save;
      xctx->mousey_snap = xctx->my_double_save;
-     move_objects(RUBBER,0,0,0);
+     if(rubber) move_objects(RUBBER,0,0,0);
     } else {
       dbg(0, "merge_file(): can not open %s\n", name);
     }
+    set_modify(1);
 }

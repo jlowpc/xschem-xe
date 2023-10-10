@@ -1,4 +1,23 @@
-v {xschem version=3.1.0 file_version=1.2
+v {xschem version=3.4.4 file_version=1.2
+*
+* This file is part of XSCHEM,
+* a schematic capture and Spice/Vhdl/Verilog netlisting tool for circuit
+* simulation.
+* Copyright (C) 1998-2023 Stefan Frederik Schippers
+*
+* This program is free software; you can redistribute it and/or modify
+* it under the terms of the GNU General Public License as published by
+* the Free Software Foundation; either version 2 of the License, or
+* (at your option) any later version.
+*
+* This program is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+* GNU General Public License for more details.
+*
+* You should have received a copy of the GNU General Public License
+* along with this program; if not, write to the Free Software
+* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 }
 G {}
 K {}
@@ -140,7 +159,7 @@ N 2080 -1410 2080 -1400 { lab=VPP}
 N 210 -570 210 -540 { lab=FBN}
 N 210 1020 210 1050 { lab=FB}
 N 190 -960 190 -860 { lab=VSSX}
-N 190 570 190 670 { lab=INX}
+N 190 640 190 670 { lab=INX}
 N 1970 -1410 1990 -1410 {lab=#net3}
 N 1970 -1250 1990 -1250 {lab=#net4}
 N 1880 -1330 1990 -1330 {lab=#net5}
@@ -174,6 +193,7 @@ N 270 640 270 820 {
 lab=INX}
 N 190 640 270 640 {
 lab=INX}
+N 190 570 190 640 { lab=INX}
 C {vsource.sym} 1880 -1360 0 0 {name=V1 value="dc 50 pwl 0 0 1m 50"}
 C {vsource.sym} 1880 -1300 0 0 {name=V0 value="dc 50 pwl 0 0 1m 50"}
 C {lab_pin.sym} 2120 -1410 0 1 {name=p5 lab=VPP}
@@ -190,8 +210,7 @@ C {res.sym} 1940 -1410 1 1 {name=R11 m=1 value=0.3}
 C {res.sym} 1940 -1250 1 1 {name=R9 m=1 value=0.3}
 C {res.sym} 90 -570 0 0 {name=R19 m=1 value='100k'
 }
-C {res.sym} 90 -510 0 0 {name=R0 m=1 value="'100k/gain'"
-floaters=true}
+C {res.sym} 90 -510 0 0 {name=R0 m=1 value="'100k/gain'"}
 C {lab_pin.sym} 90 -400 0 1 {name=p108 lab=IN}
 C {lab_pin.sym} 2190 -210 0 1 {name=p9 lab=OUTM}
 C {lab_pin.sym} 310 170 0 0 {name=p12 lab=VPP}

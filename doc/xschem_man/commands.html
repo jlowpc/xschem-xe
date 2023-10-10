@@ -52,12 +52,15 @@ ctrl + LeftButton       if an 'url' or 'tclcommand' property is defined on
                         tclcommand
 
 LeftButton drag         Select objects by area, clearing previous selection
-
-shift + LeftButton drag Select objects by area, without clearing 
-                        previous selection
+                        "[shift] left button drag" and "[shift] ctrl-left
+                        button drag" commands are swapped if enable_stretch
+                        is set.
 
 Ctrl + LeftButton drag  Select objects by area to perform a 
                         subsequent   'stretch'  move operation
+
+shift + LeftButton drag Select objects by area, without clearing 
+                        previous selection
 
 Shift +                 Select objects by area without unselecting
 Ctrl + LeftButton drag  to perform a subsequent   'stretch'  move operation
@@ -66,6 +69,14 @@ Shift + Right Button    Select all connected wires/labels/pins
 
 Ctrl + Right Button     Select all connected wires/labels/pins, stopping at 
                         wire junctions
+
+Alt + RightButton       Cut wire at mouse position (creates 2 adjacent wires)
+                        aligns the cut point to current snap setting.
+
+Alt + Shift + RightButton
+                        Cut wire at mouse position (creates 2 adjacent wires)
+                        does not align cut point to current snap setting.
+
 
 Mouse Wheel             Zoom in / out
 
@@ -80,12 +91,13 @@ RightButton             Context menu
 
 Shift + RightButton     Select object under the mouse and if label/pin
                         select attached nets
-
+                        
 Ctrl + RightButton      Select object under the mouse and if label/pin
                         select attached nets up to net junctions
-
+                        
 LeftButton Double click Terminate Polygon placement
                         Edit object attributes
+
 
                         XSCHEM KEY BINDINGS
 ----------------------------------------------------------------------
@@ -98,7 +110,7 @@ ctrl       Enter        Confirm closing dialog boxes
 -          Left         Move right
 -          Right        Move left
 -          Up           Move up
-ctrl       Left         Previous tab (if tabbed interface enabled)
+ctrl       Left         Previous tab (if tabbed interface enabled) 
 ctrl       Right        Next tab (if tabbed interface enabled)
 -           '\'         Toggle fullscreen
 -           '!'         Break selected wires at any wire or component pin
@@ -122,7 +134,8 @@ shift       'A'         Toggle show netlist
 Shift       'B'         Edit/add header/license metadata to the schematic/symbol file.
 ctrl        'b'         Toggle show text in symbol
 alt         'b'         Toggle show symbol details / only bounding boxes
--           'c'         Copy selected obj. 
+-           'c'         Copy selected objects, 'c' and 'alt-c' commands are swapped if enable_stretch is set
+Alt         'c'         Copy selected objects, insert wires when separating touching instance pins/wires
 ctrl        'c'         Save to clipboard
 shift       'C'         Start arc placement
 shift+ctrl  'C'         Start circle placement
@@ -145,6 +158,7 @@ alt         'g'         Hilight selected nets and send to gaw waveform viewer
 alt         'h'         create symbol pins from schematic pins
 ctrl        'h'         Follow http link or execute command (url, tclcommand properties)
 shift       'H'         Attach net labels to selected instance
+ctrl+shift  'H'         Make schematic and symbol from selected components
 -           'i'         Descend to  symbol
 alt         'i'         Edit selected symbol in a new window
 alt+shift   'J'         Create labels with 'i' prefix from highlighted nets/pins
@@ -165,15 +179,18 @@ alt+shift   'l'         add lab_wire.sym to schematic
 alt         'l'         add lab_pin.sym to schematic
 ctrl+shift  'o'         Load most recent schematic
 ctrl        'o'         Load schematic
--           'm'         Move selected obj.
+-           'm'         Move selected objects. 'm' and 'ctrl-m' commands are swapped if enable_stretch is set
+ctrl        'm'         Move selected objects, stretching wires attached to them
+Alt         'm'         Move selected objects, insert wires when separating touching instance pins/wires
+shift       'M'         Move selected objects, insert wires when separating touching instance pins/wires
+                        Stretch wires that land on selected instance pins.
 shift       'N'         Top level only netlist
 -           'n'         Hierarchical Netlist
-ctrl        'n'         New schematic
-ctrl+shift  'N'         New symbol
-alt         'n'         Empty schematic in new window
-alt+shift   'N'         Empty symbol in new window
+ctrl        'n'         Clear schematic
+ctrl+shift  'N'         Clear symbol
 shift       'O'         Toggle Light / Dark colorscheme
 ctrl        'o'         Load schematic
+-           'p'         Place polygon. Operation ends by placing last point over first.
 alt         'p'         Add symbol pin
 ctrl        'p'         Pan schematic view
 shift       'P'         Pan, other way to.
@@ -187,6 +204,7 @@ shift       'R'         Rotate
 -           'r'         Start rect
 shift       'S'         Change element order
 ctrl+shift  'S'         Save  as schematic
+            's'         run simulation (asks confirmation)
 ctrl        's'         Save schematic
 alt         's'         Reload current schematic from disk
 ctrl+alt    's'         Save-as symbol
@@ -198,7 +216,7 @@ shift       'U'         Redo
 ctrl        'v'         Paste from clipboard
 shift       'V'         Toggle spice/vhdl/verilog netlist 
 -           'w'         Place wire
-ctrl        'w'         Place polygon. Operation ends by placing last point over first.
+ctrl        'w'         close current schematic
 shift       'W'         Place wire, snapping to closest pin or net endpoint
 ctrl        'x'         Cut into clipboard
 -           'x'         New cad session
@@ -208,7 +226,7 @@ shift       'X'         Highlight discrepancies between object ports and attache
 shift       'Z'         Zoom in
 ctrl        'z'         Zoom out
 -           '?'         Help
--           '&amp;'         Join / break / collapse wires
+-           '&amp;         Join / break / collapse wires
 shift       '*'         Postscript/pdf print
 ctr+shift   '*'         Xpm/png print
 alt+shift   '*'         Svg print
@@ -226,7 +244,7 @@ ctrl        '$'         Toggle use XCopyArea vs drawing primitives for drawing t
 
  <h3>KEYBIND CUSTOMIZATION</h3>
  <p>
-  changes to default keybindings may be placed in the <kbd>~/.xschem</kbd> file as in the following examples:
+  changes to default keybindings may be placed in the <kbd>~/.xschem/xschemrc</kbd> file as in the following examples:
  </p>
  <pre class="code">
 ## replace Ctrl-d with Escape (so you won't kill the program :-))

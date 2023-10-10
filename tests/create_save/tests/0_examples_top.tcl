@@ -18,7 +18,6 @@ xschem instance ../../../xschem_library/examples/tesla.sym 160 -230 0 0 {name=x2
 xschem instance ../../../xschem_library/examples/test_ne555.sym 160 -190 0 0 {name=x3}
 xschem instance ../../../xschem_library/examples/test_lm324.sym 160 -150 0 0 {name=x4}
 xschem instance ../../../xschem_library/examples/osc.sym 160 -270 0 0 {name=x5}
-xschem instance ../../../xschem_library/devices/title.sym 160 -30 0 0 {name=l1 author="Stefan Schippers"}
 xschem instance ../../../xschem_library/examples/cmos_example.sym 160 -350 0 0 {name=x6}
 xschem instance ../../../xschem_library/examples/greycnt.sym 160 -390 0 0 {name=x8}
 xschem instance ../../../xschem_library/examples/loading.sym 160 -430 0 0 {name=x9}
@@ -32,4 +31,4 @@ xschem instance ../../../xschem_library/devices/bus_connect.sym 500 -530 0 0 {na
 xschem instance ../../../xschem_library/devices/bus_connect_nolab.sym 400 -530 0 0 {name=r1}
 xschem instance ../../../xschem_library/devices/lab_pin.sym 410 -600 3 1 {name=l4 sig_type=std_logic lab=BUS[2]}
 xschem save
-xschem exit
+xschem exit closewindow

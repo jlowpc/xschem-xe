@@ -3,7 +3,7 @@
  * This file is part of XSCHEM,
  * a schematic capture and Spice/Vhdl/Verilog netlisting tool for circuit
  * simulation.
- * Copyright (C) 1998-2022 Stefan Frederik Schippers
+ * Copyright (C) 1998-2023 Stefan Frederik Schippers
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -45,6 +45,28 @@ int my_strcasecmp(const char *s1, const char *s2)
   return tolower(*s1) - tolower(*s2);
 }
 
+char *my_strcasestr(const char *haystack, const char *needle)
+{
+  const char *h, *n;
+  int found = 0;
+  if(needle[0] == '\0') return (char *)haystack;
+
+  for(h = haystack; *h; h++) {
+    found = 1;
+    for(n = needle; *n; n++) {
+      const char *hh = h + (n - needle);
+      dbg(1, "%c   %c\n", *hh, *n);
+      if(toupper(*hh) != toupper(*n)) {
+        found = 0;
+        break;
+      }
+    }
+    if(found) return (char *)h;
+  }
+  return NULL;
+}
+
+
 int my_strncasecmp(const char *s1, const char *s2, size_t n)
 {
   if (n == 0) return 0;
@@ -57,17 +79,57 @@ int my_strncasecmp(const char *s1, const char *s2, size_t n)
   return tolower(*s1) - tolower(*s2);
 }
 
+/* same as case insensitive strcmp(), but allow '1, true, on, yes' for true value
+ * both in str and boolean */
+int strboolcmp(const char *str, const char *boolean)
+{
+  int retval, s = 0, b = 0;
+  if(!my_strcasecmp(boolean, "true")) b = 1;
+  else if(!my_strcasecmp(boolean, "false")) b = 0;
+  else b = -1;
+  if(!my_strcasecmp(str, "true") ||
+     !my_strcasecmp(str, "1") ||
+     !my_strcasecmp(str, "on") ||
+     !my_strcasecmp(str, "yes")) s = 1;
+  else if(!my_strcasecmp(str, "false") ||
+     !my_strcasecmp(str, "0") ||
+     !my_strcasecmp(str, "off") ||
+     !my_strcasecmp(str, "no")) s = 0;
+  else s = -1;
+  if(s == -1 || b == -1) retval = strcmp(str, boolean);
+  else retval = (s != b);
+  dbg(1, "strboolcmp(): str=%s boolean=%s retval=%d\n", str, boolean, retval);
+  return retval;
+}
+
+/* return lenght of line and skip */
+size_t my_fgets_skip(FILE *fd)
+{
+  enum { SIZE = 1024 };
+  char buf[SIZE];
+  size_t line_len = 0, len;
+
+  while(fgets(buf, SIZE, fd)) {
+    len = strlen(buf);
+    line_len += len;
+    if(buf[len - 1] == '\n') break;
+  }
+  return line_len;
+}
+
 /* caller should free allocated storage for s */
-char *my_fgets(FILE *fd)
+char *my_fgets(FILE *fd, size_t *line_len)
 {
   enum { SIZE = 1024 };
   char buf[SIZE];
   char *s = NULL;
   size_t len;
 
+  if(line_len) *line_len = 0;
   while(fgets(buf, SIZE, fd)) {
     my_strcat(_ALLOC_ID_, &s, buf);
     len = strlen(buf);
+    if(line_len) *line_len += len;
     if(buf[len - 1] == '\n') break;
   }
   return s;
@@ -98,11 +160,11 @@ char *my_strtok_r(char *str, const char *delim, const char *quote, char **savept
     if(ne) *(*saveptr - ne) = **saveptr; /* shift back eating escapes / quotes */
     if(!e && strchr(quote, **saveptr)) {
       q = !q;
-      ne++;
+      ++ne;
     }
     if(quote[0] && !e && **saveptr == '\\') { /* if quote is empty string do not skip backslashes either */
       e = 1;
-      ne++;
+      ++ne;
     } else e = 0;
     ++(*saveptr);
   }
@@ -119,6 +181,8 @@ size_t my_strdup(int id, char **dest, const char *src) /* empty source string --
 {
  size_t len;
 
+ if(*dest == src && src!=NULL) 
+   dbg(0, "my_strdup(): WARNING: src == *dest == %p, id=%d\n", src, id);
  if(src!=NULL && src[0]!='\0')  {
    len = strlen(src)+1;
    my_realloc(id, dest, len);
@@ -296,6 +360,8 @@ size_t my_snprintf(char *string, size_t size, const char *format, ...)
 size_t my_strdup2(int id, char **dest, const char *src) /* 20150409 duplicates also empty string  */
 {
  size_t len;
+ if(*dest == src && src!=NULL) 
+   dbg(0, "my_strdup(): WARNING: src == *dest == %p, id=%d\n", src, id);
  if(src!=NULL) {
    len = strlen(src)+1;
    my_realloc(id, dest, len);
@@ -315,7 +381,7 @@ double atof_spice(const char *s)
   int n;
   double a = 0.0, mul=1.0;
   char lower_s[100];
-  char suffix[100];
+  char suffix[100]={0};
   const char *p;
 
   if(!s) return 0.0;
@@ -418,19 +484,21 @@ size_t my_mstrcat(int id, char **str, const char *add, ...)
   append_str = add;
   do {
     if( *str != NULL) {
-      if(append_str[0]=='\0') continue;
-      a = strlen(append_str) + 1;
-      my_realloc(id, str, s + a );
-      memcpy(*str + s, append_str, a);
-      s += a - 1;
-      dbg(3,"my_mstrcat(%d,): reallocated string %s\n", id, *str);
+      if(append_str[0]) {
+        a = strlen(append_str) + 1;
+        my_realloc(id, str, s + a );
+        memcpy(*str + s, append_str, a);
+        s += a - 1;
+        dbg(3,"my_mstrcat(%d,): reallocated string %s\n", id, *str);
+      }
     } else {
-      if(append_str[0] == '\0') continue;
-      a = strlen(append_str) + 1;
-      *str = my_malloc(id, a);
-      memcpy(*str, append_str, a);
-      dbg(3,"my_mstrcat(%d,): allocated string %s\n", id, *str);
-      s = a - 1;
+      if(append_str[0]) {
+        a = strlen(append_str) + 1;
+        *str = my_malloc(id, a);
+        memcpy(*str, append_str, a);
+        s = a - 1;
+        dbg(3,"my_mstrcat(%d,): allocated string %s\n", id, *str);
+      }
     }
     append_str = va_arg(args, const char *);
   } while(append_str);
@@ -487,7 +555,6 @@ size_t my_strncat(int id, char **str, size_t n, const char *append_str)
   return a - 1;
  }
 }
-
 
 void *my_calloc(int id, size_t nmemb, size_t size)
 {
@@ -559,7 +626,7 @@ int my_strncpy(char *d, const char *s, size_t n)
       d[i] = '\0';
       return i;
     }
-    i++;
+    ++i;
   }
   return i;
 }
@@ -575,31 +642,180 @@ char *strtoupper(char* s) {
   return s;
 }
 
-/* call hash_all_names() (once) before (repeatedly) using this function */
+/* caller should do hash_names() (once) before (repeatedly) using this function */
 void set_inst_prop(int i)
 {
   char *ptr;
   char *tmp = NULL;
-
+  if(xctx->inst[i].ptr == -1) return;
   ptr = (xctx->inst[i].ptr+ xctx->sym)->templ;
   dbg(1, "set_inst_prop(): i=%d, name=%s, prop_ptr = %s, template=%s\n",
      i, xctx->inst[i].name, xctx->inst[i].prop_ptr, ptr);
   my_strdup(_ALLOC_ID_, &xctx->inst[i].prop_ptr, ptr);
-  my_strdup2(_ALLOC_ID_, &xctx->inst[i].instname, get_tok_value(ptr, "name",0));
-  if(xctx->inst[i].instname[0]) {
+  if(get_tok_value(ptr, "name",0)[0]) {
     my_strdup(_ALLOC_ID_, &tmp, xctx->inst[i].prop_ptr);
-    new_prop_string(i, tmp, 0, tclgetboolvar("disable_unique_names"));
+    new_prop_string(i, tmp, 0, tclgetboolvar("disable_unique_names")); /* sets also inst[].instname */
     my_free(_ALLOC_ID_, &tmp);
   }
 }
 
-static void edit_rect_property(int x)
+#define DGT(c) ((c) >= '0' && (c) <= '9')
+#define SPC(c) ((c) == ' ' || (c) == '\t')
+/* fast convert (decimal) string to float */
+float my_atof(const char *p)
+{
+  static const float p10[]={
+    1e-1f, 1e-2f, 1e-3f, 1e-4f, 1e-5f, 1e-6f, 1e-7f, 1e-8f
+  };
+  int frac;
+  float sign, value, scale;
+  unsigned int exponent = 0;
+
+  /* skip initial spaces */
+  while(SPC(*p)) p++;
+  /* sign */
+  sign = 1.0;
+  if(*p == '-') {
+    sign = -1.0;
+    ++p;
+  } else if(*p == '+') {
+    ++p;
+  }
+  /* Get digits */
+  for(value = 0.0; DGT(*p); p++) {
+    value = value * 10.0f + (*p - '0');
+  }
+  /* get fractional part */
+  if(*p == '.') {
+    int cnt = 0;
+    ++p;
+    while (DGT(*p)) {
+      if(cnt < 8) value += (*p - '0') * p10[cnt++];
+      ++p;
+    }
+  }
+  /* Exponent */
+  frac = 0;
+  scale = 1.0;
+  if((*p == 'e') || (*p == 'E')) {
+    /* Exponent sign */
+    ++p;
+    if(*p == '-') {
+      frac = 1;
+      ++p;
+    } else if(*p == '+') p++;
+    /* Get exponent. */
+    for(; DGT(*p); p++) {
+      exponent = exponent * 10 + (*p - '0');
+    }
+    if(exponent > 38) exponent = 38;
+    /* Scale result */
+    while(exponent >= 12) { scale *= 1E12f; exponent -= 12; }
+    while(exponent >=  4) { scale *= 1E4f;  exponent -=  4; }
+    while(exponent >   0) { scale *= 10.0f; exponent -=  1; }
+    return sign * (frac ? (value / scale) : (value * scale));
+  }
+  return sign * value;
+}
+
+/* fast convert (decimal) string to double */
+double my_atod(const char *p)
+{
+  static const double p10[]={
+    1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9, 
+    1e-10, 1e-11, 1e-12, 1e-13, 1e-14, 1e-15, 1e-16, 1e-17, 1e-18
+  };
+  int frac;
+  double sign, value, scale;
+  unsigned int exponent = 0;
+
+  /* skip initial spaces */
+  while(SPC(*p)) p++;
+  /* sign */
+  sign = 1.0;
+  if(*p == '-') {
+    sign = -1.0;
+    ++p;
+  } else if(*p == '+') {
+    ++p;
+  }
+  /* Get digits */
+  for(value = 0.0; DGT(*p); p++) {
+    value = value * 10.0 + (*p - '0');
+  }
+  /* get fractional part */
+  if(*p == '.') {
+    int cnt = 0;
+    ++p;
+    while (DGT(*p)) {
+      if(cnt < 18) value += (*p - '0') * p10[cnt++];
+      ++p;
+    }
+  }
+  /* Exponent */
+  frac = 0;
+  scale = 1.0;
+  if((*p == 'e') || (*p == 'E')) {
+    /* Exponent sign */
+    ++p;
+    if(*p == '-') {
+      frac = 1;
+      ++p;
+    } else if(*p == '+') p++;
+    /* Get exponent. */
+    for(; DGT(*p); p++) {
+      exponent = exponent * 10 + (*p - '0');
+    }
+    if(exponent > 308) exponent = 308;
+    /* Scale result */
+    while(exponent >= 50) { scale *= 1E50; exponent -= 50; }
+    while(exponent >=  8) { scale *= 1E8;  exponent -=  8; }
+    while(exponent >   0) { scale *= 10.0; exponent -=  1; }
+    return sign * (frac ? (value / scale) : (value * scale));
+  }
+  return sign * value;
+}
+
+/* super fast count # of newlines (and bytes) in a file */
+int count_lines_bytes(int fd, size_t *lines, size_t *bytes)
+{
+  enum {BUFFER_SIZE=16384};
+  size_t nread;
+  size_t nls, nbytes;
+  char buf[BUFFER_SIZE];
+
+  if(!lines || !bytes) return 0;
+  nls = nbytes = 0;
+  while((nread = read(fd, buf, BUFFER_SIZE)) > 0) {
+    char *p;
+    char *last;
+
+    if(nread == -1) return 0;
+    nbytes += nread;
+    p = buf;
+    last = buf + nread;
+    while((p = memchr(p, '\n', last - p))) {
+      ++p;
+      ++nls;
+    }
+  }
+  *bytes = nbytes;
+  *lines = nls;
+  return 1;
+}
+
+static int edit_rect_property(int x)
 {
   int i, c, n;
   int drw = 0;
   const char *dash, *fill;
-  int preserve;
+  int preserve, modified = 0;
   char *oldprop=NULL;
+
+  if(x < 0 || x > 2) {
+    fprintf(errfp, "edit_rect_property() : unknown parameter x=%d\n",x);
+    return 0;
+  }
   my_strdup(_ALLOC_ID_, &oldprop, xctx->rect[xctx->sel_array[0].col][xctx->sel_array[0].n].prop_ptr);
   if(oldprop && oldprop[0]) {
     tclsetvar("retval",oldprop);
@@ -612,22 +828,17 @@ static void edit_rect_property(int x)
     xctx->semaphore--;
   }
   else if(x==2) tcleval("viewdata $::retval");
-  else if(x==1) tcleval("edit_vi_prop {Text:}");
-  else {
-    fprintf(errfp, "edit_rect_property() : unknown parameter x=%d\n",x); exit(EXIT_FAILURE);
-  }
-  preserve = atoi(tclgetvar("preserve_unchanged_attrs"));
+  else tcleval("edit_vi_prop {Text:}"); /* x == 1 */
+  preserve = tclgetboolvar("preserve_unchanged_attrs");
   if(strcmp(tclgetvar("rcode"),"") )
   {
     xctx->push_undo();
-    set_modify(1);
-    for(i=0; i<xctx->lastsel; i++) {
+    for(i=0; i<xctx->lastsel; ++i) {
       if(xctx->sel_array[i].type != xRECT) continue;
       c = xctx->sel_array[i].col;
       n = xctx->sel_array[i].n;
       if(oldprop && preserve == 1) {
-        set_different_token(&xctx->rect[c][n].prop_ptr,
-               (char *) tclgetvar("retval"), oldprop, 0, 0);
+        set_different_token(&xctx->rect[c][n].prop_ptr, (char *) tclgetvar("retval"), oldprop);
       } else {
         my_strdup(_ALLOC_ID_, &xctx->rect[c][n].prop_ptr,
                (char *) tclgetvar("retval"));
@@ -643,7 +854,7 @@ static void edit_rect_property(int x)
         xctx->rect[c][n].dash = 0;
 
       fill = get_tok_value(xctx->rect[c][n].prop_ptr,"fill", 0);
-      if(!strcmp(fill, "false")) xctx->rect[c][n].fill = 0;
+      if(!strboolcmp(fill, "false")) xctx->rect[c][n].fill = 0;
       else xctx->rect[c][n].fill = 1;
 
       if( (oldprop &&  xctx->rect[c][n].prop_ptr && strcmp(oldprop, xctx->rect[c][n].prop_ptr)) ||
@@ -664,15 +875,17 @@ static void edit_rect_property(int x)
       draw();
       bbox(END , 0.0 , 0.0 , 0.0 , 0.0);
     }
+    modified = 1;
   }
   my_free(_ALLOC_ID_, &oldprop);
+  return modified;
 }
 
-static void edit_line_property(void)
+static int edit_line_property(void)
 {
   int i, c, n;
   const char *dash;
-  int preserve;
+  int preserve, modified = 0;
   char *oldprop=NULL;
   my_strdup(_ALLOC_ID_, &oldprop, xctx->line[xctx->sel_array[0].col][xctx->sel_array[0].n].prop_ptr);
   if(oldprop && oldprop[0]) {
@@ -683,25 +896,23 @@ static void edit_line_property(void)
   xctx->semaphore++;
   tcleval("text_line {Input property:} 0 normal");
   xctx->semaphore--;
-  preserve = atoi(tclgetvar("preserve_unchanged_attrs"));
+  preserve = tclgetboolvar("preserve_unchanged_attrs");
   if(strcmp(tclgetvar("rcode"),"") )
   {
     double y1, y2;
     xctx->push_undo();
-    set_modify(1);
     bbox(START, 0.0 , 0.0 , 0.0 , 0.0);
-    for(i=0; i<xctx->lastsel; i++) {
+    for(i=0; i<xctx->lastsel; ++i) {
       if(xctx->sel_array[i].type != LINE) continue;
       c = xctx->sel_array[i].col;
       n = xctx->sel_array[i].n;
       if(oldprop && preserve == 1) {
-        set_different_token(&xctx->line[c][n].prop_ptr,
-               (char *) tclgetvar("retval"), oldprop, 0, 0);
+        set_different_token(&xctx->line[c][n].prop_ptr, (char *) tclgetvar("retval"), oldprop);
       } else {
         my_strdup(_ALLOC_ID_, &xctx->line[c][n].prop_ptr,
                (char *) tclgetvar("retval"));
       }
-      xctx->line[c][n].bus = !strcmp(get_tok_value(xctx->line[c][n].prop_ptr,"bus",0), "true");
+      xctx->line[c][n].bus = !strboolcmp(get_tok_value(xctx->line[c][n].prop_ptr,"bus",0), "true");
       dash = get_tok_value(xctx->line[c][n].prop_ptr,"dash",0);
       if( strcmp(dash, "") ) {
         int d = atoi(dash);
@@ -718,14 +929,16 @@ static void edit_line_property(void)
     bbox(SET , 0.0 , 0.0 , 0.0 , 0.0);
     draw();
     bbox(END , 0.0 , 0.0 , 0.0 , 0.0);
+    modified = 1;
   }
   my_free(_ALLOC_ID_, &oldprop);
+  return modified;
 }
 
 
-static void edit_wire_property(void)
+static int edit_wire_property(void)
 {
-  int i;
+  int i, modified = 0;
   int preserve;
   char *oldprop=NULL;
   const char *bus_ptr;
@@ -739,13 +952,12 @@ static void edit_wire_property(void)
   xctx->semaphore++;
   tcleval("text_line {Input property:} 0 normal");
   xctx->semaphore--;
-  preserve = atoi(tclgetvar("preserve_unchanged_attrs"));
+  preserve = tclgetboolvar("preserve_unchanged_attrs");
   if(strcmp(tclgetvar("rcode"),"") )
   {
     xctx->push_undo();
-    set_modify(1);
     bbox(START, 0.0 , 0.0 , 0.0 , 0.0);
-    for(i=0; i<xctx->lastsel; i++) {
+    for(i=0; i<xctx->lastsel; ++i) {
       int oldbus=0;
       int k = xctx->sel_array[i].n;
       if(xctx->sel_array[i].type != WIRE) continue;
@@ -755,13 +967,12 @@ static void edit_wire_property(void)
       *  xctx->prep_hi_structs=0; */
       oldbus = xctx->wire[k].bus;
       if(oldprop && preserve == 1) {
-        set_different_token(&xctx->wire[k].prop_ptr,
-               (char *) tclgetvar("retval"), oldprop, 0, 0);
+        set_different_token(&xctx->wire[k].prop_ptr, (char *) tclgetvar("retval"), oldprop);
       } else {
         my_strdup(_ALLOC_ID_, &xctx->wire[k].prop_ptr,(char *) tclgetvar("retval"));
       }
       bus_ptr = get_tok_value(xctx->wire[k].prop_ptr,"bus",0);
-      if(!strcmp(bus_ptr, "true")) {
+      if(!strboolcmp(bus_ptr, "true")) {
         double ov, y1, y2;
         ov = INT_BUS_WIDTH(xctx->lw) > cadhalfdotsize ? INT_BUS_WIDTH(xctx->lw) : CADHALFDOTSIZE;
         if(xctx->wire[k].y1 < xctx->wire[k].y2) { y1 = xctx->wire[k].y1-ov; y2 = xctx->wire[k].y2+ov; }
@@ -782,18 +993,20 @@ static void edit_wire_property(void)
     bbox(SET , 0.0 , 0.0 , 0.0 , 0.0);
     draw();
     bbox(END , 0.0 , 0.0 , 0.0 , 0.0);
+    modified = 1;
   }
   my_free(_ALLOC_ID_, &oldprop);
+  return modified;
 }
 
-static void edit_arc_property(void)
+static int edit_arc_property(void)
 {
   int old_fill;
   double x1, y1, x2, y2;
   int c, i, ii, old_dash, drw = 0;
   char *oldprop = NULL;
   const char *dash;
-  int preserve;
+  int preserve, modified = 0;
 
   my_strdup(_ALLOC_ID_, &oldprop, xctx->arc[xctx->sel_array[0].col][xctx->sel_array[0].n].prop_ptr);
   if(oldprop && oldprop[0]) {
@@ -804,11 +1017,10 @@ static void edit_arc_property(void)
   xctx->semaphore++;
   tcleval("text_line {Input property:} 0 normal");
   xctx->semaphore--;
-  preserve = atoi(tclgetvar("preserve_unchanged_attrs"));
+  preserve = tclgetboolvar("preserve_unchanged_attrs");
   if(strcmp(tclgetvar("rcode"),"") )
   {
-
-   set_modify(1); xctx->push_undo();
+   xctx->push_undo();
    for(ii=0; ii<xctx->lastsel; ii++) {
      if(xctx->sel_array[ii].type != ARC) continue;
 
@@ -816,13 +1028,13 @@ static void edit_arc_property(void)
      c = xctx->sel_array[ii].col;
 
      if(oldprop && preserve == 1) {
-        set_different_token(&xctx->arc[c][i].prop_ptr, (char *) tclgetvar("retval"), oldprop, 0, 0);
+        set_different_token(&xctx->arc[c][i].prop_ptr, (char *) tclgetvar("retval"), oldprop);
 
      } else {
         my_strdup(_ALLOC_ID_, &xctx->arc[c][i].prop_ptr, (char *) tclgetvar("retval"));
      }
      old_fill = xctx->arc[c][i].fill;
-     if( !strcmp(get_tok_value(xctx->arc[c][i].prop_ptr,"fill",0),"true") )
+     if( !strboolcmp(get_tok_value(xctx->arc[c][i].prop_ptr,"fill",0),"true") )
        xctx->arc[c][i].fill =1;
      else
        xctx->arc[c][i].fill =0;
@@ -849,10 +1061,12 @@ static void edit_arc_property(void)
      draw();
      bbox(END , 0.0 , 0.0 , 0.0 , 0.0);
    }
+   modified = 1;
   }
+  return modified;
 }
 
-static void edit_polygon_property(void)
+static int edit_polygon_property(void)
 {
   int old_fill;
   int k;
@@ -861,7 +1075,7 @@ static void edit_polygon_property(void)
   int drw = 0;
   char *oldprop = NULL;
   const char *dash;
-  int preserve;
+  int preserve, modified = 0;
 
   dbg(1, "edit_property(): input property:\n");
   my_strdup(_ALLOC_ID_, &oldprop, xctx->poly[xctx->sel_array[0].col][xctx->sel_array[0].n].prop_ptr);
@@ -873,11 +1087,10 @@ static void edit_polygon_property(void)
   xctx->semaphore++;
   tcleval("text_line {Input property:} 0 normal");
   xctx->semaphore--;
-  preserve = atoi(tclgetvar("preserve_unchanged_attrs"));
+  preserve = tclgetboolvar("preserve_unchanged_attrs");
   if(strcmp(tclgetvar("rcode"),"") )
   {
-
-   set_modify(1); xctx->push_undo();
+   xctx->push_undo();
    for(ii=0; ii<xctx->lastsel; ii++) {
      if(xctx->sel_array[ii].type != POLYGON) continue;
 
@@ -885,13 +1098,13 @@ static void edit_polygon_property(void)
      c = xctx->sel_array[ii].col;
 
      if(oldprop && preserve == 1) {
-        set_different_token(&xctx->poly[c][i].prop_ptr, (char *) tclgetvar("retval"), oldprop, 0, 0);
+        set_different_token(&xctx->poly[c][i].prop_ptr, (char *) tclgetvar("retval"), oldprop);
      } else {
         my_strdup(_ALLOC_ID_, &xctx->poly[c][i].prop_ptr, (char *) tclgetvar("retval"));
      }
      old_fill = xctx->poly[c][i].fill;
      old_dash = xctx->poly[c][i].dash;
-     if( !strcmp(get_tok_value(xctx->poly[c][i].prop_ptr,"fill",0),"true") )
+     if( !strboolcmp(get_tok_value(xctx->poly[c][i].prop_ptr,"fill",0),"true") )
        xctx->poly[c][i].fill =1;
      else
        xctx->poly[c][i].fill =0;
@@ -906,7 +1119,7 @@ static void edit_polygon_property(void)
          bbox(START,0.0,0.0,0.0,0.0);
          drw = 1;
        }
-       for(k=0; k<xctx->poly[c][i].points; k++) {
+       for(k=0; k<xctx->poly[c][i].points; ++k) {
          if(k==0 || xctx->poly[c][i].x[k] < x1) x1 = xctx->poly[c][i].x[k];
          if(k==0 || xctx->poly[c][i].y[k] < y1) y1 = xctx->poly[c][i].y[k];
          if(k==0 || xctx->poly[c][i].x[k] > x2) x2 = xctx->poly[c][i].x[k];
@@ -920,189 +1133,199 @@ static void edit_polygon_property(void)
      draw();
      bbox(END , 0.0 , 0.0 , 0.0 , 0.0);
    }
+   modified = 1;
   }
+  return modified;
 }
 
 
 /* x=0 use text widget   x=1 use vim editor */
-static void edit_text_property(int x)
+static int edit_text_property(int x)
 {
-   int rot, flip;
-   #if HAS_CAIRO==1
-   int customfont;
-   #endif
-   int sel, k, text_changed = 0, props_changed = 0, size_changed = 0, tmp;
-   int c,l, preserve;
-   double hsize, vsize, dtmp;
-   double xx1,yy1,xx2,yy2;
-   double pcx,pcy;      /* pin center 20070317 */
-   char property[100];/* used for float 2 string conv (xscale  and yscale) overflow safe */
-   /* const char *str; */
-   char *oldprop = NULL;
+  int rot, flip, modified = 0;
+  #if HAS_CAIRO==1
+  int customfont;
+  #endif
+  int sel, k, text_changed = 0, props_changed = 0, size_changed = 0, tmp;
+  int c,l, preserve;
+  double hsize = 0.4, vsize = 0.4, dtmp;
+  double xx1,yy1,xx2,yy2;
+  double pcx,pcy;      /* pin center 20070317 */
+  char property[100];/* used for float 2 string conv (xscale  and yscale) overflow safe */
+  /* const char *str; */
+  char *oldprop = NULL;
 
-   dbg(1, "edit_text_property(): entering\n");
-   sel = xctx->sel_array[0].n;
-   my_strdup(_ALLOC_ID_, &oldprop, xctx->text[sel].prop_ptr);
-   if(oldprop && oldprop[0])
-      tclsetvar("props", oldprop);
-   else
-      tclsetvar("props","");
-   tclsetvar("retval",xctx->text[sel].txt_ptr);
-   my_snprintf(property, S(property), "%.16g",xctx->text[sel].yscale);
-   tclsetvar("vsize",property);
-   my_snprintf(property, S(property), "%.16g",xctx->text[sel].xscale);
-   tclsetvar("hsize",property);
-   if(x==0) {
-     const char *props;
-     xctx->semaphore++;
-     tcleval("enter_text {text:} normal");
-     xctx->semaphore--;
-     hsize =atof(tclgetvar("hsize"));
-     vsize =atof(tclgetvar("vsize"));
-     props = tclgetvar("props");
-     if(xctx->text[sel].xscale != hsize || xctx->text[sel].yscale != vsize) {
-       size_changed = 1;
-     }
-     if( (oldprop && strcmp(oldprop, tclgetvar("props"))) || (!oldprop && props[0]) ) props_changed = 1;
-   }
-   else if(x==2) tcleval("viewdata $::retval");
-   else if(x==1) tcleval("edit_vi_prop {Text:}");
-   else {
-     fprintf(errfp, "edit_text_property() : unknown parameter x=%d\n",x); exit(EXIT_FAILURE);
-   }
-   preserve = atoi(tclgetvar("preserve_unchanged_attrs"));
-   if(x == 0 || x == 1) {
-     if(strcmp(xctx->text[sel].txt_ptr, tclgetvar("retval") ) ) {
-       dbg(1, "edit_text_property(): x=%d, text_changed=1\n", x);
-       text_changed=1;
-     }
-   }
-   if(strcmp(tclgetvar("rcode"),"") )
-   {
-     dbg(1, "edit_text_property(): rcode !=\"\"\n");
-     if(text_changed || size_changed || props_changed) {
-       set_modify(1);
-       xctx->push_undo();
-     }
-     bbox(START,0.0,0.0,0.0,0.0);
-     for(k=0;k<xctx->lastsel;k++)
-     {
-       if(xctx->sel_array[k].type!=xTEXT) continue;
-       sel=xctx->sel_array[k].n;
-       rot = xctx->text[sel].rot; /* calculate bbox, some cleanup needed here */
-       flip = xctx->text[sel].flip;
-       #if HAS_CAIRO==1
-       customfont = set_text_custom_font(&xctx->text[sel]);
-       #endif
-       text_bbox(xctx->text[sel].txt_ptr, xctx->text[sel].xscale,
-                 xctx->text[sel].yscale, (short)rot, (short)flip, xctx->text[sel].hcenter,
+  if(x < 0 || x > 2) {
+    fprintf(errfp, "edit_text_property() : unknown parameter x=%d\n",x);
+    return 0;
+  }      
+  dbg(1, "edit_text_property(): entering\n");
+  sel = xctx->sel_array[0].n;
+  my_strdup(_ALLOC_ID_, &oldprop, xctx->text[sel].prop_ptr);
+  if(oldprop && oldprop[0])
+     tclsetvar("props", oldprop);
+  else
+     tclsetvar("props","");
+  tclsetvar("retval",xctx->text[sel].txt_ptr);
+  my_snprintf(property, S(property), "%.16g",xctx->text[sel].yscale);
+  tclsetvar("vsize",property);
+  my_snprintf(property, S(property), "%.16g",xctx->text[sel].xscale);
+  tclsetvar("hsize",property);
+  if(x==0) {
+    const char *props;
+    xctx->semaphore++;
+    tcleval("enter_text {text:} normal");
+    xctx->semaphore--;
+    hsize =atof(tclgetvar("hsize"));
+    vsize =atof(tclgetvar("vsize"));
+    props = tclgetvar("props");
+    if(xctx->text[sel].xscale != hsize || xctx->text[sel].yscale != vsize) {
+      size_changed = 1;
+    }
+    if( (oldprop && strcmp(oldprop, tclgetvar("props"))) || (!oldprop && props[0]) ) props_changed = 1;
+  }
+  else if(x==2) tcleval("viewdata $::retval");
+  else tcleval("edit_vi_prop {Text:}"); /* x == 1 */
+  preserve = tclgetboolvar("preserve_unchanged_attrs");
+  if(x == 0 || x == 1) {
+    if(strcmp(xctx->text[sel].txt_ptr, tclgetvar("retval") ) ) {
+      dbg(1, "edit_text_property(): x=%d, text_changed=1\n", x);
+      text_changed=1;
+    }
+  }
+  if(strcmp(tclgetvar("rcode"),"") )
+  {
+    dbg(1, "edit_text_property(): rcode !=\"\"\n");
+    if(text_changed || size_changed || props_changed) {
+      modified = 1;
+      xctx->push_undo();
+    }
+    bbox(START,0.0,0.0,0.0,0.0);
+    for(k=0;k<xctx->lastsel; ++k)
+    {
+      if(xctx->sel_array[k].type!=xTEXT) continue;
+      sel=xctx->sel_array[k].n;
+      rot = xctx->text[sel].rot; /* calculate bbox, some cleanup needed here */
+      flip = xctx->text[sel].flip;
+      #if HAS_CAIRO==1
+      customfont = set_text_custom_font(&xctx->text[sel]);
+      #endif
+      text_bbox(get_text_floater(sel), xctx->text[sel].xscale,
+                xctx->text[sel].yscale, (short)rot, (short)flip, xctx->text[sel].hcenter,
+                xctx->text[sel].vcenter, xctx->text[sel].x0, xctx->text[sel].y0,
+                &xx1,&yy1,&xx2,&yy2, &tmp, &dtmp);
+      #if HAS_CAIRO==1
+      if(customfont) {
+        cairo_restore(xctx->cairo_ctx);
+      }
+      #endif
+      bbox(ADD, xx1, yy1, xx2, yy2 );
+      /* dbg(1, "edit_property(): text props=%s text=%s\n", tclgetvar("props"), tclgetvar("retval")); */
+      if(text_changed) {
+        double cg;
+        my_free(_ALLOC_ID_, &xctx->text[sel].floater_ptr);
+        cg = tclgetdoublevar("cadgrid");
+        c = xctx->rects[PINLAYER];
+        for(l=0;l<c; ++l) {
+          if(xctx->text[sel].txt_ptr &&
+              !strcmp( (get_tok_value(xctx->rect[PINLAYER][l].prop_ptr, "name",0)), xctx->text[sel].txt_ptr) ) {
+            /*
+            #if HAS_CAIRO==1
+            customfont = set_text_custom_font(&xctx->text[sel]);
+            #endif
+            text_bbox(get_text_floater(sel), xctx->text[sel].xscale,
+            xctx->text[sel].yscale, (short)rot, (short)flip, xctx->text[sel].hcenter,
+            xctx->text[sel].vcenter, xctx->text[sel].x0, xctx->text[sel].y0,
+            &xx1,&yy1,&xx2,&yy2, &tmp, &dtmp);
+            #if HAS_CAIRO==1
+            if(customfont) {
+              cairo_restore(xctx->cairo_ctx);
+            }
+            #endif
+            */
+            pcx = (xctx->rect[PINLAYER][l].x1+xctx->rect[PINLAYER][l].x2)/2.0;
+            pcy = (xctx->rect[PINLAYER][l].y1+xctx->rect[PINLAYER][l].y2)/2.0;
+            if(
+                /* 20171206 20171221 */
+                (fabs( (yy1+yy2)/2 - pcy) < cg/2 &&
+                (fabs(xx1 - pcx) < cg*3 || fabs(xx2 - pcx) < cg*3) )
+                ||
+                (fabs( (xx1+xx2)/2 - pcx) < cg/2 &&
+                (fabs(yy1 - pcy) < cg*3 || fabs(yy2 - pcy) < cg*3) )
+            ) {
+              if(x==0)
+                my_strdup(_ALLOC_ID_, &xctx->rect[PINLAYER][l].prop_ptr,
+                  subst_token(xctx->rect[PINLAYER][l].prop_ptr, "name",
+                  (char *) tclgetvar("retval")) );
+              else
+                my_strdup(_ALLOC_ID_, &xctx->rect[PINLAYER][l].prop_ptr,
+                  subst_token(xctx->rect[PINLAYER][l].prop_ptr, "name",
+                  (char *) tclgetvar("retval")) );
+            }
+          }
+        }
+        my_strdup2(_ALLOC_ID_, &xctx->text[sel].txt_ptr, (char *) tclgetvar("retval"));
+      }
+      if(x==0 && props_changed) {
+        if(oldprop && preserve)
+          set_different_token(&xctx->text[sel].prop_ptr, (char *) tclgetvar("props"), oldprop);
+        else
+          my_strdup(_ALLOC_ID_, &xctx->text[sel].prop_ptr,(char *) tclgetvar("props"));
+
+        my_free(_ALLOC_ID_, &xctx->text[sel].floater_ptr);
+        set_text_flags(&xctx->text[sel]);
+      }
+      if(size_changed) {
+        xctx->text[sel].xscale=hsize;
+        xctx->text[sel].yscale=vsize;
+      }
+      /* calculate bbox, some cleanup needed here */
+      #if HAS_CAIRO==1
+      customfont = set_text_custom_font(&xctx->text[sel]);
+      #endif
+      text_bbox(get_text_floater(sel), xctx->text[sel].xscale,
+                xctx->text[sel].yscale, (short)rot, (short)flip, xctx->text[sel].hcenter,
                  xctx->text[sel].vcenter, xctx->text[sel].x0, xctx->text[sel].y0,
-                 &xx1,&yy1,&xx2,&yy2, &tmp, &dtmp);
-       #if HAS_CAIRO==1
-       if(customfont) {
-         cairo_restore(xctx->cairo_ctx);
-       }
-       #endif
-       bbox(ADD, xx1, yy1, xx2, yy2 );
-       /* dbg(1, "edit_property(): text props=%s text=%s\n", tclgetvar("props"), tclgetvar("retval")); */
-       if(text_changed) {
-         double cg;
-         cg = tclgetdoublevar("cadgrid");
-         c = xctx->rects[PINLAYER];
-         for(l=0;l<c;l++) {
-           if(!strcmp( (get_tok_value(xctx->rect[PINLAYER][l].prop_ptr, "name",0)),
-                        xctx->text[sel].txt_ptr) ) {
-             #if HAS_CAIRO==1
-             customfont = set_text_custom_font(&xctx->text[sel]);
-             #endif
-             text_bbox(xctx->text[sel].txt_ptr, xctx->text[sel].xscale,
-             xctx->text[sel].yscale, (short)rot, (short)flip, xctx->text[sel].hcenter,
-             xctx->text[sel].vcenter, xctx->text[sel].x0, xctx->text[sel].y0,
-             &xx1,&yy1,&xx2,&yy2, &tmp, &dtmp);
-             #if HAS_CAIRO==1
-             if(customfont) {
-               cairo_restore(xctx->cairo_ctx);
-             }
-             #endif
-             pcx = (xctx->rect[PINLAYER][l].x1+xctx->rect[PINLAYER][l].x2)/2.0;
-             pcy = (xctx->rect[PINLAYER][l].y1+xctx->rect[PINLAYER][l].y2)/2.0;
-             if(
-                 /* 20171206 20171221 */
-                 (fabs( (yy1+yy2)/2 - pcy) < cg/2 &&
-                 (fabs(xx1 - pcx) < cg*3 || fabs(xx2 - pcx) < cg*3) )
-                 ||
-                 (fabs( (xx1+xx2)/2 - pcx) < cg/2 &&
-                 (fabs(yy1 - pcy) < cg*3 || fabs(yy2 - pcy) < cg*3) )
-             ) {
-               if(x==0)
-                 my_strdup(_ALLOC_ID_, &xctx->rect[PINLAYER][l].prop_ptr,
-                   subst_token(xctx->rect[PINLAYER][l].prop_ptr, "name",
-                   (char *) tclgetvar("retval")) );
-               else
-                 my_strdup(_ALLOC_ID_, &xctx->rect[PINLAYER][l].prop_ptr,
-                   subst_token(xctx->rect[PINLAYER][l].prop_ptr, "name",
-                   (char *) tclgetvar("retval")) );
-             }
-           }
-         }
-         my_strdup(_ALLOC_ID_, &xctx->text[sel].txt_ptr, (char *) tclgetvar("retval"));
-       }
-       if(x==0 && props_changed) {
-         if(oldprop && preserve)
-           set_different_token(&xctx->text[sel].prop_ptr, (char *) tclgetvar("props"), oldprop, 0, 0);
-         else
-           my_strdup(_ALLOC_ID_, &xctx->text[sel].prop_ptr,(char *) tclgetvar("props"));
-         set_text_flags(&xctx->text[sel]);
-       }
-       if(size_changed) {
-         xctx->text[sel].xscale=hsize;
-         xctx->text[sel].yscale=vsize;
-       }
-       /* calculate bbox, some cleanup needed here */
-       #if HAS_CAIRO==1
-       customfont = set_text_custom_font(&xctx->text[sel]);
-       #endif
-       text_bbox(xctx->text[sel].txt_ptr, xctx->text[sel].xscale,
-                 xctx->text[sel].yscale, (short)rot, (short)flip, xctx->text[sel].hcenter,
-                  xctx->text[sel].vcenter, xctx->text[sel].x0, xctx->text[sel].y0,
-                 &xx1,&yy1,&xx2,&yy2, &tmp, &dtmp);
-       #if HAS_CAIRO==1
-       if(customfont) {
-         cairo_restore(xctx->cairo_ctx);
-       }
-       #endif
+                &xx1,&yy1,&xx2,&yy2, &tmp, &dtmp);
+      #if HAS_CAIRO==1
+      if(customfont) {
+        cairo_restore(xctx->cairo_ctx);
+      }
+      #endif
 
-       bbox(ADD, xx1, yy1, xx2, yy2 );
-     }
-     bbox(SET,0.0,0.0,0.0,0.0);
-     draw();
-     bbox(END,0.0,0.0,0.0,0.0);
-   }
-   my_free(_ALLOC_ID_, &oldprop);
+      bbox(ADD, xx1, yy1, xx2, yy2 );
+    } /* for(k=0;k<xctx->lastsel; ++k) */
+    bbox(SET,0.0,0.0,0.0,0.0);
+    draw();
+    bbox(END,0.0,0.0,0.0,0.0);
+  }
+  my_free(_ALLOC_ID_, &oldprop);
+  return modified;
 }
 
 /* x=0 use text widget   x=1 use vim editor */
-static void update_symbol(const char *result, int x)
+static int update_symbol(const char *result, int x, int selected_inst)
 {
   int k, sym_number;
   int no_change_props=0;
   int only_different=0;
   int copy_cell=0;
-  int prefix=0;
+  int prefix=0, old_prefix = 0;
   char *name = NULL, *ptr = NULL, *new_prop = NULL;
-  char symbol[PATH_MAX];
+  char symbol[PATH_MAX], *translated_sym = NULL, *old_translated_sym = NULL;
   char *type;
-  int cond;
+  int cond, changed_symbol = 0;
   int pushed=0;
   int *ii = &xctx->edit_sym_i; /* static var */
   int *netl_com = &xctx->netlist_commands; /* static var */
+  int generator = 0,floaters, modified = 0;
 
-  dbg(1, "update_symbol(): entering\n");
-  *ii=xctx->sel_array[0].n;
+  dbg(1, "update_symbol(): entering, selected_inst = %d\n", selected_inst);
+  *ii = selected_inst;
   if(!result) {
    dbg(1, "update_symbol(): edit symbol prop aborted\n");
    my_free(_ALLOC_ID_, &xctx->old_prop);
-   return;
+   return 0;
   }
   /* create new_prop updated attribute string */
   if(*netl_com && x==1) {
@@ -1117,11 +1340,15 @@ static void update_symbol(const char *result, int x)
     dbg(1, "update_symbol(): new_prop=%s\n", new_prop);
   }
   my_strncpy(symbol, (char *) tclgetvar("symbol") , S(symbol));
+  generator = is_generator(symbol);
   dbg(1, "update_symbol(): symbol=%s\n", symbol);
-  no_change_props=atoi(tclgetvar("no_change_attrs") );
-  only_different=atoi(tclgetvar("preserve_unchanged_attrs") );
-  copy_cell=atoi(tclgetvar("user_wants_copy_cell") );
-  bbox(START,0.0,0.0,0.0,0.0);
+  no_change_props=tclgetboolvar("no_change_attrs");
+  only_different=tclgetboolvar("preserve_unchanged_attrs");
+  copy_cell=tclgetboolvar("user_wants_copy_cell");
+  /* if there are floaters or generators (dynamic symbols, pCells) do not collect
+   * list of things to redraw, just redraw all screen */
+  floaters = there_are_floaters() || generator;
+  if(!floaters) bbox(START,0.0,0.0,0.0,0.0);
   /* 20191227 necessary? --> Yes since a symbol copy has already been done
      in edit_symbol_property() -> tcl edit_prop, this ensures new symbol is loaded from disk.
      if for some reason a symbol with matching name is loaded in xschem this
@@ -1130,47 +1357,31 @@ static void update_symbol(const char *result, int x)
    remove_symbols();
    link_symbols_to_instances(-1);
   }
-  /* symbol reference changed? --> sym_number >=0, set prefix to 1st char
-     to use for inst name (from symbol template) */
-  prefix=0;
-  sym_number = -1;
+  /* User edited the Symbol textbox */
   if(strcmp(symbol, xctx->inst[*ii].name)) {
-    set_modify(1);
-    sym_number=match_symbol(symbol); /* check if exist */
-    if(sym_number>=0) {
-      prefix=(get_tok_value((xctx->sym+sym_number)->templ, "name",0))[0]; /* get new symbol prefix  */
-    }
+    changed_symbol = 1;
   }
-  for(k=0;k<xctx->lastsel;k++) {
+  for(k=0;k<xctx->lastsel; ++k) {
     dbg(1, "update_symbol(): for k loop: k=%d\n", k);
-    if(xctx->sel_array[k].type!=ELEMENT) continue;
+    if(xctx->sel_array[k].type != ELEMENT) continue;
     *ii=xctx->sel_array[k].n;
+    old_prefix=(get_tok_value((xctx->sym + xctx->inst[*ii].ptr)->templ, "name",0))[0];
     /* 20171220 calculate bbox before changes to correctly redraw areas */
     /* must be recalculated as cairo text extents vary with zoom factor. */
     symbol_bbox(*ii, &xctx->inst[*ii].x1, &xctx->inst[*ii].y1, &xctx->inst[*ii].x2, &xctx->inst[*ii].y2);
-    if(sym_number>=0) /* changing symbol ! */
-    {
-      if(!pushed) { xctx->push_undo(); pushed=1;}
-      delete_inst_node(*ii); /* 20180208 fix crashing bug: delete node info if changing symbol */
-                        /* if number of pins is different we must delete these data *before* */
-                        /* changing ysmbol, otherwise *ii might end up deleting non allocated data. */
-      my_strdup2(_ALLOC_ID_, &xctx->inst[*ii].name, rel_sym_path(symbol));
-      xctx->inst[*ii].ptr=sym_number; /* update instance to point to new symbol */
-    }
-    bbox(ADD, xctx->inst[*ii].x1, xctx->inst[*ii].y1,
-              xctx->inst[*ii].x2, xctx->inst[*ii].y2);
+    if(!floaters)
+       bbox(ADD, xctx->inst[*ii].x1, xctx->inst[*ii].y1, xctx->inst[*ii].x2, xctx->inst[*ii].y2);
+    my_strdup2(_ALLOC_ID_, &old_translated_sym, translate(*ii, xctx->inst[*ii].name));
 
     /* update property string from tcl dialog */
     if(!no_change_props)
     {
-      dbg(1, "update_symbol(): no_change_props=%d\n", no_change_props);
       if(only_different) {
         char * ss=NULL;
         my_strdup(_ALLOC_ID_, &ss, xctx->inst[*ii].prop_ptr);
-        if( set_different_token(&ss, new_prop, xctx->old_prop, 0, 0) ) {
+        if( set_different_token(&ss, new_prop, xctx->old_prop) ) {
           if(!pushed) { xctx->push_undo(); pushed=1;}
           my_strdup(_ALLOC_ID_, &xctx->inst[*ii].prop_ptr, ss);
-          set_modify(1);
         }
         my_free(_ALLOC_ID_, &ss);
       }
@@ -1180,83 +1391,122 @@ static void update_symbol(const char *result, int x)
             dbg(1, "update_symbol(): changing prop: |%s| -> |%s|\n",
                 xctx->inst[*ii].prop_ptr, new_prop);
             if(!pushed) { xctx->push_undo(); pushed=1;}
+            dbg(1, "update_symbol(): *ii=%d, new_prop=%s\n", *ii, new_prop ? new_prop : "NULL");
             my_strdup(_ALLOC_ID_, &xctx->inst[*ii].prop_ptr, new_prop);
-            set_modify(1);
           }
         }  else {
           if(!pushed) { xctx->push_undo(); pushed=1;}
           my_strdup(_ALLOC_ID_, &xctx->inst[*ii].prop_ptr, "");
-          set_modify(1);
         }
       }
     }
+
+    /* symbol reference changed? --> sym_number >=0, set prefix to 1st char
+     * to use for inst name (from symbol template) */
+    prefix = 0;
+    sym_number = -1;
+    my_strdup2(_ALLOC_ID_, &translated_sym, translate(*ii, symbol));
+    dbg(1, "update_symbol: %s -- %s\n", translated_sym, old_translated_sym);
+    if(changed_symbol ||
+        ( !strcmp(symbol, xctx->inst[*ii].name) &&  strcmp(translated_sym, old_translated_sym) ) ) { 
+      sym_number=match_symbol(translated_sym); /* check if exist */
+      if(sym_number>=0) {
+        prefix=(get_tok_value((xctx->sym+sym_number)->templ, "name",0))[0]; /* get new symbol prefix  */
+      }
+    }
+
+    if(sym_number>=0) /* changing symbol ! */
+    {
+      if(!pushed) { xctx->push_undo(); pushed=1;}
+      delete_inst_node(*ii); /* 20180208 fix crashing bug: delete node info if changing symbol */
+                        /* if number of pins is different we must delete these data *before* */
+                        /* changing ysmbol, otherwise *ii might end up deleting non allocated data. */
+      my_strdup2(_ALLOC_ID_, &xctx->inst[*ii].name, rel_sym_path(symbol));
+      xctx->inst[*ii].ptr=sym_number; /* update instance to point to new symbol */
+    }
+    my_free(_ALLOC_ID_, &translated_sym);
+    my_free(_ALLOC_ID_, &old_translated_sym);
+
     /* if symbol changed ensure instance name (with new prefix char) is unique */
-    /* preserve backslashes in name ----------------------------------->. */
+    /* preserve backslashes in name ---------0---------------------------------->. */
     my_strdup(_ALLOC_ID_, &name, get_tok_value(xctx->inst[*ii].prop_ptr, "name", 1));
     if(name && name[0] ) {
       dbg(1, "update_symbol(): prefix!='\\0', name=%s\n", name);
-      /* 20110325 only modify prefix if prefix not NUL */
-      if(prefix) name[0]=(char)prefix; /* change prefix if changing symbol type; */
-      dbg(1, "update_symbol(): name=%s, inst[*ii].prop_ptr=%s\n",
-          name, xctx->inst[*ii].prop_ptr);
-      my_strdup(_ALLOC_ID_, &ptr,subst_token(xctx->inst[*ii].prop_ptr, "name", name) );
-                     /* set name of current inst */
+      /* change prefix if changing symbol type; */
+      if(prefix && old_prefix && old_prefix != prefix) {
+        name[0]=(char)prefix;
+        my_strdup(_ALLOC_ID_, &ptr, subst_token(xctx->inst[*ii].prop_ptr, "name", name) );
+      } else {
+        my_strdup(_ALLOC_ID_, &ptr, xctx->inst[*ii].prop_ptr);
+      }
+      /* set unique name of current inst */
       if(!pushed) { xctx->push_undo(); pushed=1;}
-      if(!k) hash_all_names();
-      new_prop_string(*ii, ptr, k, tclgetboolvar("disable_unique_names")); /* set new prop_ptr */
-    } else {
-      my_strdup2(_ALLOC_ID_, &xctx->inst[*ii].instname, "");
+      if(!k) hash_names(-1, XINSERT);
+      hash_names(*ii, XDELETE);
+      dbg(1, "update_symbol(): delete %s\n", xctx->inst[*ii].instname);
+      new_prop_string(*ii, ptr, k,               /* sets also inst[].instname */
+         tclgetboolvar("disable_unique_names")); /* set new prop_ptr */
+      hash_names(*ii, XINSERT);
+      dbg(1, "update_symbol(): insert %s\n", xctx->inst[*ii].instname);
     }
+    set_inst_flags(&xctx->inst[*ii]);
+    /* set cached flags in instances */
     type=xctx->sym[xctx->inst[*ii].ptr].type;
-    cond= !type || !IS_LABEL_SH_OR_PIN(type);
-    if(cond) xctx->inst[*ii].flags |= 2; /* bit 1: flag for different textlayer for pin/labels */
-    else {
-      xctx->inst[*ii].flags &= ~2;
-      my_strdup(_ALLOC_ID_, &xctx->inst[*ii].lab,
+    cond= type && IS_LABEL_SH_OR_PIN(type);
+    if(cond) {
+      xctx->inst[*ii].flags |= PIN_OR_LABEL;
+      my_strdup2(_ALLOC_ID_, &xctx->inst[*ii].lab,
                 get_tok_value(xctx->inst[*ii].prop_ptr, "lab",0));
     }
-    if(!strcmp(get_tok_value(xctx->inst[*ii].prop_ptr,"highlight",0), "true"))
-          xctx->inst[*ii].flags |= HILIGHT_CONN;
-    else  xctx->inst[*ii].flags &= ~HILIGHT_CONN;
-    xctx->inst[*ii].embed = !strcmp(get_tok_value(xctx->inst[*ii].prop_ptr, "embed", 2), "true");
-  }  /* end for(k=0;k<xctx->lastsel;k++) */
+    else xctx->inst[*ii].flags &= ~PIN_OR_LABEL;
+  }  /* end for(k=0;k<xctx->lastsel; ++k) */
+
+  if(pushed) modified = 1;
   /* new symbol bbox after prop changes (may change due to text length) */
-  if(xctx->modified) {
+  if(modified) {
     xctx->prep_hash_inst=0;
     xctx->prep_net_structs=0;
     xctx->prep_hi_structs=0;
-    find_inst_to_be_redrawn(1 + 4 + 32);  /* 32: call prepare_netlist_structs(0) */
-    find_inst_to_be_redrawn(16); /* clear data */
+    if(floaters) { /* we need to recalculate bbox of dynamic symbols (floaters/ generators) after prop changes */
+       symbol_bbox(*ii, &xctx->inst[*ii].x1, &xctx->inst[*ii].y1, &xctx->inst[*ii].x2, &xctx->inst[*ii].y2);
+    }
+    if(!floaters) {
+      find_inst_to_be_redrawn(1 + 4 + 32);  /* 32: call prepare_netlist_structs(0) */
+      find_inst_to_be_redrawn(16); /* clear data */
+    }
     if(xctx->hilight_nets) {
       propagate_hilights(1, 1, XINSERT_NOREPLACE);
     }
   }
   /* redraw symbol with new props */
-  bbox(SET,0.0,0.0,0.0,0.0);
-  dbg(1, "update_symbol(): redrawing inst_ptr.txtprop string\n");
+  if(!floaters) bbox(SET,0.0,0.0,0.0,0.0);
+  else set_modify(-2); /* reset floaters caches */
+  dbg(1, "update_symbol(): redrawing : floaters=%d\n", floaters);
   draw();
-  bbox(END,0.0,0.0,0.0,0.0);
+  if(!floaters) bbox(END,0.0,0.0,0.0,0.0);
   my_free(_ALLOC_ID_, &name);
   my_free(_ALLOC_ID_, &ptr);
   my_free(_ALLOC_ID_, &new_prop);
   my_free(_ALLOC_ID_, &xctx->old_prop);
+  return modified;
 }
 
 /* x=0 use text widget   x=1 use vim editor */
-static void edit_symbol_property(int x)
+static int edit_symbol_property(int x, int first_sel)
 {
    char *result=NULL;
    int *ii = &xctx->edit_sym_i; /* static var */
    int *netl_com = &xctx->netlist_commands; /* static var */
+   int modified = 0;
 
-   *ii=xctx->sel_array[0].n;
+   *ii=xctx->sel_array[first_sel].n;
    *netl_com = 0;
    if ((xctx->inst[*ii].ptr + xctx->sym)->type!=NULL)
      *netl_com = 
        !strcmp( (xctx->inst[*ii].ptr+ xctx->sym)->type, "netlist_commands");
    if(xctx->inst[*ii].prop_ptr!=NULL) {
      if(*netl_com && x==1) {
-       tclsetvar("retval",get_tok_value( xctx->inst[*ii].prop_ptr,"value",0));
+       tclsetvar("retval",get_tok_value( xctx->inst[*ii].prop_ptr,"value",2));
      } else {
        tclsetvar("retval",xctx->inst[*ii].prop_ptr);
      }
@@ -1281,37 +1531,48 @@ static void edit_symbol_property(int x)
      my_strdup(_ALLOC_ID_, &result, tclresult());
    }
    dbg(1, "edit_symbol_property(): before update_symbol, modified=%d\n", xctx->modified);
-   update_symbol(result, x);
+   modified = update_symbol(result, x, *ii);
    my_free(_ALLOC_ID_, &result);
-   dbg(1, "edit_symbol_property(): done update_symbol, modified=%d\n", xctx->modified);
+   dbg(1, "edit_symbol_property(): done update_symbol, modified=%d\n", modified);
    *ii=-1;
+   return modified;
 }
 
-void change_elem_order(void)
+void change_elem_order(int n)
 {
   xInstance tmpinst;
   xRect tmpbox;
   xWire tmpwire;
   char tmp_txt[50]; /* overflow safe */
-  int c, new_n;
+  int c, new_n, modified = 0;
 
   rebuild_selected_array();
   if(xctx->lastsel==1)
   {
-    my_snprintf(tmp_txt, S(tmp_txt), "%d",xctx->sel_array[0].n);
-    tclsetvar("retval",tmp_txt);
-    xctx->semaphore++;
-    tcleval("text_line {Object Sequence number} 0");
-    xctx->semaphore--;
-    if(strcmp(tclgetvar("rcode"),"") )
-    {
+    if(n < 0) {
+      my_snprintf(tmp_txt, S(tmp_txt), "%d",xctx->sel_array[0].n);
+      tclsetvar("retval",tmp_txt);
+      xctx->semaphore++;
+      tcleval("text_line {Object Sequence number} 0");
+      xctx->semaphore--;
+      if(strcmp(tclgetvar("rcode"),"") )
+      {
+        xctx->push_undo();
+        modified = 1;
+        xctx->prep_hash_inst=0;
+        xctx->prep_net_structs=0;
+        xctx->prep_hi_structs=0;
+      }
+      sscanf(tclgetvar("retval"), "%d",&new_n);
+      if(new_n < 0) new_n = 0;
+    } else {
+      new_n = n;
       xctx->push_undo();
-      set_modify(1);
+      modified = 1;
       xctx->prep_hash_inst=0;
       xctx->prep_net_structs=0;
       xctx->prep_hi_structs=0;
     }
-    sscanf(tclgetvar("retval"), "%d",&new_n);
 
     if(xctx->sel_array[0].type==ELEMENT)
     {
@@ -1343,16 +1604,19 @@ void change_elem_order(void)
       dbg(1, "change_elem_order(): selected element %d\n", xctx->sel_array[0].n);
     }
     xctx->need_reb_sel_arr = 1;
+    if(modified) set_modify(1);
   }
 }
-
-char *str_replace(const char *s, const char *rep, const char *with)
+/* replace substring 'rep' in 'str' with 'with', if 'rep' not preceeded by an 'escape' char */
+char *str_replace(const char *str, const char *rep, const char *with, int escape)
 {
   static char *result = NULL;
   static size_t size=0;
   size_t result_pos = 0;
   size_t rep_len;
   size_t with_len;
+  const char *s = str;
+  int cond;
 
   if(s==NULL || rep == NULL || with == NULL || rep[0] == '\0') {
     my_free(_ALLOC_ID_, &result);
@@ -1368,7 +1632,9 @@ char *str_replace(const char *s, const char *rep, const char *with)
   }
   while(*s) {
     STR_ALLOC(&result, result_pos + with_len + 1, &size);
-    if(!strncmp(s, rep, rep_len)) {
+
+    cond = ((s == str) || ((*(s - 1) != escape))) && (!strncmp(s, rep, rep_len));
+    if(cond) {
       my_strncpy(result + result_pos, with, with_len + 1);
       result_pos += with_len;
       s += rep_len;
@@ -1381,10 +1647,28 @@ char *str_replace(const char *s, const char *rep, const char *with)
   return result;
 }
 
+
+/* caller should free returned string */
+char *str_chars_replace(const char *str, const char *replace_set, const char with)
+{
+  char *res = NULL;
+  char *s;
+  my_strdup(_ALLOC_ID_, &res, str);
+  s = res;
+  dbg(1, "*str_chars_replace(): %s\n", res);
+  while( *s) {
+    if(strchr(replace_set, *s)) {
+      *s = with;
+    }
+    ++s;
+  }
+  return res;
+}
+
 /* x=0 use tcl text widget  x=1 use vim editor  x=2 only view data */
 void edit_property(int x)
 {
- int j;
+ int type, j, modified = 0;
 
  if(!has_x) return;
  rebuild_selected_array(); /* from the .sel field in objects build */
@@ -1445,34 +1729,39 @@ void edit_property(int x)
    {
      if(xctx->netlist_type==CAD_SYMBOL_ATTRS && 
         (!xctx->schsymbolprop || strcmp(xctx->schsymbolprop, tclgetvar("retval") ) ) ) {
-        set_modify(1); xctx->push_undo();
+        xctx->push_undo();
+        modified = 1;
         my_strdup(_ALLOC_ID_, &xctx->schsymbolprop, (char *) tclgetvar("retval"));
 
      } else if(xctx->netlist_type==CAD_VERILOG_NETLIST &&
         (!xctx->schverilogprop || strcmp(xctx->schverilogprop, tclgetvar("retval") ) ) ) {
-        set_modify(1); xctx->push_undo();
+        modified = 1;
+        xctx->push_undo();
         my_strdup(_ALLOC_ID_, &xctx->schverilogprop, (char *) tclgetvar("retval"));
 
      } else if(xctx->netlist_type==CAD_SPICE_NETLIST && 
         (!xctx->schprop || strcmp(xctx->schprop, tclgetvar("retval") ) ) ) {
-        set_modify(1); xctx->push_undo();
+        modified = 1;
+        xctx->push_undo();
         my_strdup(_ALLOC_ID_, &xctx->schprop, (char *) tclgetvar("retval"));
 
      } else if(xctx->netlist_type==CAD_TEDAX_NETLIST &&
         (!xctx->schtedaxprop || strcmp(xctx->schtedaxprop, tclgetvar("retval") ) ) ) {
-        set_modify(1); xctx->push_undo();
+        modified = 1;
+        xctx->push_undo();
         my_strdup(_ALLOC_ID_, &xctx->schtedaxprop, (char *) tclgetvar("retval"));
 
      } else if(xctx->netlist_type==CAD_VHDL_NETLIST &&
         (!xctx->schvhdlprop || strcmp(xctx->schvhdlprop, tclgetvar("retval") ) ) ) {
-        set_modify(1); xctx->push_undo();
+        modified = 1;
+        xctx->push_undo();
         my_strdup(_ALLOC_ID_, &xctx->schvhdlprop, (char *) tclgetvar("retval"));
      }
    }
 
    /* update the bounding box of vhdl "architecture" instances that embed */
    /* the xctx->schvhdlprop string. 04102001 */
-   for(j=0;j<xctx->instances;j++)
+   for(j=0;j<xctx->instances; ++j)
    {
     if( xctx->inst[j].ptr !=-1 &&
         (xctx->inst[j].ptr+ xctx->sym)->type &&
@@ -1483,6 +1772,7 @@ void edit_property(int x)
                         &xctx->inst[j].x2, &xctx->inst[j].y2);
     }
    } /* end for(j...) */
+   if(modified) set_modify(1);
    return;
  } /* if((xctx->lastsel==0 ) */
 
@@ -1493,16 +1783,45 @@ void edit_property(int x)
    tclsetvar("preserve_unchanged_attrs", "0");
  }
 
- switch(xctx->sel_array[0].type)
+ /* retrieve first selected element (if still selected)... */
+ if(xctx->first_sel.n >=0 && xctx->first_sel.type == ELEMENT && 
+    xctx->inst[xctx->first_sel.n].sel == SELECTED) {
+   type = ELEMENT;
+   for(j=0; j < xctx->lastsel; j++) {
+     if(xctx->sel_array[j].type == ELEMENT && xctx->sel_array[j].n == xctx->first_sel.n) {
+       break;
+     }
+   }
+ /* ... otherwise get first from sel_array[] list */
+ } else {
+   type = xctx->sel_array[0].type;
+   for(j=0; j < xctx->lastsel; j++) {
+     if(xctx->sel_array[j].type == ELEMENT) {
+       type = ELEMENT;
+       break;
+     }
+   }
+ }
+
+ switch(type)
  {
   case ELEMENT:
-   edit_symbol_property(x);
-   while( x == 0 && tclgetvar("edit_symbol_prop_new_sel")[0] == '1' ) {
+   modified |= edit_symbol_property(x, j);
+   while( x == 0 && tclgetvar("edit_symbol_prop_new_sel")[0] == '1') {
      unselect_all(1);
      select_object(xctx->mousex, xctx->mousey, SELECTED, 0);
      rebuild_selected_array();
-     if(xctx->lastsel && xctx->sel_array[0].type ==ELEMENT) {
-       edit_symbol_property(0);
+
+     type = xctx->sel_array[0].type;
+     for(j=0; j < xctx->lastsel; j++) {
+       if(xctx->sel_array[j].type == ELEMENT) {
+         type = ELEMENT;
+         break;
+       }
+     }
+
+     if(xctx->lastsel && type == ELEMENT) {
+       modified |= edit_symbol_property(0, j);
      } else {
        break;
      }
@@ -1510,25 +1829,25 @@ void edit_property(int x)
    tclsetvar("edit_symbol_prop_new_sel", "");
    break;
   case ARC:
-   edit_arc_property();
+   modified |= edit_arc_property();
    break;
   case xRECT:
-   edit_rect_property(x);
+   modified |= edit_rect_property(x);
    break;
   case WIRE:
-   edit_wire_property();
+   modified |= edit_wire_property();
    break;
   case POLYGON:
-   edit_polygon_property();
+   modified |= edit_polygon_property();
    break;
   case LINE:
-   edit_line_property();
+   modified |= edit_line_property();
    break;
   case xTEXT:
-   edit_text_property(x);
+   modified |= edit_text_property(x);
    break;
  }
-
+ if(modified) set_modify(1);
 }
 
 

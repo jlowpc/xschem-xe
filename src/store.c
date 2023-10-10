@@ -3,7 +3,7 @@
  * This file is part of XSCHEM,
  * a schematic capture and Spice/Vhdl/Verilog netlisting tool for circuit
  * simulation.
- * Copyright (C) 1998-2022 Stefan Frederik Schippers
+ * Copyright (C) 1998-2023 Stefan Frederik Schippers
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -52,52 +52,12 @@ void check_text_storage(void)
 
 void check_symbol_storage(void)
 {
- int i;
  if(xctx->symbols >= xctx->maxs)
  {
   dbg(1, "check_symbol_storage(): more than maxs, %s\n",
         xctx->sch[xctx->currsch] );
   xctx->maxs=(1 + xctx->symbols / ELEMDEF) * ELEMDEF;
   my_realloc(_ALLOC_ID_, &xctx->sym, sizeof(xSymbol)*xctx->maxs);
-  for(i=xctx->symbols;i<xctx->maxs;i++) {
-    xctx->sym[i].poly=my_calloc(_ALLOC_ID_, cadlayers, sizeof(xPoly *));
-    if(xctx->sym[i].poly==NULL){
-       fprintf(errfp, "check_symbol_storage(): calloc error\n");tcleval( "exit");
-    }
-
-    xctx->sym[i].arc=my_calloc(_ALLOC_ID_, cadlayers, sizeof(xArc *));
-    if(xctx->sym[i].arc==NULL){
-       fprintf(errfp, "check_symbol_storage(): calloc error\n");tcleval( "exit");
-    }
-
-    xctx->sym[i].line=my_calloc(_ALLOC_ID_, cadlayers, sizeof(xLine *));
-    if(xctx->sym[i].line==NULL){
-       fprintf(errfp, "check_symbol_storage(): calloc error\n");tcleval( "exit");
-    }
-
-    xctx->sym[i].rect=my_calloc(_ALLOC_ID_, cadlayers, sizeof(xRect *));
-    if(xctx->sym[i].rect==NULL){
-      fprintf(errfp, "check_symbol_storage(): calloc error\n");tcleval( "exit");
-    }
-
-    xctx->sym[i].lines=my_calloc(_ALLOC_ID_, cadlayers, sizeof(int));
-    if(xctx->sym[i].lines==NULL){
-      fprintf(errfp, "check_symbol_storage(): calloc error\n");tcleval( "exit");
-    }
-
-    xctx->sym[i].rects=my_calloc(_ALLOC_ID_, cadlayers, sizeof(int));
-    if(xctx->sym[i].rects==NULL){
-      fprintf(errfp, "check_symbol_storage(): calloc error\n");tcleval( "exit");
-    }
-    xctx->sym[i].polygons=my_calloc(_ALLOC_ID_, cadlayers, sizeof(int));
-    if(xctx->sym[i].polygons==NULL){
-      fprintf(errfp, "check_symbol_storage(): calloc error\n");tcleval( "exit");
-    }
-    xctx->sym[i].arcs=my_calloc(_ALLOC_ID_, cadlayers, sizeof(int));
-    if(xctx->sym[i].arcs==NULL){
-      fprintf(errfp, "check_symbol_storage(): calloc error\n");tcleval( "exit");
-    }
-  }
  }
 
 }
@@ -108,11 +68,16 @@ void check_inst_storage(void)
 {
  if(xctx->instances >= xctx->maxi)
  {
+  int i, old = xctx->maxi;
+  
   xctx->maxi=(1 + xctx->instances / ELEMINST) * ELEMINST;
   my_realloc(_ALLOC_ID_, &xctx->inst, sizeof(xInstance)*xctx->maxi);
   #ifdef ZERO_REALLOC
   memset(xctx->inst + xctx->instances, 0, sizeof(xInstance) * (xctx->maxi - xctx->instances));
   #endif
+  /* clear all flag bits (to avoid random data in bit 8, that can not be cleraed 
+   * by set_inst_flags() */
+  for(i = old; i < xctx->maxi; i++) xctx->inst[i].flags = 0;
  }
 }
 
@@ -187,7 +152,8 @@ void store_arc(int pos, double x, double y, double r, double a, double b,
   xctx->arc[rectc][n].prop_ptr = NULL;
   my_strdup(_ALLOC_ID_, &xctx->arc[rectc][n].prop_ptr, prop_ptr);
   xctx->arc[rectc][n].sel = sel;
-  if( !strcmp(get_tok_value(xctx->arc[rectc][n].prop_ptr,"fill",0),"true") )
+  if(sel == SELECTED) set_first_sel(ARC, n, rectc);
+  if( !strboolcmp(get_tok_value(xctx->arc[rectc][n].prop_ptr,"fill",0),"true") )
     xctx->arc[rectc][n].fill =1;
   else
     xctx->arc[rectc][n].fill =0;
@@ -199,7 +165,6 @@ void store_arc(int pos, double x, double y, double r, double a, double b,
     xctx->arc[rectc][n].dash = 0;
 
   xctx->arcs[rectc]++;
-  set_modify(1);
 }
 
 void store_poly(int pos, double *x, double *y, int points, unsigned int rectc, 
@@ -227,15 +192,15 @@ void store_poly(int pos, double *x, double *y, int points, unsigned int rectc,
   xctx->poly[rectc][n].y= my_calloc(_ALLOC_ID_, points, sizeof(double));
   xctx->poly[rectc][n].selected_point= my_calloc(_ALLOC_ID_, points, sizeof(unsigned short));
   my_strdup(_ALLOC_ID_, &xctx->poly[rectc][n].prop_ptr, prop_ptr);
-  for(j=0;j<points; j++) {
+  for(j=0;j<points; ++j) {
     xctx->poly[rectc][n].x[j] = x[j];
     xctx->poly[rectc][n].y[j] = y[j];
   }
   xctx->poly[rectc][n].points = points;
   xctx->poly[rectc][n].sel = sel;
+  if(sel == SELECTED) set_first_sel(POLYGON, n, rectc);
 
-
-  if( !strcmp(get_tok_value(xctx->poly[rectc][n].prop_ptr,"fill",0),"true") )
+  if( !strboolcmp(get_tok_value(xctx->poly[rectc][n].prop_ptr,"fill",0),"true") )
     xctx->poly[rectc][n].fill =1;
   else
     xctx->poly[rectc][n].fill =0;
@@ -248,14 +213,13 @@ void store_poly(int pos, double *x, double *y, int points, unsigned int rectc,
 
 
   xctx->polygons[rectc]++;
-  set_modify(1);
 }
 
-void storeobject(int pos, double x1,double y1,double x2,double y2,
+int storeobject(int pos, double x1,double y1,double x2,double y2,
                  unsigned short type, unsigned int rectc,
                  unsigned short sel, const char *prop_ptr)
 {
- int n, j;
+ int n, j, modified = 0;
  const char *dash;
     if(type == LINE)
     {
@@ -278,7 +242,8 @@ void storeobject(int pos, double x1,double y1,double x2,double y2,
      xctx->line[rectc][n].prop_ptr=NULL;
      my_strdup(_ALLOC_ID_, &xctx->line[rectc][n].prop_ptr, prop_ptr);
      xctx->line[rectc][n].sel=sel;
-     if( prop_ptr && !strcmp(get_tok_value(prop_ptr, "bus", 0), "true") )
+     if(sel == SELECTED) set_first_sel(LINE, n, rectc);
+     if( prop_ptr && !strboolcmp(get_tok_value(prop_ptr, "bus", 0), "true") )
        xctx->line[rectc][n].bus = 1;
      else
        xctx->line[rectc][n].bus = 0;
@@ -288,7 +253,7 @@ void storeobject(int pos, double x1,double y1,double x2,double y2,
      } else
        xctx->line[rectc][n].dash = 0;
      xctx->lines[rectc]++;
-     set_modify(1);
+     modified = 1;
     }
     if(type == xRECT)
     {
@@ -311,12 +276,13 @@ void storeobject(int pos, double x1,double y1,double x2,double y2,
      xctx->rect[rectc][n].extraptr=NULL;
      my_strdup(_ALLOC_ID_, &xctx->rect[rectc][n].prop_ptr, prop_ptr);
      xctx->rect[rectc][n].sel=sel;
+     if(sel == SELECTED) set_first_sel(xRECT, n, rectc);
      if(prop_ptr && (dash = get_tok_value(prop_ptr,"dash",0))[0]) {
        int d = atoi(dash);
        xctx->rect[rectc][n].dash = (char) (d >= 0 ? d : 0);
      } else
        xctx->rect[rectc][n].dash = 0;
-     if(!strcmp(get_tok_value(xctx->rect[rectc][n].prop_ptr,"fill",0),"false") )
+     if(!strboolcmp(get_tok_value(xctx->rect[rectc][n].prop_ptr,"fill",0),"false") )
        xctx->rect[rectc][n].fill =0;
      else
        xctx->rect[rectc][n].fill =1;
@@ -326,7 +292,7 @@ void storeobject(int pos, double x1,double y1,double x2,double y2,
         draw_image(0, r, &r->x1, &r->y1, &r->x2, &r->y2, 0, 0);
      }
      xctx->rects[rectc]++;
-     set_modify(1);
+     modified = 1;
     }
     if(type == WIRE)
     {
@@ -350,10 +316,12 @@ void storeobject(int pos, double x1,double y1,double x2,double y2,
      xctx->wire[n].end1=0;
      xctx->wire[n].end2=0;
      my_strdup(_ALLOC_ID_, &xctx->wire[n].prop_ptr, prop_ptr);
-     if(prop_ptr && !strcmp(get_tok_value(prop_ptr,"bus",0), "true")) xctx->wire[n].bus=1;
+     if(prop_ptr && !strboolcmp(get_tok_value(prop_ptr,"bus",0), "true")) xctx->wire[n].bus=1;
      else xctx->wire[n].bus=0;
      xctx->wire[n].sel=sel;
+     if(sel == SELECTED) set_first_sel(WIRE, n, 0);
      xctx->wires++;
-     set_modify(1);
+     modified = 1;
     }
+    return modified;
 }
