@@ -140,10 +140,13 @@ char *my_fgets(FILE *fd, size_t *line_len)
  * character, removed from input and all characters before next quote are considered
  * as part of the token. backslash can be used to enter literal quoting characters and
  * literal backslashes.
+ * behavior described above can be changed if keep_quote is not zero:
+ * keep_quote == 1: keep quotes and backslahes
+ * keep_quote == 4: remove surrounding "...", keep everything in between
  * if quote is empty no backslash is removed from input and behavior is identical
  * to strtok_r
  */
-char *my_strtok_r(char *str, const char *delim, const char *quote, char **saveptr)
+char *my_strtok_r(char *str, const char *delim, const char *quote, int keep_quote, char **saveptr)
 {
   char *tok;
   int q = 0; /* quote */
@@ -160,11 +163,11 @@ char *my_strtok_r(char *str, const char *delim, const char *quote, char **savept
     if(ne) *(*saveptr - ne) = **saveptr; /* shift back eating escapes / quotes */
     if(!e && strchr(quote, **saveptr)) {
       q = !q;
-      ++ne;
+      if(keep_quote != 1) ++ne;
     }
-    if(quote[0] && !e && **saveptr == '\\') { /* if quote is empty string do not skip backslashes either */
+    if(!e && **saveptr == '\\') { /* do not skip backslashes either */
       e = 1;
-      ++ne;
+      if(keep_quote == 0) ++ne;
     } else e = 0;
     ++(*saveptr);
   }
@@ -298,6 +301,29 @@ size_t my_snprintf(char *string, size_t size, const char *format, ...)
       char nfmt[50], nstr[50];
       int i, nlen;
       i = va_arg(args, int);
+      l = f - fmt+1;
+      strncpy(nfmt, fmt, l);
+      nfmt[l] = '\0';
+      l = fmt - prev;
+      if(n+l > size) break;
+      memcpy(string + n, prev, l);
+      string[n+l] = '\0';
+      n += l;
+      nlen = sprintf(nstr, nfmt, i);
+      if(n + nlen + 1 > size) {
+        overflow = 1;
+        break;
+      }
+      memcpy(string +n, nstr, nlen+1);
+      n += nlen;
+      format_spec = 0;
+      prev = f + 1;
+    }
+    else if(format_spec && (*f == 'p') ) {
+      char nfmt[50], nstr[50];
+      void *i;
+      int  nlen;
+      i = va_arg(args, void *);
       l = f - fmt+1;
       strncpy(nfmt, fmt, l);
       nfmt[l] = '\0';
@@ -585,7 +611,9 @@ void *my_malloc(int id, size_t size)
 void my_realloc(int id, void *ptr,size_t size)
 {
  void *a;
+ char old[100];
  a = *(void **)ptr;
+ my_snprintf(old, S(old), "%p", a);
  if(size == 0) {
    free(*(void **)ptr);
    dbg(3, "\nmy_free(%d,):  my_realloc_freeing %p\n",id, *(void **)ptr);
@@ -593,8 +621,8 @@ void my_realloc(int id, void *ptr,size_t size)
  } else {
    *(void **)ptr=realloc(*(void **)ptr,size);
     if(*(void **)ptr == NULL) fprintf(errfp,"my_realloc(%d,): allocation failure for %ld bytes\n", id, size);
-   dbg(3, "\nmy_realloc(%d,): reallocating %p --> %p to %lu bytes\n",
-           id, a, *(void **)ptr,(unsigned long) size);
+   dbg(3, "\nmy_realloc(%d,): reallocating %s --> %p to %lu bytes\n",
+           id, old, *(void **)ptr,(unsigned long) size);
  }
 }
 
@@ -860,21 +888,15 @@ static int edit_rect_property(int x)
       if( (oldprop &&  xctx->rect[c][n].prop_ptr && strcmp(oldprop, xctx->rect[c][n].prop_ptr)) ||
           (!oldprop && xctx->rect[c][n].prop_ptr) || (oldprop && !xctx->rect[c][n].prop_ptr)) {
          if(!drw) {
-           bbox(START,0.0,0.0,0.0,0.0);
            drw = 1;
          }
          if( xctx->rect[c][n].flags & 1024) {
            draw_image(0, &xctx->rect[c][n], &xctx->rect[c][n].x1, &xctx->rect[c][n].y1,
                          &xctx->rect[c][n].x2, &xctx->rect[c][n].y2, 0, 0);
          }
-         bbox(ADD, xctx->rect[c][n].x1, xctx->rect[c][n].y1, xctx->rect[c][n].x2, xctx->rect[c][n].y2);
       }
     }
-    if(drw) {
-      bbox(SET , 0.0 , 0.0 , 0.0 , 0.0);
-      draw();
-      bbox(END , 0.0 , 0.0 , 0.0 , 0.0);
-    }
+    if(drw) draw();
     modified = 1;
   }
   my_free(_ALLOC_ID_, &oldprop);
@@ -1200,7 +1222,7 @@ static int edit_text_property(int x)
       modified = 1;
       xctx->push_undo();
     }
-    bbox(START,0.0,0.0,0.0,0.0);
+    set_modify(-2); /* clear text floater caches */
     for(k=0;k<xctx->lastsel; ++k)
     {
       if(xctx->sel_array[k].type!=xTEXT) continue;
@@ -1219,7 +1241,6 @@ static int edit_text_property(int x)
         cairo_restore(xctx->cairo_ctx);
       }
       #endif
-      bbox(ADD, xx1, yy1, xx2, yy2 );
       /* dbg(1, "edit_property(): text props=%s text=%s\n", tclgetvar("props"), tclgetvar("retval")); */
       if(text_changed) {
         double cg;
@@ -1229,20 +1250,6 @@ static int edit_text_property(int x)
         for(l=0;l<c; ++l) {
           if(xctx->text[sel].txt_ptr &&
               !strcmp( (get_tok_value(xctx->rect[PINLAYER][l].prop_ptr, "name",0)), xctx->text[sel].txt_ptr) ) {
-            /*
-            #if HAS_CAIRO==1
-            customfont = set_text_custom_font(&xctx->text[sel]);
-            #endif
-            text_bbox(get_text_floater(sel), xctx->text[sel].xscale,
-            xctx->text[sel].yscale, (short)rot, (short)flip, xctx->text[sel].hcenter,
-            xctx->text[sel].vcenter, xctx->text[sel].x0, xctx->text[sel].y0,
-            &xx1,&yy1,&xx2,&yy2, &tmp, &dtmp);
-            #if HAS_CAIRO==1
-            if(customfont) {
-              cairo_restore(xctx->cairo_ctx);
-            }
-            #endif
-            */
             pcx = (xctx->rect[PINLAYER][l].x1+xctx->rect[PINLAYER][l].x2)/2.0;
             pcy = (xctx->rect[PINLAYER][l].y1+xctx->rect[PINLAYER][l].y2)/2.0;
             if(
@@ -1279,25 +1286,8 @@ static int edit_text_property(int x)
         xctx->text[sel].xscale=hsize;
         xctx->text[sel].yscale=vsize;
       }
-      /* calculate bbox, some cleanup needed here */
-      #if HAS_CAIRO==1
-      customfont = set_text_custom_font(&xctx->text[sel]);
-      #endif
-      text_bbox(get_text_floater(sel), xctx->text[sel].xscale,
-                xctx->text[sel].yscale, (short)rot, (short)flip, xctx->text[sel].hcenter,
-                 xctx->text[sel].vcenter, xctx->text[sel].x0, xctx->text[sel].y0,
-                &xx1,&yy1,&xx2,&yy2, &tmp, &dtmp);
-      #if HAS_CAIRO==1
-      if(customfont) {
-        cairo_restore(xctx->cairo_ctx);
-      }
-      #endif
-
-      bbox(ADD, xx1, yy1, xx2, yy2 );
     } /* for(k=0;k<xctx->lastsel; ++k) */
-    bbox(SET,0.0,0.0,0.0,0.0);
     draw();
-    bbox(END,0.0,0.0,0.0,0.0);
   }
   my_free(_ALLOC_ID_, &oldprop);
   return modified;
@@ -1318,7 +1308,7 @@ static int update_symbol(const char *result, int x, int selected_inst)
   int pushed=0;
   int *ii = &xctx->edit_sym_i; /* static var */
   int *netl_com = &xctx->netlist_commands; /* static var */
-  int generator = 0,floaters, modified = 0;
+  int modified = 0;
 
   dbg(1, "update_symbol(): entering, selected_inst = %d\n", selected_inst);
   *ii = selected_inst;
@@ -1340,15 +1330,10 @@ static int update_symbol(const char *result, int x, int selected_inst)
     dbg(1, "update_symbol(): new_prop=%s\n", new_prop);
   }
   my_strncpy(symbol, (char *) tclgetvar("symbol") , S(symbol));
-  generator = is_generator(symbol);
   dbg(1, "update_symbol(): symbol=%s\n", symbol);
   no_change_props=tclgetboolvar("no_change_attrs");
   only_different=tclgetboolvar("preserve_unchanged_attrs");
   copy_cell=tclgetboolvar("user_wants_copy_cell");
-  /* if there are floaters or generators (dynamic symbols, pCells) do not collect
-   * list of things to redraw, just redraw all screen */
-  floaters = there_are_floaters() || generator;
-  if(!floaters) bbox(START,0.0,0.0,0.0,0.0);
   /* 20191227 necessary? --> Yes since a symbol copy has already been done
      in edit_symbol_property() -> tcl edit_prop, this ensures new symbol is loaded from disk.
      if for some reason a symbol with matching name is loaded in xschem this
@@ -1369,8 +1354,6 @@ static int update_symbol(const char *result, int x, int selected_inst)
     /* 20171220 calculate bbox before changes to correctly redraw areas */
     /* must be recalculated as cairo text extents vary with zoom factor. */
     symbol_bbox(*ii, &xctx->inst[*ii].x1, &xctx->inst[*ii].y1, &xctx->inst[*ii].x2, &xctx->inst[*ii].y2);
-    if(!floaters)
-       bbox(ADD, xctx->inst[*ii].x1, xctx->inst[*ii].y1, xctx->inst[*ii].x2, xctx->inst[*ii].y2);
     my_strdup2(_ALLOC_ID_, &old_translated_sym, translate(*ii, xctx->inst[*ii].name));
 
     /* update property string from tcl dialog */
@@ -1467,23 +1450,14 @@ static int update_symbol(const char *result, int x, int selected_inst)
     xctx->prep_hash_inst=0;
     xctx->prep_net_structs=0;
     xctx->prep_hi_structs=0;
-    if(floaters) { /* we need to recalculate bbox of dynamic symbols (floaters/ generators) after prop changes */
-       symbol_bbox(*ii, &xctx->inst[*ii].x1, &xctx->inst[*ii].y1, &xctx->inst[*ii].x2, &xctx->inst[*ii].y2);
-    }
-    if(!floaters) {
-      find_inst_to_be_redrawn(1 + 4 + 32);  /* 32: call prepare_netlist_structs(0) */
-      find_inst_to_be_redrawn(16); /* clear data */
-    }
+    symbol_bbox(*ii, &xctx->inst[*ii].x1, &xctx->inst[*ii].y1, &xctx->inst[*ii].x2, &xctx->inst[*ii].y2);
     if(xctx->hilight_nets) {
       propagate_hilights(1, 1, XINSERT_NOREPLACE);
     }
   }
   /* redraw symbol with new props */
-  if(!floaters) bbox(SET,0.0,0.0,0.0,0.0);
-  else set_modify(-2); /* reset floaters caches */
-  dbg(1, "update_symbol(): redrawing : floaters=%d\n", floaters);
+  set_modify(-2); /* reset floaters caches */
   draw();
-  if(!floaters) bbox(END,0.0,0.0,0.0,0.0);
   my_free(_ALLOC_ID_, &name);
   my_free(_ALLOC_ID_, &ptr);
   my_free(_ALLOC_ID_, &new_prop);

@@ -85,6 +85,7 @@ int there_are_floaters(void)
   for(k = 0; k < xctx->texts; k++) {
     if(xctx->text[k].flags & TEXT_FLOATER) {
       floaters = 1;
+      dbg(1, "text %d is a floater\n", k);
       break;
     }
   }
@@ -135,8 +136,9 @@ const char *get_text_floater(int i)
 /* mod=-1 used to force set title 
  * mod=-2 used to reset floaters cache 
  * if floaters are present set_modify(1) (after a modify opration) must be done before draw()
- * to invalidate cached floater string values  before redrawing*/
-void set_modify(int mod)
+ * to invalidate cached floater string values  before redrawing
+ * return 1 if floaters are found (mod==-2 or mod == 1 or mod == -1) */
+int set_modify(int mod)
 {
   int i, floaters = 0;
 
@@ -168,6 +170,7 @@ void set_modify(int mod)
     if(xctx->modified) tcleval("set_tab_names *");
     else tcleval("set_tab_names");
   }
+  return floaters;
 }
 
 void print_version()
@@ -1510,13 +1513,13 @@ void symbol_in_new_window(int new_process)
   if(xctx->lastsel !=1 || xctx->sel_array[0].type!=ELEMENT) {
     my_strncpy(filename,  xctx->sch[xctx->currsch], S(filename));
     if(new_process) new_xschem_process(filename, 1);
-    else new_schematic("create", NULL, filename);
+    else new_schematic("create", NULL, filename, 1);
   }
   else {
     my_strncpy(filename, abs_sym_path(tcl_hook2(xctx->inst[xctx->sel_array[0].n].name), ""), S(filename));
     if(!check_loaded(filename, win_path)) {
       if(new_process) new_xschem_process(filename, 1);
-      else new_schematic("create", NULL, filename);
+      else new_schematic("create", NULL, filename, 1);
     }
   }
 }
@@ -1529,7 +1532,7 @@ void schematic_in_new_window(int new_process)
   rebuild_selected_array();
   if(xctx->lastsel !=1 || xctx->sel_array[0].type!=ELEMENT) {
     if(new_process) new_xschem_process(xctx->sch[xctx->currsch], 0);
-    else new_schematic("create", NULL, xctx->sch[xctx->currsch]);
+    else new_schematic("create", NULL, xctx->sch[xctx->currsch], 1);
   }
   else {
     if(                   /*  do not descend if not subcircuit */
@@ -1546,7 +1549,7 @@ void schematic_in_new_window(int new_process)
     get_sch_from_sym(filename, xctx->inst[xctx->sel_array[0].n].ptr+ xctx->sym, xctx->sel_array[0].n);
     if(!check_loaded(filename, win_path)) {
       if(new_process) new_xschem_process(filename, 0);
-      else new_schematic("create", NULL, filename);
+      else new_schematic("create", NULL, filename, 1);
     }
   }
 }
@@ -1949,10 +1952,10 @@ int descend_schematic(int instnumber)
 
      p_n_s1 = pin_node;
      for(k = 1; k<=mult; ++k) {
-         single_p = my_strtok_r(p_n_s1, ",", "", &p_n_s2);
+         single_p = my_strtok_r(p_n_s1, ",", "", 0, &p_n_s2);
          p_n_s1 = NULL;
          my_strdup2(_ALLOC_ID_, &single_n,
-             find_nth(net_node, ",", ((inst_number - 1) * mult + k - 1) % net_mult + 1));
+             find_nth(net_node, ",", "", 0, ((inst_number - 1) * mult + k - 1) % net_mult + 1));
          single_n_ptr = single_n;
          if(single_n_ptr[0] == '#') {
            if(mult > 1) {
@@ -1974,7 +1977,7 @@ int descend_schematic(int instnumber)
              get_tok_value((xctx->inst[n].ptr+ xctx->sym)->prop_ptr, "template", 0));
 
    dbg(1,"descend_schematic(): inst_number=%d\n", inst_number);
-   my_strcat(_ALLOC_ID_, &xctx->sch_path[xctx->currsch+1], find_nth(str, ",", inst_number));
+   my_strcat(_ALLOC_ID_, &xctx->sch_path[xctx->currsch+1], find_nth(str, ",", "", 0, inst_number));
    my_free(_ALLOC_ID_, &str);
    dbg(1,"descend_schematic(): inst_number=%d\n", inst_number);
    my_strcat(_ALLOC_ID_, &xctx->sch_path[xctx->currsch+1], ".");
@@ -2567,7 +2570,6 @@ static void restore_selection(double x1, double y1, double x2, double y2)
 
 void new_wire(int what, double mx_snap, double my_snap)
 {
-  int big =  xctx->wires> 2000 || xctx->instances > 2000 ;
   int s_pnetname, modified = 0;
   if( (what & PLACE) ) {
     s_pnetname = tclgetboolvar("show_pin_net_names");
@@ -2625,21 +2627,10 @@ void new_wire(int what, double mx_snap, double my_snap)
       if(s_pnetname || xctx->hilight_nets) {
         prepare_netlist_structs(0); /* since xctx->prep_hi_structs==0, do a delete_netlist_structs() first,
                                      * this clears both xctx->prep_hi_structs and xctx->prep_net_structs. */
-        if(!big) {
-          bbox(START , 0.0 , 0.0 , 0.0 , 0.0);
-          if(xctx->node_redraw_table.table == NULL)  int_hash_init(&xctx->node_redraw_table, HASHSIZE);
-          int_hash_lookup(&(xctx->node_redraw_table),  xctx->wire[xctx->wires-1].node, 0, XINSERT_NOREPLACE);
-        } 
-        if(!big) {
-          find_inst_to_be_redrawn(1 + 4 + 8); /* add bboxes before and after symbol_bbox, don't use selection */
-          find_inst_to_be_redrawn(16); /* delete hash and arrays */
-          bbox(SET , 0.0 , 0.0 , 0.0 , 0.0);
-        }
         if(xctx->hilight_nets) {
           propagate_hilights(1, 1, XINSERT_NOREPLACE);
         }
         draw();
-        if(!big) bbox(END , 0.0 , 0.0 , 0.0 , 0.0);
       } else update_conn_cues(WIRELAYER, 1,1);
       /* draw_hilight_net(1);*/  /* for updating connection bubbles on hilight nets */
     }
@@ -3358,7 +3349,7 @@ int place_text(int draw_text, double mx, double my)
   vsize =  (char *)tclgetvar("vsize");
   if(!txt || !strcmp(txt,"")) return 0;   /*  dont allocate text object if empty string given */
   xctx->push_undo();
-  dbg(0,"props=%s, txt=%s\n", props, txt);
+  dbg(1,"props=%s, txt=%s\n", props, txt);
 
   create_text(draw_text, mx, my, 0, 0, txt, props, atof(hsize), atof(vsize));
   select_text(xctx->texts - 1, SELECTED, 0);
@@ -3392,9 +3383,35 @@ void pan(int what, int mx, int my)
   }
 }
 
+/* instead of doing a drawtemprect(xctx->gctiled, NOW, ....) do 4 
+ * XCopy Area operations */
+void fix_restore_rect(double x1, double y1, double x2, double y2)
+{
+  /* horizontal lines */
+  MyXCopyAreaDouble(display, xctx->save_pixmap, xctx->window, xctx->gc[0],
+      x1, y1, x2, y1, x1, y1,
+      xctx->lw);
+
+  MyXCopyAreaDouble(display, xctx->save_pixmap, xctx->window, xctx->gc[0],
+      x1, y2, x2, y2, x1, y2,
+      xctx->lw);
+
+  /* vertical lines */
+  MyXCopyAreaDouble(display, xctx->save_pixmap, xctx->window, xctx->gc[0],
+      x1, y1, x1, y2, x1, y1,
+      xctx->lw);
+
+  MyXCopyAreaDouble(display, xctx->save_pixmap, xctx->window, xctx->gc[0],
+      x2, y1, x2, y2, x2, y1,
+      xctx->lw);
+}
+
+
 /*  20150927 select=1: select objects, select=0: unselect objects */
 void select_rect(int what, int select)
 {
+ dbg(1, "select_rect(): what=%d, mousex_save=%g mousey_save=%g, mousex_snap=%g mousey_snap=%g\n", 
+        what, xctx->mx_double_save, xctx->my_double_save, xctx->mousex_snap, xctx->mousey_snap);
  if(what & RUBBER)
  {
     if(xctx->nl_sem==0) {
@@ -3403,17 +3420,20 @@ void select_rect(int what, int select)
     }
     xctx->nl_xx1=xctx->nl_xr;xctx->nl_xx2=xctx->nl_xr2;xctx->nl_yy1=xctx->nl_yr;xctx->nl_yy2=xctx->nl_yr2;
     RECTORDER(xctx->nl_xx1,xctx->nl_yy1,xctx->nl_xx2,xctx->nl_yy2);
-    drawtemprect(xctx->gctiled,NOW, xctx->nl_xx1,xctx->nl_yy1,xctx->nl_xx2,xctx->nl_yy2);
+    if(fix_broken_tiled_fill || !_unix) {
+      fix_restore_rect(xctx->nl_xx1,xctx->nl_yy1,xctx->nl_xx2,xctx->nl_yy2);
+    } else {
+      drawtemprect(xctx->gctiled,NOW, xctx->nl_xx1,xctx->nl_yy1,xctx->nl_xx2,xctx->nl_yy2);
+    }
     xctx->nl_xr2=xctx->mousex_snap;xctx->nl_yr2=xctx->mousey_snap;
 
     /*  20171026 update unselected objects while dragging */
     rebuild_selected_array();
-    bbox(START,0.0, 0.0, 0.0, 0.0);
-    bbox(ADD, xctx->nl_xx1, xctx->nl_yy1, xctx->nl_xx2, xctx->nl_yy2);
-    bbox(SET,0.0, 0.0, 0.0, 0.0);
     draw_selection(xctx->gc[SELLAYER], 0);
-    if(!xctx->nl_sel) select_inside(xctx->nl_xx1, xctx->nl_yy1, xctx->nl_xx2, xctx->nl_yy2, xctx->nl_sel);
-    bbox(END,0.0, 0.0, 0.0, 0.0);
+    /* if(xctx->nl_sel) { */
+      if(xctx->nl_dir == 0) select_inside(xctx->nl_xx1, xctx->nl_yy1, xctx->nl_xx2, xctx->nl_yy2, xctx->nl_sel);
+      else select_touch(xctx->nl_xx1, xctx->nl_yy1, xctx->nl_xx2, xctx->nl_yy2, xctx->nl_sel);
+    /* } */
     xctx->nl_xx1=xctx->nl_xr;xctx->nl_xx2=xctx->nl_xr2;xctx->nl_yy1=xctx->nl_yr;xctx->nl_yy2=xctx->nl_yr2;
     RECTORDER(xctx->nl_xx1,xctx->nl_yy1,xctx->nl_xx2,xctx->nl_yy2);
     drawtemprect(xctx->gc[SELLAYER],NOW, xctx->nl_xx1,xctx->nl_yy1,xctx->nl_xx2,xctx->nl_yy2);
@@ -3444,27 +3464,14 @@ void select_rect(int what, int select)
     RECTORDER(xctx->nl_xr,xctx->nl_yr,xctx->nl_xr2,xctx->nl_yr2);
 
     if(fix_broken_tiled_fill || !_unix) {
-      /* 
-       * MyXCopyArea(display, xctx->save_pixmap, xctx->window, xctx->gc[0], xctx->xrect[0].x, xctx->xrect[0].y,
-       *     xctx->xrect[0].width, xctx->xrect[0].height, xctx->xrect[0].x, xctx->xrect[0].y);
-       */
-
-       MyXCopyAreaDouble(display, xctx->save_pixmap, xctx->window, xctx->gc[0],
-         xctx->nl_xr, xctx->nl_yr, xctx->nl_xr2, xctx->nl_yr2, xctx->nl_xr, xctx->nl_yr, xctx->lw);
+      fix_restore_rect(xctx->nl_xr, xctx->nl_yr, xctx->nl_xr2, xctx->nl_yr2);
     } else {
       drawtemprect(xctx->gctiled, NOW, xctx->nl_xr,xctx->nl_yr,xctx->nl_xr2,xctx->nl_yr2);
     }
+    if(xctx->nl_dir == 0) select_inside(xctx->nl_xr,xctx->nl_yr,xctx->nl_xr2,xctx->nl_yr2, xctx->nl_sel);
+    else select_touch(xctx->nl_xr,xctx->nl_yr,xctx->nl_xr2,xctx->nl_yr2, xctx->nl_sel);
 
-    /*  draw_selection(xctx->gc[SELLAYER], 0); */
-    select_inside(xctx->nl_xr,xctx->nl_yr,xctx->nl_xr2,xctx->nl_yr2, xctx->nl_sel);
-
-    bbox(START,0.0, 0.0, 0.0, 0.0);
-    bbox(ADD, xctx->nl_xr, xctx->nl_yr, xctx->nl_xr2, xctx->nl_yr2);
-    bbox(SET,0.0, 0.0, 0.0, 0.0);
     draw_selection(xctx->gc[SELLAYER], 0);
-    bbox(END,0.0, 0.0, 0.0, 0.0);
-    /*  /20171219 */
-
     xctx->ui_state &= ~STARTSELECT;
     xctx->nl_sem=0;
  }

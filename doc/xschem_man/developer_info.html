@@ -511,6 +511,17 @@ C {verilog_timescale.sym} 1050 -100 0 0 {name=s1 timestep="1ns" precision="1ns" 
 
 
 
+
+
+
+
+
+
+
+
+
+
+
    <li><kbd>       abort_operation</kbd></li><pre>
    Resets UI state, unselect all and abort any pending operation </pre>
    <li><kbd>       add_symbol_pin</kbd></li><pre>
@@ -638,9 +649,11 @@ C {verilog_timescale.sym} 1050 -100 0 0 {name=s1 timestep="1ns" precision="1ns" 
    xschem expandlabel {2*A[3:0]} --&gt; A[3],A[2],A[1],A[0],A[3],A[2],A[1],A[0] 8
    last field is the number of bits
    since [ and ] are TCL special characters argument must be quoted with { and } </pre>
-   <li><kbd>       find_nth string sep n</kbd></li><pre>
+   <li><kbd>       find_nth string sep quote keep_quote n</kbd></li><pre>
    Find n-th field string separated by characters in sep. 1st field is in position 1
-   xschem find_nth {aaa,bbb,ccc,ddd} {,} 2  --&gt; bbb </pre>
+   do not split quoted fields (if quote characters are given) and return unquoted.
+   xschem find_nth {aaa,bbb,ccc,ddd} {,} 2  --&gt; bbb 
+   xschem find_nth {aaa, "bbb, ccc" , ddd} { ,} {"} 2  --&gt; bbb, ccc</pre>
    <li><kbd>       flip [x0 y0]</kbd></li><pre>
    Flip selection horizontally around point x0 y0. 
    if x0, y0 not given use mouse coordinates </pre>
@@ -663,7 +676,9 @@ C {verilog_timescale.sym} 1050 -100 0 0 {name=s1 timestep="1ns" precision="1ns" 
      <li><kbd> currsch </kbd> hierarchy level of current schematic (start at 0) </li>
      <li><kbd> debug_var </kbd> debug level (0 = no debug, 1, 2, 3,...) </li>
      <li><kbd> draw_window </kbd> direct draw into window </li>
+     <li><kbd> first_sel </kbd> get data about first selected object </li>
      <li><kbd> fix_broken_tiled_fill </kbd> get drawing method setting (for broken GPUs) </li>
+     <li><kbd> fix_mouse_coord </kbd> get fix_mouse_coord setting (fix for broken RDP)</li>
      <li><kbd> format </kbd> alternate format attribute to use in netlist (or NULL) </li>
      <li><kbd> graph_lastsel </kbd> number of last graph that was clicked </li>
      <li><kbd> gridlayer </kbd> layer number for grid </li>
@@ -679,6 +694,7 @@ C {verilog_timescale.sym} 1050 -100 0 0 {name=s1 timestep="1ns" precision="1ns" 
      <li><kbd> no_draw </kbd> disable drawing </li>
      <li><kbd> ntabs </kbd> get number of additional tabs (0 = only one tab) </li>
      <li><kbd> pinlayer </kbd> layer number for pins </li>
+     <li><kbd> raw_level </kbd> hierarchy level where raw file was loaded </li>
      <li><kbd> rectcolor </kbd> current layer number </li>
      <li><kbd> rects </kbd> (xschem get rects n) number of rectangles on layer 'n' </li>
      <li><kbd> sellayer </kbd> layer number for selection </li>
@@ -741,7 +757,8 @@ C {verilog_timescale.sym} 1050 -100 0 0 {name=s1 timestep="1ns" precision="1ns" 
    Get value of attribute 'sym_attr' of symbol 'sym_name'
    'with_quotes' (default:0) is an integer passed to get_tok_value()
       
-       getprop rect layer num attr
+       getprop rect layer num attr [with_quotes]
+   if '1' is given as 'keep' return backslashes and unescaped quotes if present in value
    Get attribute 'attr' of rectangle number 'num' on layer 'layer'
       
        getprop text num attr
@@ -912,6 +929,8 @@ C {verilog_timescale.sym} 1050 -100 0 0 {name=s1 timestep="1ns" precision="1ns" 
    if kissing is given add nets to pins that touch other instances or nets
    if stretch is given stretch connected nets to follow instace pins 
    if dx and dy are given move by that amount. </pre>
+   <li><kbd>       my_strtok_r str delim quote keep_quote</kbd></li><pre>
+       test for my_strtok_r() function </pre>
    <li><kbd>       net_label [type]</kbd></li><pre>
    Place a new net label
    'type': 1: place a 'lab_pin.sym' label
@@ -934,7 +953,7 @@ C {verilog_timescale.sym} 1050 -100 0 0 {name=s1 timestep="1ns" precision="1ns" 
    <li><kbd>       new_process [f]</kbd></li><pre>
    Start a new xschem process for a schematic.
    If 'f' is given load specified schematic. </pre>
-   <li><kbd>       new_schematic create|destroy|destroy_all|switch winpath file</kbd></li><pre>
+   <li><kbd>       new_schematic create|destroy|destroy_all|switch winpath file [draw]</kbd></li><pre>
    Open/destroy a new tab or window 
      create: create new empty window or with 'file' loaded if 'file' given.
              The winpath must be given (even {} is ok).
@@ -946,6 +965,8 @@ C {verilog_timescale.sym} 1050 -100 0 0 {name=s1 timestep="1ns" precision="1ns" 
               if the 'force'argument is given do not issue a warning if modified
               tabs are about to be closed.
      switch: switch context to specified 'winpath' window or specified schematic name
+              If 'draw' is given and set to 0 do not redraw after switching tab
+              (only tab i/f)
    Main window/tab has winpath set to .drw,
    Additional windows/tabs have winpath set to .x1.drw, .x2.drw and so on...</pre>
    <li><kbd>       only_probes</kbd></li><pre>
@@ -1010,6 +1031,9 @@ C {verilog_timescale.sym} 1050 -100 0 0 {name=s1 timestep="1ns" precision="1ns" 
    Debug: wrapper to propagate_hilights() function </pre>
    <li><kbd>       push_undo</kbd></li><pre>
    Push current state on undo stack </pre>
+   <li><kbd>       raw what [rawfile type]</kbd></li><pre>
+       what = read | clear | info | switch | switch_back
+   Load /clear / switch additional raw files </pre>
    <li><kbd>       raw_clear </kbd></li><pre>
    Delete loaded simulation raw file </pre>
    <li><kbd>       raw_query loaded|value|index|values|datasets|vars|list </kbd></li><pre>
@@ -1018,13 +1042,14 @@ C {verilog_timescale.sym} 1050 -100 0 0 {name=s1 timestep="1ns" precision="1ns" 
    xschem raw_query datasets: get number of datasets (simulation runs)
    xschem raw_query value node n: return n-th value of 'node' in raw file
    xschem raw_query loaded: return hierarchy level
+   xschem raw_query rawfile: return raw filename 
    where raw file was loaded or -1 if no raw loaded
    xschem raw_query index node: get index of simulation variable 'node'. 
      Example:  raw_query index v(led) --&gt; 46
    xschem raw_query values node [dset] : print all simulation
    values of 'node' for dataset 'dset' (default dset=0)
    xschem raw_query points [dset] : print simulation points for
-   dataset 'dset' (default dset=0)</pre>
+   dataset 'dset' (default: all dataset points combined)</pre>
    <li><kbd>       raw_read [file] [sim]</kbd></li><pre>
    If a raw file is already loaded delete from memory
    else load specified file and analysis 'sim' (dc, ac, tran, op, ...)
@@ -1138,8 +1163,13 @@ C {verilog_timescale.sym} 1050 -100 0 0 {name=s1 timestep="1ns" precision="1ns" 
    Returns number of selected items (wires,labels) if danglings found, 0 otherwise </pre>
    <li><kbd>       select_hilight_net</kbd></li><pre>
    Select all highlight objects (wires, labels, pins, instances) </pre>
-   <li><kbd>       selected_set</kbd></li><pre>
-   Return a list of selected instance names </pre>
+   <li><kbd>       select_inside x1 y1 x2 y2 [sel]</kbd></li><pre>
+   Select all objects inside the indicated area
+   if [sel] is set to '0' do an unselect operation </pre>
+   <li><kbd>       selected_set [what]</kbd></li><pre>
+   Return a list of selected instance names
+   If what is not given or set to 'inst' return list of selected instance names
+   If what set to 'rect' return list of selected rectangles with their coordinates </pre>
    <li><kbd>       selected_wire</kbd></li><pre>
   Return list of selected nets </pre>
    <li><kbd>       send_to_viewer</kbd></li><pre>
@@ -1154,6 +1184,7 @@ C {verilog_timescale.sym} 1050 -100 0 0 {name=s1 timestep="1ns" precision="1ns" 
      <li><kbd> constrained_move </kbd> set constrained move (1=horiz, 2=vert, 0=none) </li>
      <li><kbd> draw_window </kbd> set drawing to window (1 or 0) </li>
      <li><kbd> fix_broken_tiled_fill </kbd> alternate drawing method for broken GPUs </li>
+     <li><kbd> fix_mouse_coord </kbd> fix for wrong mouse coords in RDP software </li>
      <li><kbd> format </kbd> set name of custom format attribute used for netlisting </li>
      <li><kbd> header_text </kbd> set header metadata (used for license info) </li>
      <li><kbd> hide_symbols </kbd> set to 0,1,2 for various hiding level of symbols </li>
@@ -1257,6 +1288,8 @@ C {verilog_timescale.sym} 1050 -100 0 0 {name=s1 timestep="1ns" precision="1ns" 
        0.0     0.0     1.8    0.3
        0.1     0.0     1.5    0.6
        ...     ...     ...    ...</pre>
+   <li><kbd>       test</kbd></li><pre>
+   Testmode ... </pre>
    <li><kbd>       text x y rot flip text props size draw</kbd></li><pre>
    Create a text object
      x, y, rot, flip specify the position and orientation
@@ -1264,8 +1297,8 @@ C {verilog_timescale.sym} 1050 -100 0 0 {name=s1 timestep="1ns" precision="1ns" 
      props is the attribute string
      size sets the size
      draw is a flag. If set to 1 will draw the created text </pre>
-   <li><kbd>       test </kbd></li><pre>
-   testmode </pre>
+   <li><kbd>       text_string n</kbd></li><pre>
+   get text string of text object 'n' </pre>
    <li><kbd>       toggle_colorscheme</kbd></li><pre>
    Toggle dark/light colorscheme </pre>
    <li><kbd>       toggle_ignore</kbd></li><pre>
@@ -1277,6 +1310,8 @@ C {verilog_timescale.sym} 1050 -100 0 0 {name=s1 timestep="1ns" precision="1ns" 
    Translate string 'str' replacing @xxx tokens with values in instance 'n' attributes
      Example: xschem translate vref {the voltage is @value}
      the voltage is 1.8 </pre>
+   <li><kbd>       trim_chars str sep</kbd></li><pre>
+   Remove leading and trailing chars matching any character in 'sep' from str </pre>
    <li><kbd>       trim_wires</kbd></li><pre>
    Remove operlapping wires, join lines, trim wires at intersections </pre>
    <li><kbd>       undo</kbd></li><pre>
@@ -1287,10 +1322,12 @@ C {verilog_timescale.sym} 1050 -100 0 0 {name=s1 timestep="1ns" precision="1ns" 
    Clear all highlights </pre>
    <li><kbd>       unhilight</kbd></li><pre>
    Unhighlight selected nets/pins </pre>
-   <li><kbd>       unselect_all</kbd></li><pre>
-   Unselect everything </pre>
+   <li><kbd>       unselect_all [draw]</kbd></li><pre>
+   Unselect everything. If draw is given and set to '0' no drawing is done </pre>
    <li><kbd>       update_all_sym_bboxes</kbd></li><pre>
    Update all symbol bounding boxes (useful if show_pin_net_names is set) </pre>
+   <li><kbd>       update_op</kbd></li><pre>
+   update tcl ngspice::ngspice array data from raw file point 0 </pre>
    <li><kbd>       view_prop</kbd></li><pre>
    View attributes of selected element (read only)
    if multiple selection show the first element (in xschem  array order) </pre>
@@ -1328,6 +1365,7 @@ C {verilog_timescale.sym} 1050 -100 0 0 {name=s1 timestep="1ns" precision="1ns" 
    Zoom out drawing </pre>
    <li><kbd>       zoom_selected</kbd></li><pre>
    Zoom to selection </pre>
+
 
 
 

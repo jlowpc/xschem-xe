@@ -406,9 +406,6 @@ void draw_temp_string(GC gctext, int what, const char *str, short rot, short fli
  int tmp;
  double dtmp;
  if(!has_x) return;
- if(fix_broken_tiled_fill || !_unix) {
-   if(gctext == xctx->gctiled) return;
- }
 
  dbg(2, "draw_string(): string=%s\n",str);
  if(!text_bbox(str, xscale, yscale, rot, flip, hcenter, vcenter, x1,y1,
@@ -522,7 +519,7 @@ void draw_symbol(int what,int c, int n,int layer,short tmp_flip, short rot,
     x2=X_TO_SCREEN(xctx->inst[n].x2+xoffset);
     y1=Y_TO_SCREEN(xctx->inst[n].y1+yoffset);
     y2=Y_TO_SCREEN(xctx->inst[n].y2+yoffset);
-    if(OUTSIDE(x1,y1,x2,y2,xctx->areax1,xctx->areay1,xctx->areax2,xctx->areay2))
+    if(RECT_OUTSIDE(x1,y1,x2,y2,xctx->areax1,xctx->areay1,xctx->areax2,xctx->areay2))
     {
      xctx->inst[n].flags|=1;
      return;
@@ -724,13 +721,10 @@ void draw_temp_symbol(int what, GC gc, int n,int layer,short tmp_flip, short rot
  #if HAS_CAIRO==1
  int customfont;
  #endif
+ int fix_broken = (gc == xctx->gctiled) && (fix_broken_tiled_fill || !_unix);
 
  if(xctx->inst[n].ptr == -1) return;
  if(!has_x) return;
-
- if(fix_broken_tiled_fill || !_unix) {
-   if(gc == xctx->gctiled) return;
- }
 
  if( (xctx->inst[n].flags & HIDE_INST) ||
      (xctx->hide_symbols==1 && (xctx->inst[n].ptr+ xctx->sym)->prop_ptr &&
@@ -740,7 +734,7 @@ void draw_temp_symbol(int what, GC gc, int n,int layer,short tmp_flip, short rot
  } else {
    hide = 0;
  }
-
+ 
  flip = xctx->inst[n].flip;
  if(tmp_flip) flip = !flip;
  rot = (xctx->inst[n].rot + rot ) & 0x3;
@@ -750,7 +744,7 @@ void draw_temp_symbol(int what, GC gc, int n,int layer,short tmp_flip, short rot
    x2=X_TO_SCREEN(xctx->inst[n].x2+xoffset);
    y1=Y_TO_SCREEN(xctx->inst[n].y1+yoffset);
    y2=Y_TO_SCREEN (xctx->inst[n].y2+yoffset);
-   if(OUTSIDE(x1,y1,x2,y2,xctx->areax1,xctx->areay1,xctx->areax2,xctx->areay2))
+   if(RECT_OUTSIDE(x1,y1,x2,y2,xctx->areax1,xctx->areay1,xctx->areax2,xctx->areay2))
    {
     xctx->inst[n].flags|=1;
     return;
@@ -761,18 +755,30 @@ void draw_temp_symbol(int what, GC gc, int n,int layer,short tmp_flip, short rot
                             xctx->inst[n].xx2 + xoffset, xctx->inst[n].yy2 + yoffset);
      xctx->inst[n].flags|=1;
      return;
+   } else if(fix_broken) {
+     xctx->inst[n].flags|=1;
    }
    else xctx->inst[n].flags&=~1;
    if(hide) {
-     symptr = (xctx->inst[n].ptr+ xctx->sym);
-     x0=xctx->inst[n].x0;
-     y0=xctx->inst[n].y0;
-     x0 += xoffset;
-     y0 += yoffset;
-     ROTATION(rot, flip, 0.0,0.0,symptr->minx, symptr->miny,x1,y1);
-     ROTATION(rot, flip, 0.0,0.0,symptr->maxx, symptr->maxy,x2,y2);
-     RECTORDER(x1,y1,x2,y2);
-     drawtemprect(gc,what, x0+x1, y0+y1, x0+x2, y0+y2);
+     /* 
+      * symptr = (xctx->inst[n].ptr+ xctx->sym);
+      * x0=xctx->inst[n].x0;
+      * y0=xctx->inst[n].y0;
+      * x0 += xoffset;
+      * y0 += yoffset;
+      * ROTATION(rot, flip, 0.0,0.0,symptr->minx, symptr->miny,x1,y1);
+      * ROTATION(rot, flip, 0.0,0.0,symptr->maxx, symptr->maxy,x2,y2);
+      * RECTORDER(x1,y1,x2,y2);
+      * drawtemprect(gc,what, x0+x1, y0+y1, x0+x2, y0+y2);
+      */
+      drawtemprect(gc,what,xctx->inst[n].xx1 + xoffset, xctx->inst[n].yy1 + yoffset,
+                           xctx->inst[n].xx2 + xoffset, xctx->inst[n].yy2 + yoffset);
+   }
+   if(fix_broken) { /* do a copyArea on first layer only. Faster. */
+     MyXCopyAreaDouble(display, xctx->save_pixmap, xctx->window, xctx->gc[0],
+       xctx->inst[n].x1 + xoffset, xctx->inst[n].y1 + yoffset,
+       xctx->inst[n].x2 + xoffset, xctx->inst[n].y2 + yoffset,
+       xctx->inst[n].x1 + xoffset, xctx->inst[n].y1 + yoffset, xctx->lw);
    }
  } else if(xctx->inst[n].flags&1) {
    dbg(2, "draw_symbol(): skipping inst %d\n", n);
@@ -869,8 +875,9 @@ static void drawgrid()
   double delta,tmp;
   #if DRAW_ALL_CAIRO==0
   int i=0;
-  int big_gr;
-  big_gr = tclgetboolvar("big_grid_points");
+  int big_gr = tclgetboolvar("big_grid_points");
+  int axes = tclgetboolvar("draw_grid_axes");
+  
   #endif
   dbg(1, "drawgrid(): draw grid\n");
   if( !tclgetboolvar("draw_grid") || !has_x) return;
@@ -890,7 +897,7 @@ static void drawgrid()
       cairo_move_to(xctx->cairo_ctx, xctx->areax1+1, y);
       cairo_line_to(xctx->cairo_ctx, xctx->areax2-1, y);
       #else
-      XDrawLine(display, xctx->window, xctx->gc[GRIDLAYER],xctx->areax1+1,(int)y, xctx->areax2-1, (int)y);
+      if(axes) XDrawLine(display, xctx->window, xctx->gc[GRIDLAYER],xctx->areax1+1,(int)y, xctx->areax2-1, (int)y);
       #endif
     }
     if(xctx->draw_pixmap) {
@@ -898,7 +905,7 @@ static void drawgrid()
       cairo_move_to(xctx->cairo_save_ctx, xctx->areax1+1, y);
       cairo_line_to(xctx->cairo_save_ctx, xctx->areax2-1, y);
       #else
-      XDrawLine(display, xctx->save_pixmap, xctx->gc[GRIDLAYER],xctx->areax1+1,(int)y, xctx->areax2-1, (int)y);
+      if(axes) XDrawLine(display, xctx->save_pixmap, xctx->gc[GRIDLAYER],xctx->areax1+1,(int)y, xctx->areax2-1, (int)y);
       #endif
     }
   }
@@ -908,7 +915,7 @@ static void drawgrid()
       cairo_move_to(xctx->cairo_ctx, x, xctx->areay1+1);
       cairo_line_to(xctx->cairo_ctx, x, xctx->areay2-1);
       #else
-      XDrawLine(display, xctx->window, xctx->gc[GRIDLAYER],(int)x,xctx->areay1+1, (int)x, xctx->areay2-1);
+      if(axes) XDrawLine(display, xctx->window, xctx->gc[GRIDLAYER],(int)x,xctx->areay1+1, (int)x, xctx->areay2-1);
       #endif
     }
     if(xctx->draw_pixmap) {
@@ -916,7 +923,7 @@ static void drawgrid()
       cairo_move_to(xctx->cairo_save_ctx, x, xctx->areay1+1);
       cairo_line_to(xctx->cairo_save_ctx, x, xctx->areay2-1);
       #else
-      XDrawLine(display, xctx->save_pixmap, xctx->gc[GRIDLAYER],(int)x,xctx->areay1+1, (int)x, xctx->areay2-1);
+      if(axes) XDrawLine(display, xctx->save_pixmap, xctx->gc[GRIDLAYER],(int)x,xctx->areay1+1, (int)x, xctx->areay2-1);
       #endif
     }
   }
@@ -1161,10 +1168,8 @@ void drawtempline(GC gc, int what, double linex1,double liney1,double linex2,dou
  double x1,y1,x2,y2;
 
  if(!has_x) return;
- if(fix_broken_tiled_fill || !_unix) {
-   if(gc == xctx->gctiled) return;
- }
 
+ if((fix_broken_tiled_fill || !_unix) && gc == xctx->gctiled && what == ADD) what = NOW;
  if(what & ADD)
  {
   if(i>=CADDRAWBUFFERSIZE)
@@ -1199,7 +1204,13 @@ void drawtempline(GC gc, int what, double linex1,double liney1,double linex2,dou
   y2=Y_TO_SCREEN(liney2);
   if( clip(&x1,&y1,&x2,&y2) )
   {
-   XDrawLine(display, xctx->window, gc, (int)x1, (int)y1, (int)x2, (int)y2);
+   if((fix_broken_tiled_fill || !_unix) && gc == xctx->gctiled) {
+     RECTORDER(linex1, liney1, linex2, liney2);
+     MyXCopyAreaDouble(display, xctx->save_pixmap, xctx->window, xctx->gc[0],
+         linex1, liney1, linex2, liney2, linex1, liney1, xctx->lw);
+   } else {
+     XDrawLine(display, xctx->window, gc, (int)x1, (int)y1, (int)x2, (int)y2);
+   }
   }
  }
  else if(what & THICK)
@@ -1210,10 +1221,14 @@ void drawtempline(GC gc, int what, double linex1,double liney1,double linex2,dou
   y2=Y_TO_SCREEN(liney2);
   if( clip(&x1,&y1,&x2,&y2) )
   {
-   XSetLineAttributes (display, gc, INT_BUS_WIDTH(xctx->lw), LineSolid, LINECAP , LINEJOIN);
-
-   XDrawLine(display, xctx->window, gc, (int)x1, (int)y1, (int)x2, (int)y2);
-   XSetLineAttributes (display, gc, XLINEWIDTH(xctx->lw), LineSolid, LINECAP , LINEJOIN);
+   if((fix_broken_tiled_fill || !_unix) && gc == xctx->gctiled) {
+     MyXCopyAreaDouble(display, xctx->save_pixmap, xctx->window, xctx->gc[0],
+         linex1, liney1, linex2, liney2, linex1, liney1, BUS_WIDTH * xctx->lw);
+   } else {
+     XSetLineAttributes (display, gc, INT_BUS_WIDTH(xctx->lw), LineSolid, LINECAP , LINEJOIN);
+     XDrawLine(display, xctx->window, gc, (int)x1, (int)y1, (int)x2, (int)y2);
+     XSetLineAttributes (display, gc, XLINEWIDTH(xctx->lw), LineSolid, LINECAP , LINEJOIN);
+   }
   }
  }
 
@@ -1238,10 +1253,7 @@ void drawtemparc(GC gc, int what, double x, double y, double r, double a, double
  double xx1, yy1, xx2, yy2; /* complete circle bbox in screen coords */
 
  if(!has_x) return;
- if(fix_broken_tiled_fill || !_unix) {
-   if(gc == xctx->gctiled) return;
- }
-
+ if((fix_broken_tiled_fill || !_unix) && gc == xctx->gctiled && what == ADD) what = NOW;
  if(what & ADD)
  {
   if(i>=CADDRAWBUFFERSIZE)
@@ -1271,19 +1283,25 @@ void drawtemparc(GC gc, int what, double x, double y, double r, double a, double
  }
  else if(what & NOW)
  {
+  double sx1, sy1, sx2, sy2;
   xx1=X_TO_SCREEN(x-r);
   yy1=Y_TO_SCREEN(y-r);
   xx2=X_TO_SCREEN(x+r);
   yy2=Y_TO_SCREEN(y+r);
   arc_bbox(x, y, r, a, b, &x1,&y1,&x2,&y2);
-  x1=X_TO_SCREEN(x1);
-  y1=Y_TO_SCREEN(y1);
-  x2=X_TO_SCREEN(x2);
-  y2=Y_TO_SCREEN(y2);
-  if( rectclip(xctx->areax1,xctx->areay1,xctx->areax2,xctx->areay2,&x1,&y1,&x2,&y2) )
+  sx1=X_TO_SCREEN(x1);
+  sy1=Y_TO_SCREEN(y1);
+  sx2=X_TO_SCREEN(x2);
+  sy2=Y_TO_SCREEN(y2);
+  if( rectclip(xctx->areax1,xctx->areay1,xctx->areax2,xctx->areay2,&sx1,&sy1,&sx2,&sy2) )
   {
-   XDrawArc(display, xctx->window, gc, (int)xx1, (int)yy1, (int)(xx2-xx1), (int)(yy2-yy1),
-            (int)(a*64), (int)(b*64));
+    if((fix_broken_tiled_fill || !_unix) && gc == xctx->gctiled) {
+      MyXCopyAreaDouble(display, xctx->save_pixmap, xctx->window, xctx->gc[0],
+          x1, y1, x2, y2, x1, y1, xctx->lw);
+    } else {
+      XDrawArc(display, xctx->window, gc, (int)xx1, (int)yy1, (int)(xx2-xx1), (int)(yy2-yy1),
+               (int)(a*64), (int)(b*64));
+    }
   }
  }
  else if((what & END) && i)
@@ -1666,32 +1684,35 @@ void drawpolygon(int c, int what, double *x, double *y, int points, int poly_fil
   my_free(_ALLOC_ID_, &p);
 }
 
-void drawtemppolygon(GC g, int what, double *x, double *y, int points)
+void drawtemppolygon(GC gc, int what, double *x, double *y, int points)
 {
   double x1,y1,x2,y2;
+  double sx1,sy1,sx2,sy2;
   XPoint *p;
   int i;
   short sx, sy;
   if(!has_x) return;
-  if(fix_broken_tiled_fill || !_unix) {
-    if(g == xctx->gctiled) return;
-  }
-
   polygon_bbox(x, y, points, &x1,&y1,&x2,&y2);
-  x1=X_TO_SCREEN(x1);
-  y1=Y_TO_SCREEN(y1);
-  x2=X_TO_SCREEN(x2);
-  y2=Y_TO_SCREEN(y2);
-  p = my_malloc(_ALLOC_ID_, sizeof(XPoint) * points);
-  if( rectclip(xctx->areax1,xctx->areay1,xctx->areax2,xctx->areay2,&x1,&y1,&x2,&y2) ) {
-    for(i=0;i<points; ++i) {
-      clip_xy_to_short(X_TO_SCREEN(x[i]), Y_TO_SCREEN(y[i]), &sx, &sy);
-      p[i].x = sx;
-      p[i].y = sy;
+  sx1=X_TO_SCREEN(x1);
+  sy1=Y_TO_SCREEN(y1);
+  sx2=X_TO_SCREEN(x2);
+  sy2=Y_TO_SCREEN(y2);
+  if( rectclip(xctx->areax1,xctx->areay1,xctx->areax2,xctx->areay2,&sx1,&sy1,&sx2,&sy2) ) {
+
+    if((fix_broken_tiled_fill || !_unix) && gc == xctx->gctiled) {
+      MyXCopyAreaDouble(display, xctx->save_pixmap, xctx->window, xctx->gc[0],
+          x1, y1, x2, y2, x1, y1, xctx->lw);
+    } else {
+      p = my_malloc(_ALLOC_ID_, sizeof(XPoint) * points);
+      for(i=0;i<points; ++i) {
+        clip_xy_to_short(X_TO_SCREEN(x[i]), Y_TO_SCREEN(y[i]), &sx, &sy);
+        p[i].x = sx;
+        p[i].y = sy;
+      }
+      XDrawLines(display, xctx->window, gc, p, points, CoordModeOrigin);
+      my_free(_ALLOC_ID_, &p);
     }
-    XDrawLines(display, xctx->window, g, p, points, CoordModeOrigin);
   }
-  my_free(_ALLOC_ID_, &p);
 }
 
 void drawrect(int c, int what, double rectx1,double recty1,double rectx2,double recty2, int dash)
@@ -1767,9 +1788,7 @@ void drawtemprect(GC gc, int what, double rectx1,double recty1,double rectx2,dou
  double x1,y1,x2,y2;
 
  if(!has_x) return;
- if(fix_broken_tiled_fill || !_unix) {
-   if(gc == xctx->gctiled) return;
- }
+ if((fix_broken_tiled_fill || !_unix) && gc == xctx->gctiled && what == ADD) what = NOW;
 
  if(what & NOW)
  {
@@ -1780,9 +1799,15 @@ void drawtemprect(GC gc, int what, double rectx1,double recty1,double rectx2,dou
   /* if( (x2-x1)< 3.0 && (y2-y1)< 3.0) return; */
   if( rectclip(xctx->areax1,xctx->areay1,xctx->areax2,xctx->areay2,&x1,&y1,&x2,&y2) )
   {
-   XDrawRectangle(display, xctx->window, gc, (int)x1, (int)y1,
-    (unsigned int)x2 - (unsigned int)x1,
-    (unsigned int)y2 - (unsigned int)y1);
+   if((fix_broken_tiled_fill || !_unix) && gc == xctx->gctiled) {
+     MyXCopyAreaDouble(display, xctx->save_pixmap, xctx->window, xctx->gc[0],
+         rectx1, recty1, rectx2, recty2, rectx1, recty1, xctx->lw);
+
+   } else {
+     XDrawRectangle(display, xctx->window, gc, (int)x1, (int)y1,
+       (unsigned int)x2 - (unsigned int)x1,
+       (unsigned int)y2 - (unsigned int)y1);
+   }
   }
  }
  else if(what & ADD)
@@ -1899,13 +1924,13 @@ static double get_unit(const char *val)
 int sch_waves_loaded(void)
 {
   int i;
-  if(xctx->graph_raw_level == -1) return -1;
-  else if(xctx->graph_values && xctx->graph_names && xctx->graph_raw_schname) {
-    dbg(1, "sch_waves_loaded(): graph_raw_schname=%s\n", xctx->graph_raw_schname);
+  if(!xctx->raw || xctx->raw->level == -1) return -1;
+  else if(xctx->raw && xctx->raw->values && xctx->raw->names && xctx->raw->schname) {
+    dbg(1, "sch_waves_loaded(): raw->schname=%s\n", xctx->raw->schname);
     for(i = xctx->currsch; i >= 0; i--) {
       dbg(1, "sch_waves_loaded(): %d --> %s\n", i, xctx->sch[i]);
       if( !xctx->sch[i] ) continue;
-      if( !strcmp(xctx->graph_raw_schname, xctx->sch[i]) ) {
+      if( !strcmp(xctx->raw->schname, xctx->sch[i]) ) {
         dbg(1, "sch_waves_loaded(): returning %d\n", i);
         return i;
       }
@@ -1968,18 +1993,18 @@ static SPICE_DATA **get_bus_idx_array(const char *ntok, int *n_bits)
   char *saven, *nptr, *ntok_copy = NULL;
   const char *bit_name;
   *n_bits = count_items(ntok, ";,", "") - 1;
-  /* dbg(0, "get_bus_idx_array(): ntok=%s\n", ntok); */
-  /* dbg(0, "get_bus_idx_array(): *n_bits=%d\n", *n_bits); */
+  dbg(1, "get_bus_idx_array(): ntok=%s\n", ntok);
+  dbg(1, "get_bus_idx_array(): *n_bits=%d\n", *n_bits);
   idx_arr = my_malloc(_ALLOC_ID_, (*n_bits) * sizeof(SPICE_DATA *));
   p = 0;
   my_strdup2(_ALLOC_ID_, &ntok_copy, ntok);
   nptr = ntok_copy;
-  my_strtok_r(nptr, ";,", "", &saven); /*strip off bus name (1st field) */
-  while( (bit_name = my_strtok_r(NULL, ";,", "", &saven)) ) {
+  my_strtok_r(nptr, ";,", "", 0, &saven); /*strip off bus name (1st field) */
+  while( (bit_name = my_strtok_r(NULL, ";, ", "", 0, &saven)) ) {
     int idx;
     if(p >= *n_bits) break; /* security check to avoid out of bound writing */
     if( (idx = get_raw_index(bit_name)) != -1) {
-      idx_arr[p] = xctx->graph_values[idx];
+      idx_arr[p] = xctx->raw->values[idx];
     } else {
       idx_arr[p] = NULL;
     }
@@ -1995,6 +2020,7 @@ static SPICE_DATA **get_bus_idx_array(const char *ntok, int *n_bits)
  */
 static void set_thick_waves(int what, int wcnt, int wave_col, Graph_ctx *gr)
 {
+  dbg(1, "set_thick_waves(): what=%d\n", what);
   if(what) {
       if(gr->hilight_wave == wcnt)
          XSetLineAttributes (display, xctx->gc[wave_col],
@@ -2006,30 +2032,79 @@ static void set_thick_waves(int what, int wcnt, int wave_col, Graph_ctx *gr)
   }
 }
 
-int graph_fullxzoom(xRect *r, Graph_ctx *gr, int dataset)
+int graph_fullxzoom(int i, Graph_ctx *gr, int dataset)
 {
+  xRect *r = &xctx->rect[GRIDLAYER][i];
   if( sch_waves_loaded() >= 0) {
     int need_redraw = 0;
     double xx1, xx2;
-    int idx = get_raw_index(find_nth(get_tok_value(r->prop_ptr, "sweep", 0), ", ", 1));
+    int idx = get_raw_index(find_nth(get_tok_value(r->prop_ptr, "sweep", 0), ", ", "\"", 0, 1));
     int dset = dataset == -1 ? 0 : dataset;
+    char *custom_rawfile = NULL; /* "rawfile" attr. set in graph: load and switch to specified raw */
+    char *sim_type = NULL;
+    int k, save_datasets = -1, save_npoints = -1;
+    Raw *raw = NULL;
+
+    dbg(1, "graph_fullxzoom(): sweep idx=%d\n", idx);
     if(idx < 0 ) idx = 0;
-    xx1 = get_raw_value(dset, idx, 0);
-    xx2 = get_raw_value(dset, idx, xctx->graph_npoints[dset] -1);
+    my_strdup2(_ALLOC_ID_, &custom_rawfile, get_tok_value(r->prop_ptr,"rawfile",0));
+    my_strdup2(_ALLOC_ID_, &sim_type, get_tok_value(r->prop_ptr,"sim_type",0));
+    if((i == xctx->graph_master) && custom_rawfile[0]) {
+      extra_rawfile(1, custom_rawfile, sim_type[0] ? sim_type : xctx->raw->sim_type);
+    }
+    if(i != xctx->graph_master ) {
+      my_strdup2(_ALLOC_ID_, &custom_rawfile,
+        get_tok_value(xctx->rect[GRIDLAYER][xctx->graph_master].prop_ptr,"rawfile",0));
+      my_strdup2(_ALLOC_ID_, &sim_type,
+        get_tok_value(xctx->rect[GRIDLAYER][xctx->graph_master].prop_ptr,"sim_type",0));
+      if(custom_rawfile[0]) {
+        extra_rawfile(1, custom_rawfile, sim_type[0] ? sim_type : xctx->raw->sim_type);
+      }
+    }
+
+    raw = xctx->raw;
+    /* if doing double variable DC sweeps raw->datasets == 1 but there are multiple curves.
+     * find_closest_wave() may return a dataset number that is > 0 but its a "virtual" dataset
+     * since double DC sweeps just do multiple sweeps by wrapping the sweep variable 
+     */
+    if(dset >= raw->datasets) dset = 0;
+
+    /* transform multiple OP points into a dc sweep */
+    if(raw && raw->sim_type && !strcmp(raw->sim_type, "op") && raw->datasets > 1 && raw->npoints[0] == 1) {
+      save_datasets = raw->datasets;
+      raw->datasets = 1;
+      save_npoints = raw->npoints[0];
+      raw->npoints[0] = raw->allpoints;
+    }   
+    xx1 = xx2 = get_raw_value(dset, idx, 0);
+    for(k = 0; k < xctx->raw->npoints[dset]; k++) {
+      double v = get_raw_value(dset, idx, k);
+      if(v < xx1) xx1 = v;
+      if(v > xx2) xx2 = v;
+    }
     if(gr->logx) {
       xx1 = mylog10(xx1);
       xx2 = mylog10(xx2);
     }
     my_strdup(_ALLOC_ID_, &r->prop_ptr, subst_token(r->prop_ptr, "x1", dtoa(xx1)));
     my_strdup(_ALLOC_ID_, &r->prop_ptr, subst_token(r->prop_ptr, "x2", dtoa(xx2)));
+
+    if(sch_waves_loaded()!= -1 && custom_rawfile[0]) extra_rawfile(5, NULL, NULL);
+    my_free(_ALLOC_ID_, &custom_rawfile);
+    my_free(_ALLOC_ID_, &sim_type);
+
     need_redraw = 1;
+    if(save_npoints != -1) { /* restore multiple OP points from artificial dc sweep */
+      raw->datasets = save_datasets;
+      raw->npoints[0] = save_npoints;
+    }
     return need_redraw;
   } else {
     return 0;
   }
 }
 
-int graph_fullyzoom(xRect *r,  Graph_ctx *gr, int dataset)
+int graph_fullyzoom(xRect *r,  Graph_ctx *gr, int graph_dataset)
 {
   int need_redraw = 0;
   if( sch_waves_loaded() >= 0) {
@@ -2040,66 +2115,117 @@ int graph_fullyzoom(xRect *r,  Graph_ctx *gr, int dataset)
       int sweep_idx = 0;
       double val, start, end;
       double min=0.0, max=0.0;
-      int first = 1;
+      int firstyval = 1;
       char *saves, *sptr, *stok, *sweep = NULL, *saven, *nptr, *ntok, *node = NULL;
+      int node_dataset = -1; /* dataset specified as %<n> after node/bus/expression name */
+      char *ntok_copy = NULL; /* copy of ntok without %<n> */
+      char *custom_rawfile = NULL; /* "rawfile" attr. set in graph: load and switch to specified raw */
+      char *sim_type = NULL;
+      Raw *raw = NULL;
+
+      dbg(1, "graph_fullyzoom(): graph_dataset=%d\n", graph_dataset);
       my_strdup2(_ALLOC_ID_, &node, get_tok_value(r->prop_ptr,"node",0));
       my_strdup2(_ALLOC_ID_, &sweep, get_tok_value(r->prop_ptr,"sweep",0));
+
+      my_strdup2(_ALLOC_ID_, &custom_rawfile, get_tok_value(r->prop_ptr,"rawfile",0));
+      my_strdup2(_ALLOC_ID_, &sim_type, get_tok_value(r->prop_ptr,"sim_type",0));
+      if(sch_waves_loaded() != -1 && custom_rawfile[0]) {
+        extra_rawfile(1, custom_rawfile, sim_type[0] ? sim_type : xctx->raw->sim_type);
+      }
+      raw = xctx->raw;
+
       nptr = node;
       sptr = sweep;
       start = (gr->gx1 <= gr->gx2) ? gr->gx1 : gr->gx2;
       end = (gr->gx1 <= gr->gx2) ? gr->gx2 : gr->gx1;
   
-      while( (ntok = my_strtok_r(nptr, "\n\t ", "\"", &saven)) ) {
-        stok = my_strtok_r(sptr, "\n\t ", "\"", &saves);
+      while( (ntok = my_strtok_r(nptr, "\n\t ", "\"", 4, &saven)) ) {
+        char *nd = find_nth(ntok, "%", "\"", 0, 2);
+
+        /* if %<n> is specified after node name, <n> is the dataset number to plot in graph */
+        if(nd[0]) {
+          node_dataset = atoi(nd);
+          my_strdup(_ALLOC_ID_, &ntok_copy, find_nth(ntok, "%", "\"", 0, 1));
+        } else {
+          node_dataset = -1;
+          my_strdup(_ALLOC_ID_, &ntok_copy, ntok);
+        }
+
+        stok = my_strtok_r(sptr, "\n\t ", "\"", 0, &saves);
         nptr = sptr = NULL;
         if(stok && stok[0]) {
           sweep_idx = get_raw_index(stok);
           if( sweep_idx == -1) sweep_idx = 0;
         }
-        bus_msb = strstr(ntok, ",");
+        dbg(1, "graph_fullyzoom(): ntok_copy=%s\n", ntok_copy);
+        bus_msb = strstr(ntok_copy, ",");
         v = -1;
         if(!bus_msb) {
           char *express = NULL;
-          if(strstr(ntok, ";")) {
-            my_strdup2(_ALLOC_ID_, &express, find_nth(ntok, ";", 2));
+          if(strstr(ntok_copy, ";")) {
+            my_strdup2(_ALLOC_ID_, &express, find_nth(ntok_copy, ";", "\"", 0, 2));
           } else {
-            my_strdup2(_ALLOC_ID_, &express, ntok);
+            my_strdup2(_ALLOC_ID_, &express, ntok_copy);
           }
           if(strpbrk(express, " \n\t")) {
-            /* just probe a single point to get the index. custom data column already calculated */
+            /* we *need* to recalculate the expression column for any new expression
+             * This is *expecially needed if graph contains more than one expression */
             v = calc_custom_data_yrange(sweep_idx, express, gr);
           } else {
             v = get_raw_index(express);
           }
-          my_free(_ALLOC_ID_, &express);
+          my_free(_ALLOC_ID_, &express); 
+          dbg(1, "graph_fullyzoom(): v=%d\n", v);
         }
-        if(v >= 0) {
-          int ofs = 0;
-          for(dset = 0 ; dset < xctx->graph_datasets; dset++) {
-            for(p = ofs; p < ofs + xctx->graph_npoints[dset]; ++p) {
-              double sweepval;
-              if(gr->logx) sweepval = mylog10(xctx->graph_values[sweep_idx][p]);
-              else sweepval = xctx->graph_values[sweep_idx][p];
-              if(dataset >= 0 && dataset != dset) continue;
-              if( sweepval < start ||
-                  sweepval > end)  continue;
-              if(gr->logy) 
-                val =mylog10(xctx->graph_values[v][p]);
-              else
-                val = xctx->graph_values[v][p];
-              if(first || val < min) min = val;
-              if(first || val > max) max = val;
-              first = 0;
-            } 
-            ofs += xctx->graph_npoints[dset];
-          }
+        if(xctx->raw && v >= 0) {
+          int dataset = node_dataset >=0 ? node_dataset : graph_dataset;
+          int sweepvar_wrap = 0; /* incremented on new dataset or sweep variable wrap */
+          int ofs = 0, ofs_end;
+          for(dset = 0 ; dset < raw->datasets; dset++) {
+            double xx, xx0 = 0.0; /* gcc gives false warnings if xx0 not initialized here */
+            int cnt=0, wrap;
+            register SPICE_DATA *gv = raw->values[sweep_idx];
+            ofs_end = ofs + raw->npoints[dset];
+            for(p = ofs ; p < ofs_end; p++) {
+              if(gr->logx) xx = mylog10(gv[p]);
+              else xx = gv[p];
+              if(p == ofs) xx0 = xx;
+              wrap = (cnt > 1 && xx == xx0);
+              if(wrap) {
+                 sweepvar_wrap++;
+                 cnt = 0;
+              }
+              if(dataset == -1 || dataset == sweepvar_wrap) {
+                dbg(1, "graph_fullyzoom(): dataset=%d node=%s\n", dataset, raw->names[v]);
+                if( xx >= start && xx <= end) {
+                  if(gr->logy)
+                    val =mylog10(raw->values[v][p]);
+                  else
+                    val = raw->values[v][p];
+                  if(firstyval || val < min) min = val;
+                  if(firstyval || val > max) max = val;
+                  firstyval = 0;
+                }
+              }
+              if(xx >= start && xx <= end) {
+                ++cnt;
+              }
+            } /* for(p = ofs ; p < ofs + raw->npoints[dset]; p++) */
+            /* offset pointing to next dataset */
+            ofs = ofs_end;
+            sweepvar_wrap++;
+          } /* for(dset...) */
         }
-      } /* while( (ntok = my_strtok_r(nptr, "\n\t ", "\"", &saven)) ) */
+      } /* while( (ntok_copy = my_strtok_r(nptr, "\n\t ", "\"", 0, &saven)) ) */
       if(max == min) max += 0.01;
       min = floor_to_n_digits(min, 2);
       max = ceil_to_n_digits(max, 2);
       my_free(_ALLOC_ID_, &node);
       my_free(_ALLOC_ID_, &sweep);
+      if(sch_waves_loaded()!= -1 && custom_rawfile[0]) extra_rawfile(5, NULL, NULL);
+      my_free(_ALLOC_ID_, &custom_rawfile);
+      my_free(_ALLOC_ID_, &sim_type);
+      if(ntok_copy) my_free(_ALLOC_ID_, &ntok_copy);
       my_strdup(_ALLOC_ID_, &r->prop_ptr, subst_token(r->prop_ptr, "y1", dtoa(min)));
       my_strdup(_ALLOC_ID_, &r->prop_ptr, subst_token(r->prop_ptr, "y2", dtoa(max)));
       need_redraw = 1;
@@ -2141,18 +2267,23 @@ static void draw_graph_bus_points(const char *ntok, int n_bits, SPICE_DATA **idx
   double vthh = gr->gy1 * 0.2 + gr->gy2 * 0.8;
   double vthl = gr->gy1 * 0.8 + gr->gy2 * 0.2;
   int hex_digits = ((n_bits - 1) >> 2) + 1;
+  Raw *raw = xctx->raw;
 
+  if(!raw) {
+    dbg(0, "draw_graph_bus_points(): no raw struct allocated\n");
+    return;
+  }
   for(p=0;p<cadlayers; ++p) {
     XSetLineAttributes(display, xctx->gc[p], 
        XLINEWIDTH(gr->linewidth_mult * xctx->lw), LineSolid, LINECAP , LINEJOIN);
   }
 
   if(gr->logx) {
-    lx1 = W_X(mylog10(xctx->graph_values[sweep_idx][first]));
-    lx2 = W_X(mylog10(xctx->graph_values[sweep_idx][last]));
+    lx1 = W_X(mylog10(raw->values[sweep_idx][first]));
+    lx2 = W_X(mylog10(raw->values[sweep_idx][last]));
   } else {
-    lx1 = W_X(xctx->graph_values[sweep_idx][first]);
-    lx2 = W_X(xctx->graph_values[sweep_idx][last]);
+    lx1 = W_X(raw->values[sweep_idx][first]);
+    lx2 = W_X(raw->values[sweep_idx][last]);
   }
   if(c1 >= gr->ypos1 && c1 <=gr->ypos2) {
     set_thick_waves(1, wcnt, wave_col, gr);
@@ -2163,9 +2294,9 @@ static void draw_graph_bus_points(const char *ntok, int n_bits, SPICE_DATA **idx
       /* hex_digits = */
       get_bus_value(n_bits, hex_digits, idx_arr, p, busval, vthl, vthh);
       if(gr->logx) {
-        xval =  W_X(mylog10(xctx->graph_values[sweep_idx][p]));
+        xval =  W_X(mylog10(raw->values[sweep_idx][p]));
       } else {
-        xval =  W_X(xctx->graph_values[sweep_idx][p]);
+        xval =  W_X(raw->values[sweep_idx][p]);
       }
       /* used to draw bus value before 1st transition */
       if(p == first) {
@@ -2210,14 +2341,21 @@ static void draw_graph_points(int idx, int first, int last,
   double s1;
   double s2;
   double c = 0, c1;
-  register SPICE_DATA *gv = xctx->graph_values[idx];
+  Raw *raw = xctx->raw;
+  register SPICE_DATA *gv;
+
+  if(!raw) {
+    dbg(0, "draw_graph_points(): no raw struct allocated\n");
+    return;
+  }
+  gv = raw->values[idx];
 
   dbg(1, "draw_graph_points: idx=%d, first=%d, last=%d, wcnt=%d\n", idx, first, last, wcnt);
+  if(idx == -1) return;
   for(p=0;p<cadlayers; ++p) {
     XSetLineAttributes(display, xctx->gc[p],
       XLINEWIDTH(gr->linewidth_mult * xctx->lw), LineSolid, LINECAP , LINEJOIN);
   }
-  if(idx == -1) return;
   digital = gr->digital;
   if(digital) {
     s1 = DIG_NWAVES; /* 1/DIG_NWAVES  waveforms fit in graph if unscaled vertically */
@@ -2263,7 +2401,7 @@ static void draw_graph_points(int idx, int first, int last,
     check_cairo_drawpoints(ct, wave_col, point, poly_npoints);
     #endif
     set_thick_waves(0, wcnt, wave_col, gr);
-  } else dbg(1, "skipping wave: %s\n", xctx->graph_names[idx]);
+  } else dbg(1, "skipping wave: %s\n", raw->names[idx]);
   for(p=0;p<cadlayers; ++p) {
     XSetLineAttributes(display, xctx->gc[p], XLINEWIDTH(xctx->lw), LineSolid, LINECAP , LINEJOIN);
   }
@@ -2603,7 +2741,7 @@ static void draw_graph_variables(int wcnt, int wave_color, int n_nodes, int swee
   bbox(SET_INSIDE, 0.0, 0.0, 0.0, 0.0);
   /* draw sweep variable(s) on x-axis */
   if(wcnt == 0 || (stok && stok[0])) {
-    if(sch_waves_loaded() >= 0) stok = xctx->graph_names[sweep_idx];
+    if(sch_waves_loaded() >= 0) stok = xctx->raw->names[sweep_idx];
     if(gr->unitx != 1.0) my_snprintf(tmpstr, S(tmpstr), "%s[%c]", stok ? stok : "" , gr->unitx_suffix);
     else  my_snprintf(tmpstr, S(tmpstr), "%s", stok ? stok : "");
     draw_string(wave_color, NOW, tmpstr, 2, 1, 0, 0,
@@ -2611,14 +2749,14 @@ static void draw_graph_variables(int wcnt, int wave_color, int n_nodes, int swee
   }
   /* draw node labels in graph */
   if(bus_msb) {
-    if(gr->unity != 1.0) my_snprintf(tmpstr, S(tmpstr), "%s[%c]", find_nth(ntok, ";,", 1), gr->unity_suffix);
-    else  my_snprintf(tmpstr, S(tmpstr), "%s",find_nth(ntok, ";,", 1));
+    if(gr->unity != 1.0) my_snprintf(tmpstr, S(tmpstr), "%s[%c]", find_nth(ntok, ";,", "\"", 0, 1), gr->unity_suffix);
+    else  my_snprintf(tmpstr, S(tmpstr), "%s",find_nth(ntok, ";,", "\"", 0, 1));
   } else {
     char *ntok_ptr = NULL;
     char *alias_ptr = NULL;
     if(strstr(ntok, ";")) {
-       my_strdup2(_ALLOC_ID_, &alias_ptr, find_nth(ntok, ";", 1));
-       my_strdup2(_ALLOC_ID_, &ntok_ptr, find_nth(ntok, ";", 2));
+       my_strdup2(_ALLOC_ID_, &alias_ptr, find_nth(ntok, ";", "\"", 0, 1));
+       my_strdup2(_ALLOC_ID_, &ntok_ptr, find_nth(ntok, ";", "\"", 0, 2));
     }
     else {
        my_strdup2(_ALLOC_ID_, &alias_ptr, ntok);
@@ -2651,7 +2789,7 @@ static void draw_graph_variables(int wcnt, int wave_color, int n_nodes, int swee
       }
       #endif
       draw_string(wave_color, NOW, tmpstr, 2, 0, 0, 0,
-        xt, DW_Y(yt), gr->digtxtsizelab, gr->digtxtsizelab);
+        xt, DW_Y(yt), gr->digtxtsizelab * gr->magy, gr->digtxtsizelab * gr->magy);
       #if HAS_CAIRO == 1
       if(gr->hilight_wave == wcnt) {
         xctx->cairo_font =
@@ -2695,6 +2833,10 @@ static void show_node_measures(int measure_p, double measure_x, double measure_p
   double yy;
   /* show values of signals if cursor1 active */
   if(idx == -1) return;
+  if(!xctx->raw) {
+    dbg(0, "show_node_measures(): no raw struct allocated\n");
+    return;
+  }
   if(measure_p >= 0) {
    
     /* draw node values in graph */
@@ -2706,8 +2848,8 @@ static void show_node_measures(int measure_p, double measure_x, double measure_p
       double diffx;
       char *fmt1, *fmt2;
       double yy1;
-      yy1 = xctx->graph_values[idx][measure_p-1];
-      diffy = xctx->graph_values[idx][measure_p] - yy1;
+      yy1 = xctx->raw->values[idx][measure_p-1];
+      diffy = xctx->raw->values[idx][measure_p] - yy1;
       diffx = measure_x - measure_prev_x;
       yy = yy1 + diffy / diffx * (xctx->graph_cursor1_x - measure_prev_x);
       if(XSIGN0(gr->gy1) != XSIGN0(gr->gy2) && fabs(yy) < 1e-4 * fabs(gr->gh)) yy = 0.0;
@@ -2791,9 +2933,9 @@ int edit_wave_attributes(int what, int i, Graph_ctx *gr)
   sptr = sweep;
   n_nodes = count_items(node, " \t\n", "\"");
   /* process each node given in "node" attribute, get also associated color/sweep var if any */
-  while( (ntok = my_strtok_r(nptr, "\n\t ", "\"", &saven)) ) {
-    ctok = my_strtok_r(cptr, " ", "", &savec);
-    stok = my_strtok_r(sptr, "\t\n ", "\"", &saves);
+  while( (ntok = my_strtok_r(nptr, "\n\t ", "\"", 0, &saven)) ) {
+    ctok = my_strtok_r(cptr, " ", "", 0, &savec);
+    stok = my_strtok_r(sptr, "\t\n ", "\"", 0, &saves);
     nptr = cptr = sptr = NULL;
     dbg(1, "ntok=%s ctok=%s\n", ntok, ctok? ctok: "NULL");
     if(stok && stok[0]) {
@@ -2857,7 +2999,7 @@ int edit_wave_attributes(int what, int i, Graph_ctx *gr)
       }
     }
     ++wcnt;
-  } /* while( (ntok = my_strtok_r(nptr, "\n\t ", "", &saven)) ) */
+  } /* while( (ntok = my_strtok_r(nptr, "\n\t ", "", 0, &saven)) ) */
   my_free(_ALLOC_ID_, &node);
   my_free(_ALLOC_ID_, &color);
   my_free(_ALLOC_ID_, &sweep);
@@ -2871,23 +3013,29 @@ int edit_wave_attributes(int what, int i, Graph_ctx *gr)
 int calc_custom_data_yrange(int sweep_idx, const char *express, Graph_ctx *gr)
 {
   int idx = -1;
-  int p, dset, ofs;
+  int p, dset, ofs, ofs_end;
   int first, last;
-  double xx; /* the p-th sweep variable value:  xctx->graph_values[sweep_idx][p] */
+  double xx; /* the p-th sweep variable value:  xctx->raw->values[sweep_idx][p] */
   double xx0 = 0; /* first sweep value */
   double start;
   double end;
   int sweepvar_wrap = 0; /* incremented on new dataset or sweep variable wrap */
   int dataset = gr->dataset;
+  Raw *raw = xctx->raw;
+  if(!raw) {
+    dbg(0, "calc_custom_data_yrange(): no raw struct allocated\n");
+    return idx;
+  }
   ofs = 0;
   start = (gr->gx1 <= gr->gx2) ? gr->gx1 : gr->gx2;
   end = (gr->gx1 <= gr->gx2) ? gr->gx2 : gr->gx1;
-  for(dset = 0 ; dset < xctx->graph_datasets; dset++) {
+  for(dset = 0 ; dset < raw->datasets; dset++) {
     int cnt=0, wrap;
-    register SPICE_DATA *gv = xctx->graph_values[sweep_idx];
+    register SPICE_DATA *gv = raw->values[sweep_idx];
+    ofs_end = ofs + raw->npoints[dset];
     first = -1;
     last = ofs; 
-    for(p = ofs ; p < ofs + xctx->graph_npoints[dset]; p++) {
+    for(p = ofs ; p < ofs_end; p++) {
       if(gr->logx) 
         xx = mylog10(gv[p]);
       else
@@ -2913,14 +3061,14 @@ int calc_custom_data_yrange(int sweep_idx, const char *express, Graph_ctx *gr)
         last = p;
         ++cnt;
       } /* if(xx >= start && xx <= end) */
-    } /* for(p = ofs ; p < ofs + xctx->graph_npoints[dset]; p++) */
+    } /* for(p = ofs ; p < ofs + raw->npoints[dset]; p++) */
     if(first != -1) {
       if(dataset == -1 || dataset == sweepvar_wrap) {
         idx = plot_raw_custom_data(sweep_idx, first, last, express);
       }
     }
     /* offset pointing to next dataset */
-    ofs += xctx->graph_npoints[dset];
+    ofs = ofs_end;
     sweepvar_wrap++;
   } /* for(dset...) */
   return idx;
@@ -2938,22 +3086,36 @@ int find_closest_wave(int i, Graph_ctx *gr)
   xRect *r = &xctx->rect[GRIDLAYER][i];
   int closest_dataset = -1;
   double min=-1.0;
-  
-  if(gr->digital) return -1;
+  Raw *raw = NULL;
+  char *custom_rawfile = NULL; /* "rawfile" attr. set in graph: load and switch to specified raw */
+  char *sim_type = NULL;
 
+  if(!xctx->raw) {
+    dbg(0, "find_closest_wave(): no raw struct allocated\n");
+    return -1;
+  }   
+  if(gr->digital) return -1;
   yval = G_Y(xctx->mousey);
   xval = G_X(xctx->mousex);
   /* get data to plot */
   my_strdup2(_ALLOC_ID_, &node, get_tok_value(r->prop_ptr,"node",0));
   my_strdup2(_ALLOC_ID_, &sweep, get_tok_value(r->prop_ptr,"sweep",0)); 
+
+  my_strdup2(_ALLOC_ID_, &custom_rawfile, get_tok_value(r->prop_ptr,"rawfile",0));
+  my_strdup2(_ALLOC_ID_, &sim_type, get_tok_value(r->prop_ptr,"sim_type",0));
+  if(sch_waves_loaded()!= -1 && custom_rawfile[0]) {
+    extra_rawfile(1, custom_rawfile, sim_type[0] ? sim_type : xctx->raw->sim_type);
+  }
+  raw = xctx->raw;
+
   nptr = node;
   sptr = sweep;
   /* process each node given in "node" attribute, get also associated sweep var if any*/
-  while( (ntok = my_strtok_r(nptr, "\n\t ", "\"", &saven)) ) {
+  while( (ntok = my_strtok_r(nptr, "\n\t ", "\"", 0, &saven)) ) {
     if(strstr(ntok, ",")) {
-      if(find_nth(ntok, ";,", 2)[0]) continue; /* bus signal: skip */
+      if(find_nth(ntok, ";,", "\"", 0, 2)[0]) continue; /* bus signal: skip */
     }
-    stok = my_strtok_r(sptr, "\t\n ", "\"", &saves);
+    stok = my_strtok_r(sptr, "\t\n ", "\"", 0, &saves);
     nptr = sptr = NULL;
     dbg(1, "ntok=%s\n", ntok);
     if(stok && stok[0]) {
@@ -2965,9 +3127,9 @@ int find_closest_wave(int i, Graph_ctx *gr)
     /* if ntok following possible 'alias;' definition contains spaces --> custom data plot */
     idx = -1;
     expression = 0;
-    if(xctx->graph_values) {
+    if(raw->values) {
       if(strstr(ntok, ";")) {
-        my_strdup2(_ALLOC_ID_, &express, find_nth(ntok, ";", 2));
+        my_strdup2(_ALLOC_ID_, &express, find_nth(ntok, ";", "\"", 0, 2));
       } else {
         my_strdup2(_ALLOC_ID_, &express, ntok);
       }
@@ -2975,11 +3137,11 @@ int find_closest_wave(int i, Graph_ctx *gr)
         expression = 1;
       }
     }
-    if(expression) idx = xctx->graph_nvars;
+    if(expression) idx = raw->nvars;
     else idx = get_raw_index(express);
     dbg(1, "find_closest_wave(): expression=%d, idx=%d\n", expression, idx);
     if( idx != -1 ) {
-      int p, dset, ofs;
+      int p, dset, ofs, ofs_end;
       int first, last;
       double xx, yy ; /* the p-th point */
       double xx0 = 0.0; /* first sweep value */
@@ -2990,20 +3152,21 @@ int find_closest_wave(int i, Graph_ctx *gr)
       start = (gr->gx1 <= gr->gx2) ? gr->gx1 : gr->gx2;
       end = (gr->gx1 <= gr->gx2) ? gr->gx2 : gr->gx1;
       /* loop through all datasets found in raw file */
-      for(dset = 0 ; dset < xctx->graph_datasets; dset++) {
+      for(dset = 0 ; dset < raw->datasets; dset++) {
         double prev_x = 0.0;
         int cnt=0, wrap;
-        register SPICE_DATA *gvx = xctx->graph_values[sweep_idx];
+        register SPICE_DATA *gvx = raw->values[sweep_idx];
         register SPICE_DATA *gvy;
-        if(expression) plot_raw_custom_data(sweep_idx, ofs, ofs + xctx->graph_npoints[dset]-1, express);
-        gvy = xctx->graph_values[idx];
+        ofs_end = ofs + raw->npoints[dset];
+        if(expression) plot_raw_custom_data(sweep_idx, ofs, ofs_end - 1, express);
+        gvy = raw->values[idx];
         dbg(1, "find_closest_wave(): dset=%d\n", dset);
         first = -1;
         /* Process "npoints" simulation items 
          * p loop split repeated 2 timed (for x and y points) to preserve cache locality */
         last = ofs; 
         dbg(1, "find_closest_wave(): xval=%g yval=%g\n", xval, yval);
-        for(p = ofs ; p < ofs + xctx->graph_npoints[dset]; p++) {
+        for(p = ofs ; p < ofs_end; p++) {
           if(gr->logx) xx = mylog10(gvx[p]);
           else xx = gvx[p];
           if(p == ofs) xx0 = xx;
@@ -3041,17 +3204,22 @@ int find_closest_wave(int i, Graph_ctx *gr)
             ++cnt;
           } /* if(xx >= start && xx <= end) */
           prev_x = xx;
-        } /* for(p = ofs ; p < ofs + xctx->graph_npoints[dset]; p++) */
+        } /* for(p = ofs ; p < ofs + raw->npoints[dset]; p++) */
         /* offset pointing to next dataset */
-        ofs += xctx->graph_npoints[dset];
+        ofs = ofs_end;
         sweepvar_wrap++;
       } /* for(dset...) */
 
     } /*  if( (idx = get_raw_index(ntok)) != -1 ) */
     ++wcnt;
-  } /* while( (ntok = my_strtok_r(nptr, "\n\t ", "", &saven)) ) */
+  } /* while( (ntok = my_strtok_r(nptr, "\n\t ", "", 0, &saven)) ) */
   dbg(0, "closest dataset=%d\n", closest_dataset);
   if(express) my_free(_ALLOC_ID_, &express);
+
+  if(sch_waves_loaded()!= -1 && custom_rawfile[0]) extra_rawfile(5, NULL, NULL);
+  my_free(_ALLOC_ID_, &custom_rawfile);
+  my_free(_ALLOC_ID_, &sim_type);
+
   my_free(_ALLOC_ID_, &node);
   my_free(_ALLOC_ID_, &sweep);
   return closest_dataset;
@@ -3069,7 +3237,7 @@ int find_closest_wave(int i, Graph_ctx *gr)
  */
 void draw_graph(int i, const int flags, Graph_ctx *gr, void *ct)
 {
-  int wc = 4, wave_color;
+  int wc = 4, wave_color = 4;
   char *node = NULL, *color = NULL, *sweep = NULL;
   int sweep_idx = 0;
   int n_nodes; /* number of variables to display in a single graph */
@@ -3077,49 +3245,96 @@ void draw_graph(int i, const int flags, Graph_ctx *gr, void *ct)
   const char *ntok, *ctok, *stok;
   char *bus_msb = NULL;
   int wcnt = 0, idx, expression;
-  int measure_p = -1;
-  double measure_x = 0.0;
-  double measure_prev_x = 0.0;
+  int *measure_p = NULL;
+  double *measure_x = NULL;
+  double *measure_prev_x = NULL;
   char *express = NULL;
   xRect *r = &xctx->rect[GRIDLAYER][i];
+  Raw *raw = NULL;
+  int node_dataset = -1; /* dataset specified as %<n> after node/bus/expression name */
+  char *ntok_copy = NULL; /* copy of ntok without %<n> */
+  char *custom_rawfile = NULL; /* "rawfile" attr. set in graph: load and switch to specified raw */
+  char *sim_type = NULL;
   
   if(xctx->only_probes) return;
   if(RECT_OUTSIDE( gr->sx1, gr->sy1, gr->sx2, gr->sy2,
       xctx->areax1, xctx->areay1, xctx->areax2, xctx->areay2)) return;
   
-   #if 0
-   dbg(0, "draw_graph(): window: %d %d %d %d\n", xctx->areax1, xctx->areay1, xctx->areax2, xctx->areay2);
-   dbg(0, "draw_graph(): graph: %g %g %g %g\n", gr->sx1, gr->sy1, gr->sx2, gr->sy2);
-   dbg(0, "draw_graph(): i = %d, flags = %d\n", i, flags);
-   #endif
+  #if 0
+  dbg(0, "draw_graph(): window: %d %d %d %d\n", xctx->areax1, xctx->areay1, xctx->areax2, xctx->areay2);
+  dbg(0, "draw_graph(): graph: %g %g %g %g\n", gr->sx1, gr->sy1, gr->sx2, gr->sy2);
+  dbg(0, "draw_graph(): i = %d, flags = %d\n", i, flags);
+  #endif
  
   /* draw stuff */
   if(flags & 8) {
-#if !defined(__unix__) && HAS_CAIRO==1
+    int k;
+    int save_datasets = -1, save_npoints = -1;
+    #if !defined(__unix__) && HAS_CAIRO==1
     double sw = (gr->sx2 - gr->sx1);
     double sh = (gr->sy2 - gr->sy1);
     clear_cairo_surface(xctx->cairo_save_ctx, gr->sx1, gr->sy1, sw, sh);
     clear_cairo_surface(xctx->cairo_ctx, gr->sx1, gr->sy1, sw, sh);
-#endif
+    #endif
     /* graph box, gridlines and axes */
     draw_graph_grid(gr, ct);
     /* get data to plot */
     my_strdup2(_ALLOC_ID_, &node, get_tok_value(r->prop_ptr,"node",0));
     my_strdup2(_ALLOC_ID_, &color, get_tok_value(r->prop_ptr,"color",0)); 
     my_strdup2(_ALLOC_ID_, &sweep, get_tok_value(r->prop_ptr,"sweep",0)); 
+    my_strdup2(_ALLOC_ID_, &custom_rawfile, get_tok_value(r->prop_ptr,"rawfile",0));
+    my_strdup2(_ALLOC_ID_, &sim_type, get_tok_value(r->prop_ptr,"sim_type",0));
+    if(sch_waves_loaded()!= -1 && custom_rawfile[0]) {
+      extra_rawfile(1, custom_rawfile, sim_type[0] ? sim_type : xctx->raw->sim_type);
+    }
+    raw = xctx->raw;
+
+    /* transform multiple OP points into a dc sweep */
+    if(raw && raw->sim_type && !strcmp(raw->sim_type, "op") && raw->datasets > 1 && raw->npoints[0] == 1) {
+      save_datasets = raw->datasets;
+      raw->datasets = 1;
+      save_npoints = raw->npoints[0];
+      raw->npoints[0] = raw->allpoints;
+    }
+
     nptr = node;
     cptr = color;
     sptr = sweep;
-    n_nodes = count_items(node, " \t\n", "\"");
+    n_nodes = count_items(node, "\n\t ", "\"");
+    measure_p = my_malloc(_ALLOC_ID_, sizeof(int) * n_nodes);
+    measure_x = my_malloc(_ALLOC_ID_, sizeof(double) * n_nodes);
+    measure_prev_x = my_malloc(_ALLOC_ID_, sizeof(double) * n_nodes);
+    for(k = 0 ; k < n_nodes; k++) {
+      measure_p[k] = -1;
+      measure_x[k] = 0.0;
+      measure_prev_x[k] = 0.0;
+    }
     /* process each node given in "node" attribute, get also associated color/sweep var if any*/
-    while( (ntok = my_strtok_r(nptr, "\n\t ", "\"", &saven)) ) {
-      if(strstr(ntok, ",")) {
-        my_strdup2(_ALLOC_ID_, &bus_msb, find_nth(ntok, ";,", 2));
+    while( (ntok = my_strtok_r(nptr, "\n\t ", "\"", 4, &saven)) ) {
+      char *nd = find_nth(ntok, "%", "\"", 0, 2);
+      if(wcnt >= n_nodes) {
+        dbg(0, "draw_graph(): WARNING: wcnt (wave #) >= n_nodes (counted # of waves)\n");
+        dbg(0, "draw_graph(): n_nodes=%d\n", n_nodes);
+        wcnt--; /* nosense, but avoid a crash */
       }
-      ctok = my_strtok_r(cptr, " ", "", &savec);
-      stok = my_strtok_r(sptr, "\t\n ", "\"", &saves);
+      /* if %<n> is specified after node name, <n> is the dataset number to plot in graph */
+      if(nd[0]) {
+        node_dataset = atoi(nd);
+        my_strdup(_ALLOC_ID_, &ntok_copy, find_nth(ntok, "%", "\"", 0, 1));
+      } else {
+        node_dataset = -1;
+        my_strdup(_ALLOC_ID_, &ntok_copy, ntok);
+      }
+      dbg(1, "ntok=|%s|\nntok_copy=|%s|\nnode_dataset=%d\n", ntok, ntok_copy, node_dataset);
+      if(strstr(ntok_copy, ",")) {
+        /* also trim spaces */
+        my_strdup2(_ALLOC_ID_, &bus_msb, trim_chars(find_nth(ntok_copy, ";,", "\"", 0, 2), " "));
+      }
+      dbg(1, "ntok_copy=|%s|, bus_msb=|%s|\n", ntok_copy, bus_msb ? bus_msb : "NULL");
+      ctok = my_strtok_r(cptr, " ", "", 0, &savec);
+      stok = my_strtok_r(sptr, "\t\n ", "\"", 0, &saves);
       nptr = cptr = sptr = NULL;
-      dbg(1, "ntok=%s ctok=%s\n", ntok, ctok? ctok: "NULL");
+      dbg(1, "ntok_copy=%s ctok=%s\n", ntok_copy, ctok? ctok: "NULL");
       if(ctok && ctok[0]) wc = atoi(ctok);
       if(wc < 0) wc = 4;
       if(wc >= cadlayers) wc = cadlayers - 1;
@@ -3130,25 +3345,26 @@ void draw_graph(int i, const int flags, Graph_ctx *gr, void *ct)
         }
       }
       draw_graph_variables(wcnt, wc, n_nodes, sweep_idx, flags, ntok, stok, bus_msb, gr);
-      /* if ntok following possible 'alias;' definition contains spaces --> custom data plot */
+      /* if ntok_copy following possible 'alias;' definition contains spaces --> custom data plot */
       idx = -1;
       expression = 0;
-      if(xctx->graph_values && !bus_msb) {
-        if(strstr(ntok, ";")) {
-          my_strdup2(_ALLOC_ID_, &express, find_nth(ntok, ";", 2));
+      if(raw && raw->values && !bus_msb) {
+        if(strstr(ntok_copy, ";")) {
+          my_strdup2(_ALLOC_ID_, &express, find_nth(ntok_copy, ";", "\"", 0, 2));
         } else {
-          my_strdup2(_ALLOC_ID_, &express, ntok);
+          my_strdup2(_ALLOC_ID_, &express, ntok_copy);
         }
+        dbg(1, "express=|%s|\n", express);
         if(strpbrk(express, " \n\t")) {
           expression = 1;
         }
       }
-      /* quickly find index number of ntok variable to be plotted */
+      /* quickly find index number of ntok_copy variable to be plotted */
       if( expression || (idx = get_raw_index(bus_msb ? bus_msb : express)) != -1 ) {
-        int p, dset, ofs;
+        int p, dset, ofs, ofs_end;
         int poly_npoints;
         int first, last;
-        double xx; /* the p-th sweep variable value:  xctx->graph_values[sweep_idx][p] */
+        double xx; /* the p-th sweep variable value:  raw->values[sweep_idx][p] */
         double xx0 = 0.0; /* the first sweep value */
         double start;
         double end;
@@ -3156,31 +3372,32 @@ void draw_graph(int i, const int flags, Graph_ctx *gr, void *ct)
         SPICE_DATA **idx_arr = NULL;
         int sweepvar_wrap = 0; /* incremented on new dataset or sweep variable wrap */
         XPoint *point = NULL;
-        int dataset = gr->dataset;
+        int dataset = node_dataset >=0 ? node_dataset : gr->dataset;
         int digital = gr->digital;
         ofs = 0;
         start = (gr->gx1 <= gr->gx2) ? gr->gx1 : gr->gx2;
         end = (gr->gx1 <= gr->gx2) ? gr->gx2 : gr->gx1;
         if(bus_msb) {
-          idx_arr = get_bus_idx_array(ntok, &n_bits); /* idx_arr allocated by function, must free! */
+          idx_arr = get_bus_idx_array(ntok_copy, &n_bits); /* idx_arr allocated by function, must free! */
         }
         bbox(START, 0.0, 0.0, 0.0, 0.0);
         bbox(ADD,gr->x1, gr->y1, gr->x2, gr->y2);
         bbox(SET, 0.0, 0.0, 0.0, 0.0);
         /* loop through all datasets found in raw file */
-        for(dset = 0 ; dset < xctx->graph_datasets; dset++) {
+        for(dset = 0 ; dset < raw->datasets; dset++) {
           double prev_x;
           int cnt=0, wrap;
-          register SPICE_DATA *gv = xctx->graph_values[sweep_idx];
-  
+          register SPICE_DATA *gv = raw->values[sweep_idx];
+            
+          ofs_end = ofs + raw->npoints[dset];
           first = -1;
           poly_npoints = 0;
-          my_realloc(_ALLOC_ID_, &point, xctx->graph_npoints[dset] * sizeof(XPoint));
+          my_realloc(_ALLOC_ID_, &point, raw->npoints[dset] * sizeof(XPoint));
           /* Process "npoints" simulation items 
            * p loop split repeated 2 timed (for x and y points) to preserve cache locality */
           prev_x = 0;
           last = ofs; 
-          for(p = ofs ; p < ofs + xctx->graph_npoints[dset]; p++) {
+          for(p = ofs ; p < ofs_end; p++) {
             if(gr->logx) xx = mylog10(gv[p]);
             else  xx = gv[p];
             if(p == ofs) xx0 = xx;
@@ -3194,7 +3411,7 @@ void draw_graph(int i, const int flags, Graph_ctx *gr, void *ct)
                   else wave_color = wc;
                   if(bus_msb) {
                     if(digital) {
-                      draw_graph_bus_points(ntok, n_bits, idx_arr, first, last, wave_color,
+                      draw_graph_bus_points(ntok_copy, n_bits, idx_arr, first, last, wave_color,
                                    sweep_idx, wcnt, n_nodes, gr, ct);
                     }
                   } else {
@@ -3215,20 +3432,21 @@ void draw_graph(int i, const int flags, Graph_ctx *gr, void *ct)
               /* Build poly x array. Translate from graph coordinates to screen coords */
               point[poly_npoints].x = (short)S_X(xx);
               if(dataset == -1 || dataset == sweepvar_wrap) {
-                if(measure_p == -1 && flags & 2 && cnt) { /* cursor1: show measurements on nodes in graph */
+                /* cursor1: show measurements on nodes in graph */
+                if(measure_p[wcnt] == -1 && flags & 2 && cnt) {
                   if(XSIGN(xx - xctx->graph_cursor1_x) != XSIGN(prev_x - xctx->graph_cursor1_x)) {
-                    measure_p = p;
-                    measure_x = xx;
-                    measure_prev_x = prev_x;
+                    measure_p[wcnt] = p;
+                    measure_x[wcnt] = xx;
+                    measure_prev_x[wcnt] = prev_x;
                   }
-                } /* if(measure_p == -1 && flags & 2 && p > ofs) */
+                } /* if(measure_p[wcnt] == -1 && flags & 2 && p > ofs) */
               } /* if(dataset == -1 || dataset == sweepvar_wrap) */
               last = p;
               poly_npoints++;
               ++cnt;
             } /* if(xx >= start && xx <= end) */
             prev_x = xx;
-          } /* for(p = ofs ; p < ofs + xctx->graph_npoints[dset]; p++) */
+          } /* for(p = ofs ; p < ofs + raw->npoints[dset]; p++) */
           if(first != -1) {
             if(dataset == -1 || dataset == sweepvar_wrap) {
               /* plot graph. Bus bundles are not plotted if graph is not digital.*/
@@ -3236,7 +3454,7 @@ void draw_graph(int i, const int flags, Graph_ctx *gr, void *ct)
               else wave_color = wc;
               if(bus_msb) {
                 if(digital) {
-                  draw_graph_bus_points(ntok, n_bits, idx_arr, first, last, wave_color,
+                  draw_graph_bus_points(ntok_copy, n_bits, idx_arr, first, last, wave_color,
                                sweep_idx, wcnt, n_nodes, gr, ct);
                 }
               } else {
@@ -3246,27 +3464,41 @@ void draw_graph(int i, const int flags, Graph_ctx *gr, void *ct)
             }
           }
           /* offset pointing to next dataset */
-          ofs += xctx->graph_npoints[dset];
+          ofs = ofs_end;
           sweepvar_wrap++;
         } /* for(dset...) */
         bbox(END, 0.0, 0.0, 0.0, 0.0);
-        if(measure_p != -1) show_node_measures(measure_p, measure_x, measure_prev_x, bus_msb, wave_color, 
-            idx, idx_arr, n_bits, n_nodes, ntok, wcnt, gr);
+        if(measure_p[wcnt] != -1)
+           show_node_measures(measure_p[wcnt], measure_x[wcnt], measure_prev_x[wcnt], bus_msb, wave_color, 
+              idx, idx_arr, n_bits, n_nodes, ntok_copy, wcnt, gr);
 
         my_free(_ALLOC_ID_, &point);
         if(idx_arr) my_free(_ALLOC_ID_, &idx_arr);
       } /* if( expression || (idx = get_raw_index(bus_msb ? bus_msb : express)) != -1 ) */
       ++wcnt;
       if(bus_msb) my_free(_ALLOC_ID_, &bus_msb);
-    } /* while( (ntok = my_strtok_r(nptr, "\n\t ", "", &saven)) ) */
+    } /* while( (ntok = my_strtok_r(nptr, "\n\t ", "", 0, &saven)) ) */
+    if(save_npoints != -1) { /* restore multiple OP points from artificial dc sweep */
+      raw->datasets = save_datasets;
+      raw->npoints[0] = save_npoints;
+    }
+    if(ntok_copy) my_free(_ALLOC_ID_, &ntok_copy);
     if(express) my_free(_ALLOC_ID_, &express);
+    if(sch_waves_loaded()!= -1 && custom_rawfile[0]) extra_rawfile(5, NULL, NULL);
+    my_free(_ALLOC_ID_, &custom_rawfile);
+    my_free(_ALLOC_ID_, &sim_type);
     my_free(_ALLOC_ID_, &node);
     my_free(_ALLOC_ID_, &color);
     my_free(_ALLOC_ID_, &sweep);
+    my_free(_ALLOC_ID_, &measure_p);
+    my_free(_ALLOC_ID_, &measure_x);
+    my_free(_ALLOC_ID_, &measure_prev_x);
   } /* if(flags & 8) */
-  bbox(START, 0.0, 0.0, 0.0, 0.0);
-  bbox(ADD, gr->rx1, gr->ry1, gr->rx2, gr->ry2);
-  bbox(SET_INSIDE, 0.0, 0.0, 0.0, 0.0);
+  /* 
+   * bbox(START, 0.0, 0.0, 0.0, 0.0);
+   * bbox(ADD, gr->rx1, gr->ry1, gr->rx2, gr->ry2);
+   * bbox(SET_INSIDE, 0.0, 0.0, 0.0, 0.0);
+   */
   if(flags & 8) {
     /* cursor1 */
     if((flags & 2)) draw_cursor(xctx->graph_cursor1_x, xctx->graph_cursor2_x, 1, gr);
@@ -3277,11 +3509,16 @@ void draw_graph(int i, const int flags, Graph_ctx *gr, void *ct)
   }
   if(flags & 1) { /* copy save buffer to screen */
     if(!xctx->draw_window) {
-      MyXCopyArea(display, xctx->save_pixmap, xctx->window, xctx->gc[0], xctx->xrect[0].x, xctx->xrect[0].y,
-         xctx->xrect[0].width, xctx->xrect[0].height, xctx->xrect[0].x, xctx->xrect[0].y);
+      /* 
+       * MyXCopyArea(display, xctx->save_pixmap, xctx->window, xctx->gc[0], xctx->xrect[0].x, xctx->xrect[0].y,
+       *   xctx->xrect[0].width, xctx->xrect[0].height, xctx->xrect[0].x, xctx->xrect[0].y);
+       */
+      MyXCopyAreaDouble(display, xctx->save_pixmap, xctx->window, xctx->gc[0], 
+        gr->rx1, gr->ry1, gr->rx2, gr->ry2, gr->rx1, gr->ry1, 0.0);
+    
     }
   }
-  bbox(END, 0.0, 0.0, 0.0, 0.0);
+  /* bbox(END, 0.0, 0.0, 0.0, 0.0); */
 }
 
 /* flags:
@@ -3881,7 +4118,7 @@ int XSetTile(Display* display, GC gc, Pixmap s_pixmap)
 void MyXCopyArea(Display* display, Drawable src, Drawable dest, GC gc, int src_x, int src_y,
      unsigned int width, unsigned int height, int dest_x, int dest_y)
 {
-  dbg(1, "MyXCopyArea()\n");
+  dbg(1, "MyXCopyArea(%d, %d, %u, %u)\n", src_x, src_y, width, height);
   #if !defined(__unix__)
   XCopyArea(display, src, dest, gc, src_x, src_y, width, height, dest_x, dest_y);
   #if HAS_CAIRO==1
@@ -3904,6 +4141,7 @@ void MyXCopyAreaDouble(Display* display, Drawable src, Drawable dest, GC gc,
   double isx1, isy1, isx2, isy2, idx1, idy1;
   unsigned int width, height;
 
+  dbg(1, "MyXCopyAreaDouble(%g, %g, %g, %g)\n", sx1, sy1, sx2, sy2);
   isx1=X_TO_SCREEN(sx1) - 2 * INT_WIDTH(lw);
   isy1=Y_TO_SCREEN(sy1) - 2 * INT_WIDTH(lw);
   isx2=X_TO_SCREEN(sx2) + 2 * INT_WIDTH(lw);
@@ -3914,7 +4152,7 @@ void MyXCopyAreaDouble(Display* display, Drawable src, Drawable dest, GC gc,
   
   width = (unsigned int)isx2 - (unsigned int)isx1;
   height = (unsigned int)isy2 - (unsigned int)isy1;
-
+  dbg(1, "%g %g %g %g  --> %g %g\n", isx1, isy1, isx2, isy2, idx1, idy1);
   #if !defined(__unix__)
   XCopyArea(display, src, dest, gc, (int)isx1, (int)isy1, width, height, (int)idx1, (int)idy1);
   #if HAS_CAIRO==1

@@ -219,6 +219,9 @@
 #### enable to scale grid point size as done with lines at close zoom, default: 0
 # set big_grid_points 0
 
+#### enable drawing grid axes. Default: enabled (1)
+# set draw_grid_axes 1
+
 #### enable grouping contiguous bits of bus slices in net->pin instance
 #### assignments for verilog netlists. Default: disabled (0)
 # set verilog_bitblast 0
@@ -356,6 +359,7 @@
 # set editor {gvim -f -geometry 90x28}
 # set editor { xterm -geometry 100x40 -e nano }
 # set editor { xterm -geometry 100x40 -e pico }
+# set editor {gedit -w}
 
 #### For Windows
 # set editor {notepad.exe}
@@ -475,3 +479,13 @@
 #### if you see garbage on screen / graphic artifacts while editing with
 #### xschem try to set this to 1. Default: not enabled (0)
 # set fix_broken_tiled_fill 0
+
+###########################################################################
+#### FIX SOME REMOTE DESKTOP CONNECTION SOFTWARES NOT CORRECTLY REPORTING
+#### MOUSE COORDINATES ON KEYPRESS / KEYRELEASE EVENTS
+###########################################################################
+#### If you see strange behavior while using keybindings to create graphic 
+#### objects ('w', 'l', 't', 'r', ...) try to set this to 1.
+#### Default: not enabled (0)
+# set fix_mouse_coord 0
+

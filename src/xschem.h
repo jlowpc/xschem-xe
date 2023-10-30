@@ -23,7 +23,7 @@
 #ifndef CADGLOBALS
 #define CADGLOBALS
 
-#define XSCHEM_VERSION "3.4.4"
+#define XSCHEM_VERSION "3.4.5"
 #define XSCHEM_FILE_VERSION "1.2"
 
 #if HAS_PIPE == 1
@@ -209,38 +209,43 @@ extern char win_temp_dir[PATH_MAX];
 #define CAD_TEDAX_NETLIST 4
 #define CAD_SYMBOL_ATTRS 5
 
-#define STARTWIRE 1U        /*  possible states, encoded in global 'rubber' */
-#define STARTRECT 4U
-#define STARTLINE 8U
-#define SELECTION  16U      /*  signals that some objects are selected. */
-#define STARTSELECT 32U     /*  used for drawing a selection rectangle */
-#define STARTMOVE 64U       /*  used for move/copy  operations */
-#define STARTCOPY 128U      /*  used for move/copy  operations */
-#define STARTZOOM 256U      /*  used for move/copy  operations */
-#define STARTMERGE 512U     /*  used fpr merge schematic/symbol */
-#define MENUSTARTWIRE 1024U /*  start wire invoked from menu */
-#define MENUSTARTLINE 2048U /*  start line invoked from menu */
-#define MENUSTARTRECT 4096U /*  start rect invoked from menu */
-#define MENUSTARTZOOM 8192U /*  start zoom box invoked from menu */
-#define STARTPAN     16384U /*  new pan method with mouse button3 */
-#define PLACE_TEXT 32768U
-#define MENUSTARTSNAPWIRE 65536U  /*  start wire invoked from menu, snap to pin variant 20171022 */
-#define STARTPOLYGON 131072U
-#define MENUSTARTPOLYGON 262144U
-#define STARTARC 524288U
-#define MENUSTARTARC 1048576U
-#define MENUSTARTCIRCLE 2097152U
-#define PLACE_SYMBOL 4194304U /* used in move_objects after place_symbol to avoid storing intermediate undo state */
-#define START_SYMPIN 8388608U
-#define GRAPHPAN 16777216U /* bit 24 */
-#define MENUSTARTMOVE 33554432U
-#define MENUSTARTWIRECUT 67108864U /* bit 26 */
-#define MENUSTARTWIRECUT2 134217728U /* bit 27 : do not align cut point to snap */
+/*  possible states, encoded in global 'ui_state' */
+#define STARTWIRE 1U
+#define STARTRECT 2U
+#define STARTLINE 4U
+#define SELECTION 8U        /*  signals that some objects are selected. */
+#define STARTSELECT 16U     /*  used for drawing a selection rectangle */
+#define STARTMOVE 32U       /*  used for move/copy  operations */
+#define STARTCOPY 64U       /*  used for move/copy  operations */
+#define STARTZOOM 128U      /*  used for move/copy  operations */
+#define STARTMERGE 256U     /*  used fpr merge schematic/symbol */
+#define STARTPAN 512U       /*  new pan method with mouse button3 */
+#define PLACE_TEXT 1024U
+#define STARTPOLYGON 2048U
+#define STARTARC 4096U
+#define PLACE_SYMBOL 8192U  /* used in move_objects after place_symbol to avoid storing intermediate undo state */
+#define START_SYMPIN 16384U
+#define GRAPHPAN 32768U     /* bit 15 */
+#define MENUSTART 65536U    /* bit 16 */
+
 #define SELECTED 1U         /*  used in the .sel field for selected objs. */
 #define SELECTED1 2U        /*  first point selected... */
 #define SELECTED2 4U        /*  second point selected... */
 #define SELECTED3 8U
 #define SELECTED4 16U
+
+/* sub states encoded in global ui_state2 to reduce ui_state bits usage */
+#define MENUSTARTWIRE 1U /*  start wire invoked from menu */
+#define MENUSTARTLINE 2U /*  start line invoked from menu */
+#define MENUSTARTRECT 4U /*  start rect invoked from menu */
+#define MENUSTARTZOOM 8U /*  start zoom box invoked from menu */
+#define MENUSTARTSNAPWIRE 16U  /*  start wire invoked from menu, snap to pin variant 20171022 */
+#define MENUSTARTPOLYGON 32U
+#define MENUSTARTARC 64U
+#define MENUSTARTCIRCLE 128U
+#define MENUSTARTMOVE 256U
+#define MENUSTARTWIRECUT 512U 
+#define MENUSTARTWIRECUT2 1024U /* do not align cut point to snap */
 
 #define WIRE 1              /*  types of defined objects */
 #define xRECT  2
@@ -268,6 +273,7 @@ extern char win_temp_dir[PATH_MAX];
 /*    1215497, 1823231, 2734867, 4102283, 6153409, 9230113, 13845163 */
 
 #define HASHSIZE 31627
+#define MAX_RAW_N 50 /* max number of raw files that can be loaded */
 
                    /*  parameters passed to action functions, see actions.c */
 #define END      1 /*  endop */
@@ -317,8 +323,7 @@ extern char win_temp_dir[PATH_MAX];
 #define RECT_OUTSIDE(xa,ya,xb,yb,x1,y1,x2,y2)  \
 ( (xa) > (x2) || (xb) < (x1) || (ya) > (y2) || (yb) < (y1) )
 
-
-
+#define RECT_TOUCH(xa,ya,xb,yb,x1,y1,x2,y2)  (!(xa > x2 || xb < x1 || ya > y2 || yb < y1))
 
 #define ROTATION(rot, flip, x0, y0, x, y, rx, ry) \
 { \
@@ -340,9 +345,6 @@ extern char win_temp_dir[PATH_MAX];
   if(x2 < x1) {xxtmp = x1; x1 = x2; x2 = xxtmp;} \
   if(y2 < y1) {xxtmp = y1; y1 = y2; y2 = xxtmp;} \
 }
-
-#define OUTSIDE(xa,ya,xb,yb,x1,y1,x2,y2) \
- (xa>x2 || xb<x1 ||  ya>y2 || yb<y1 )
 
 #define LINE_OUTSIDE(xa,ya,xb,yb,x1,y1,x2,y2) \
  (xa>=x2 || xb<=x1 ||  ( (ya<yb)? (ya>=y2 || yb<=y1) : (yb>=y2 || ya<=y1) ) )
@@ -615,7 +617,6 @@ typedef struct
   char *instname; /*  20150409 instance name (example: I23)  */
 } xInstance;
 
-
 typedef struct
 {
   double x;
@@ -756,6 +757,36 @@ struct hilight_hashentry
   int time; /*delta-time for sims */
 };
 
+
+
+
+typedef struct {
+  /* spice raw file specific data */
+  char **names;
+  char *rawfile;
+  SPICE_DATA **values;
+  int nvars;
+  int *npoints;
+  int allpoints; /* all points of all datasets combined */
+  int datasets;
+  Int_hashtable table;
+  char *sim_type; /* type of sim, "tran", "dc", "ac", "op", ... */
+  int annot_p; /* point in raw file to use for annotating schematic voltages/currents/etc
+                * this is the closest available simulated point *before* the point
+                * calculated from mouse in graph */
+  double annot_x; /* X point to backannotate as calculated from mouse position.
+                   * need to interpolate the Y value between annot_p and annot_p + 1 */
+  int annot_sweep_idx; /* index of sweep variable where cursor annotation has occurred */
+  double *cursor_b_val;
+  /* when descending hierarchy xctx->current_name changes, xctx->raw_schname
+   * holds the name of the top schematic from which the raw file was loaded */
+  char *schname;
+  int level;  /* hierarchy level where raw file has been read */
+} Raw;
+
+
+
+
 /*  for netlist.c */
 typedef struct instpinentry Instpinentry;
 struct instpinentry
@@ -874,8 +905,9 @@ typedef struct {
   double zoom;
   double mooz;
   double lw;
-  unsigned int ui_state ; /* this signals that we are doing a net place,panning etc.
-                            * used to prevent nesting of some commands */
+  unsigned int ui_state;   /* this signals that we are doing a net place,panning etc.
+                           * used to prevent nesting of some commands */
+  unsigned int ui_state2; /* sub states of ui_state MENUSTART bit */ 
   double mousex,mousey; /* mouse coord. */
   double mousex_snap,mousey_snap; /* mouse coord. snapped to grid */
   double mx_double_save, my_double_save;
@@ -937,14 +969,10 @@ typedef struct {
   int *node_mult;
   int node_mult_size;
   /* callback.c */
+  int already_selected; /* when clicking on an object that is already selected this will be 1 */
   int mx_save, my_save, last_command;
   char sel_or_clip[PATH_MAX];
   int onetime;
-  /* list of nodes, instances attached to these need redraw */
-  Int_hashtable node_redraw_table;
-  /* list of instances, collected using previous table, that need redraw */
-  unsigned char *inst_redraw_table;
-  int inst_redraw_table_size;
   /* move.c */
   double rx1, rx2, ry1, ry2;
   short move_rot;
@@ -971,6 +999,7 @@ typedef struct {
   /* select_rect */
   double nl_xr, nl_yr, nl_xr2, nl_yr2;
   int nl_sel, nl_sem; /* nl_sel is the select mode (select) the select_rect() was called with */
+  int nl_dir; /* direction of the drag select_rect was called with: 0=to the right, 1=to the left */
   /* compare_schematics */
   char sch_to_compare[PATH_MAX];
   /* pan */
@@ -1005,13 +1034,17 @@ typedef struct {
   int undo_initialized;
   /* graph context struct */
   Graph_ctx graph_struct;
-  /* spice raw file specific data */
-  char **graph_names;
-  SPICE_DATA **graph_values;
-  int graph_nvars;
-  int *graph_npoints;
-  int graph_allpoints; /* all points of all datasets combined */
-  int graph_datasets;
+
+  Raw *raw; /* spice simulation data struct pointer */
+
+  /* data for additional raw files */
+  int extra_idx;                    /* current raw file */
+  int extra_prev_idx;               /* previous crrent (to switch back) */
+  Raw *extra_raw_arr[MAX_RAW_N]; /* array of pointers to Raw structure */
+  int extra_raw_n;                  /* number of elements in array */
+
+
+  /*    */
   /* data related to all graphs, so not stored in per-graph graph_struct */
   double graph_cursor1_x;
   double graph_cursor2_x;
@@ -1030,13 +1063,6 @@ typedef struct {
   int graph_bottom; 
   int graph_left;
   int graph_lastsel; /* last graph that was clicked (selected) */
-  const char *graph_sim_type; /* type of sim, "tran", "dc", "ac", "op", ... */
-  int graph_annotate_p; /* point in raw file to use for annotating schematic voltages/currents/etc */
-  Int_hashtable graph_raw_table;
-  /* when descending hierarchy xctx->current_name changes, xctx->graph_raw_schname
-   * holds the name of the top schematic from which the raw file was loaded */
-  char *graph_raw_schname;
-  int graph_raw_level;  /* hierarchy level where raw file has been read MIRRORED IN TCL*/
   /*    */
   XSegment *biggridpoint;
   XPoint *gridpoint;
@@ -1090,7 +1116,6 @@ extern unsigned char **pixdata;
 extern unsigned char pixdata_init[22][32];
 extern Display *display;
 extern int _unix; /* set to 1 on unix systems */
-extern int fix_broken_tiled_fill; /* if set to 1 work around some GPUs with rotten tiled fill operations */
 
 #ifdef HAS_XCB
 extern xcb_connection_t *xcb_conn;
@@ -1111,6 +1136,11 @@ extern int constrained_move;
 extern double cairo_font_scale; /*  default: 1.0, allows to adjust font size */
 extern double cairo_font_line_spacing;
 extern int debug_var;
+extern int fix_broken_tiled_fill; /* if set to 1 work around some GPUs with rotten tiled fill operations */
+/* this fix uses an alternative method for getting mouse coordinates on KeyPress/KeyRelease
+ * events. Some remote connection softwares do not generate the correct coordinates
+ * on such events */
+extern int fix_mouse_coord;
 
 /*********** These variables are NOT mirrored in tcl code ***********/
 extern int help;
@@ -1163,7 +1193,7 @@ extern int filter_data(const char *din, const size_t ilen,
            char **dout, size_t *olen, const char *cmd);
 extern int embed_rawfile(const char *rawfile);
 extern int read_rawfile_from_attr(const char *b64s, size_t length, const char *type);
-extern int raw_read_from_attr(const char *type);
+extern int raw_read_from_attr(Raw **rawptr, const char *type);
 extern char *base64_from_file(const char *f, size_t *length);
 extern int set_rect_flags(xRect *r);
 extern int set_text_flags(xText *t);
@@ -1176,8 +1206,10 @@ extern unsigned char *base64_decode(const char *data, const size_t input_length,
 extern char *base64_encode(const unsigned char *data, const size_t input_length, size_t *output_length, int brk);
 extern unsigned char *ascii85_encode(const unsigned char *data, const size_t input_length, size_t *output_length);
 extern int get_raw_index(const char *node);
-extern void free_rawfile(int dr);
-extern int raw_read(const char *f, const char *type);
+extern void free_rawfile(Raw **rawptr, int dr);
+extern int update_op();
+extern int extra_rawfile(int what, const char *f, const char *type);
+extern int raw_read(const char *f, Raw **rawptr, const char *type);
 extern int table_read(const char *f);
 extern double get_raw_value(int dataset, int idx, int point);
 extern int plot_raw_custom_data(int sweep_idx, int first, int last, const char *ntok);
@@ -1187,14 +1219,15 @@ extern int edit_wave_attributes(int what, int i, Graph_ctx *gr);
 extern void draw_graph(int i, int flags, Graph_ctx *gr, void *ct);
 extern int find_closest_wave(int i, Graph_ctx *gr);
 extern void setup_graph_data(int i, int skip, Graph_ctx *gr);
-extern int graph_fullyzoom(xRect *r,  Graph_ctx *gr, int dataset);
-extern int graph_fullxzoom(xRect *r, Graph_ctx *gr, int dataset);
+extern int graph_fullyzoom(xRect *r,  Graph_ctx *gr, int graph_dataset);
+extern int graph_fullxzoom(int i, Graph_ctx *gr, int dataset);
+extern void sleep_ms(int milliseconds);
 extern double timer(int start);
 extern void enable_layers(void);
 extern void set_snap(double);
 extern void set_grid(double);
 extern void create_plot_cmd(void);
-extern void set_modify(int mod);
+extern int set_modify(int mod); /* return number of floaters */
 extern int there_are_floaters(void);
 extern void dbg(int level, char *fmt, ...);
 extern unsigned int hash_file(const char *f, int skip_path_lines);
@@ -1242,7 +1275,7 @@ extern const char *get_sym_template(char *s, char *extra);
 extern void zoom_full(int draw, int sel, int flags, double shrink);
 extern void updatebbox(int count,xRect *boundbox,xRect *tmp);
 extern void draw_selection(GC g, int interruptable);
-extern int delete_wires(int floaters, int selected_flag);
+extern int delete_wires(int selected_flag);
 extern void delete(int to_push_undo);
 extern void delete_only_rect_line_arc_poly(void);
 extern void polygon_bbox(double *x, double *y, int points, double *bx1, double *by1, double *bx2, double *by2);
@@ -1278,6 +1311,7 @@ extern void set_first_sel(unsigned short type, int n, unsigned int col);
 extern void unselect_all(int dr);
 extern void select_attached_nets(void);
 extern void select_inside(double x1,double y1, double x2, double y2, int sel);
+extern void select_touch(double x1,double y1, double x2, double y2, int sel);
 /*  Select all nets that are dangling, ie not attached to any non pin/port/probe components */
 extern int select_dangling_nets(void);
 extern int Tcl_AppInit(Tcl_Interp *interp);
@@ -1301,6 +1335,11 @@ extern void filledrect(int c, int what, double rectx1,double recty1,
 
 
 extern void drawtempline(GC gc, int what, double x1,double y1,double x2,double y2);
+
+/* instead of doing a drawtemprect(xctx->gctiled, NOW, ....) do 4 
+ * XCopy Area operations. Used if fix_broken_tiled_fill is set */
+extern void fix_restore_rect(double x1, double y1, double x2, double y2);
+
 extern void drawtemprect(GC gc, int what, double rectx1,double recty1,
             double rectx2,double recty2);
 extern void drawtemparc(GC gc, int what, double x, double y, double r, double a, double b);
@@ -1317,7 +1356,11 @@ extern void MyXCopyAreaDouble(Display* display, Drawable src, Drawable dest, GC 
      double sx1, double sy1, double sx2, double sy2, double dx1, double dy1, double lw);
 extern void draw(void);
 extern void clip_xy_to_short(double x, double y, short *sx, short *sy);
+/* clip a line (in screen coordinates) with screen boundaries */
 extern int clip( double*,double*,double*,double*);
+/* clip a line (xa,ya,xb,yb) with rectangle (sx1,sy1,sx2,sy2) */
+extern int lineclip(double *xa,double *ya,double *xb,double *yb, 
+             double sx1,double sy1,double sx2,double sy2);
 extern int textclip(int x1,int y1,int x2,int y2,
            double xa,double ya,double xb,double yb);
 extern double dist_from_rect(double mx,
@@ -1462,8 +1505,8 @@ extern void ptr_hash_init(Ptr_hashtable *hashtable, int size);
 extern void ptr_hash_free(Ptr_hashtable *hashtable);
 extern Ptr_hashentry *ptr_hash_lookup(Ptr_hashtable *hashtable,
        const char *token,  void * const value, int what);
-
-extern char *find_nth(const char *str, const char *sep, int n);
+extern char *trim_chars(const char *str, const char *sep);
+extern char *find_nth(const char *str, const char *sep, const char *quote, int keep_quote, int n);
 extern int isonlydigit(const char *s);
 extern const char *translate(int inst, const char* s);
 extern const char* translate2(Lcc *lcc, int level, char* s);
@@ -1482,7 +1525,7 @@ extern void my_strndup(int id, char **dest, const char *src, size_t n);
 extern size_t my_strdup2(int id, char **dest, const char *src);
 extern char *my_fgets(FILE *fd, size_t *line_len);
 extern size_t my_fgets_skip(FILE *fd);
-extern char *my_strtok_r(char *str, const char *delim, const char *quote, char **saveptr);
+extern char *my_strtok_r(char *str, const char *delim, const char *quote, int keep_quote, char **saveptr);
 extern char **parse_cmd_string(const char *cmd, int *argc);
 extern int my_strncpy(char *d, const char *s, size_t n);
 extern int my_strcasecmp(const char *s1, const char *s2);
@@ -1594,7 +1637,7 @@ extern void change_layer();
 extern void launcher();
 extern void windowid(const char *winpath);
 extern void preview_window(const char *what, const char *tk_win_path, const char *fname);
-extern int new_schematic(const char *what, const char *win_path, const char *fname);
+extern int new_schematic(const char *what, const char *win_path, const char *fname, int dr);
 extern void toggle_fullscreen(const char *topwin);
 extern void toggle_only_probes();
 extern int build_colors(double dim, double dim_bg); /*  reparse the TCL 'colors' list and reassign colors 20171113 */

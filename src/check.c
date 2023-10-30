@@ -21,7 +21,7 @@
  */
 
 #include "xschem.h"
-
+#include <sys/select.h> /* select() */
 static int check_includes(double x1a, double y1a, double x2a, double y2a,
                    double x1b, double y1b, double x2b, double y2b)
 { 
@@ -114,6 +114,18 @@ void update_conn_cues(int layer, int draw_cues, int dr_win)
     filledarc(layer, END, 0.0, 0.0, 0.0, 0.0, 0.0);
     xctx->draw_window = save_draw;
   }
+}
+
+void sleep_ms(int milliseconds)
+{
+  #ifdef __unix__
+  struct timeval tv;
+  tv.tv_sec = milliseconds / 1000;
+  tv.tv_usec = milliseconds % 1000 * 1000;
+  select(0, NULL, NULL, NULL, &tv);
+  #else
+  Sleep(milliseconds);
+  #endif
 }
 
 /* start = 0: initialize timer
@@ -603,7 +615,7 @@ void break_wires_at_pins(int remove)
   } /* for(j=0;j<xctx->lastsel; ++j) if(xctx->sel_array[j].type==ELEMENT) */
 
   if(remove) {
-    if(delete_wires(1, SELECTED4)) {
+    if(delete_wires(SELECTED4)) {
       deleted_wire = 1;
     }
   }
