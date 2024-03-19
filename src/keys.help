@@ -104,8 +104,8 @@ ctrl        'e'         Back to parent schematic
 -           'e'         Descend to schematic
 alt         'e'         Edit selected schematic in a new window
             '\'         Toggle Full screen
-shift       'F'         Flip
-alt         'f'         Flip objects around their anchor points
+shift       'F'         Horizontal flip selected objects
+alt         'f'         Horizontal flip selected objects around their anchor points
 ctrl        'f'         Find/select by substring or regexp
 -           'f'         Full zoom
 shift+ctrl  'F'         Zoom full selected elements
@@ -142,7 +142,7 @@ ctrl        'o'         Load schematic
 ctrl        'm'         Move selected objects, stretching wires attached to them
 Alt         'm'         Move selected objects, insert wires when separating touching instance pins/wires
 shift       'M'         Move selected objects, insert wires when separating touching instance pins/wires
-                        Stretch wires that land on selected instance pins.
+ctrl+shift  'M'         Move selected objects, combine Shift-M and Ctrl-m
 shift       'N'         Top level only netlist
 -           'n'         Hierarchical Netlist
 ctrl        'n'         Clear schematic
@@ -168,18 +168,22 @@ ctrl        's'         Save schematic
 alt         's'         Reload current schematic from disk
 ctrl+alt    's'         Save-as symbol
 -           't'         Place text
+shift       'T'         Toggle *_ignore flag on selected instances
 alt         'u'         Align to current grid selected objects
 shift       'U'         Redo
 -           'u'         Undo
 -           'v'         Constrained vertical move/copy of objects
+shift       'V'         Vertical flip selected objects
+alt         'v'         Vertical flip selected objects around their anchor point
 ctrl        'v'         Paste from clipboard
-shift       'V'         Toggle spice/vhdl/verilog netlist 
+ctrl+shift  'V'         Toggle spice/vhdl/verilog netlist 
 -           'w'         Place wire
 ctrl        'w'         close current schematic
 shift       'W'         Place wire, snapping to closest pin or net endpoint
 ctrl        'x'         Cut into clipboard
 -           'x'         New cad session
 shift       'X'         Highlight discrepancies between object ports and attached nets
+alt         'x'         Toggle draw crosshair at mouse position
 -           'y'         Toggle stretching wires
 -           'z'         Zoom box
 shift       'Z'         Zoom in

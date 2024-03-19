@@ -192,10 +192,14 @@ type=nmos
   <li><kbd>spice_primitive</kbd></li>
   <li><kbd>vhdl_primitive</kbd></li>
   <li><kbd>verilog_primitive</kbd></li>
-  <p> same as above <kbd>_stop</kbd> attributes, but in this case the schematic subcircuit is completely ignored,
+  <p> Same as above <kbd>_stop</kbd> attributes, but in this case the schematic subcircuit is completely ignored,
    only the 'format' string is dumped to netlist. No component/entity is generated in vhdl netlist, 
    no module declaration in verilog, no .subckt in spice, no schematic global attributes are exported to netlist.</p>
 
+  <li><kbd>default_schematic</kbd></li>
+  <p> If set to <kbd>ignore</kbd> xschem will not descend into the symbol associated schematic and will
+   not complain if this schematic does not exists. To descend into a schematic instances must specify a 
+   <kbd>schematic</kbd> attribute, otherwise no descendng and expansion occurs.</p>
 
   <li><kbd>spice_sym_def</kbd></li>
   <li><kbd>verilog_sym_def</kbd></li>
@@ -206,6 +210,11 @@ type=nmos
   <pre class="code">
     verilog_sym_def="tcleval(`include \"[abs_sym_path verilog_include_file.v]\")"
   </pre>
+  </p>
+  <p class="important">
+   For spice netlists if <kbd>@pinlist</kbd> is used in format string and <kbd>spice_sym_def</kbd> attribute 
+   is defined the port order will be derived from the subcircuit
+   referenced by the <kbd>spice_sym_def</kbd> attribute.
   </p>
   <p>
    In this example a <kbd>verilog_include_file.v</kbd> is included using the verilog <kbd>`include</kbd> directive.
@@ -358,12 +367,21 @@ m5 net1 b net2 VSSPIN nlv w=wn l=ln geomod=0 m=1
   </p>
   <p>
   You may assign the following attributes to an instance: <kbd>name=X1 VPWR=VCC VGND=GND subckt=NOR2_1</kbd>
-   and you want to have VCC and GND connections to the symbol in the Verilog netlist but do not want
-   any of these attributes to be
-   passed as symbol parameters. In this case you set: <kbd>verilog_extra="VPWR VGND"</kbd> and
-   <kbd>extra="VPWR VGND subckt"</kbd> since <kbd>subckt</kbd> is probably a spice attribute and you don't
-   want it in verilog.
+  and you want to have VCC and GND connections to the symbol in the Verilog netlist but do not want
+  any of these attributes to be
+  passed as symbol parameters. In this case you set: <kbd>verilog_extra="VPWR VGND"</kbd> and
+  <kbd>extra="VPWR VGND subckt"</kbd> since <kbd>subckt</kbd> is probably a spice attribute and you don't
+  want it in verilog.
   </p>
+
+  <li><kbd>verilog_extra_dir</kbd></li>
+  <p>
+  This attribute allows to define the pin directions of <kbd>verilog_extra</kbd> symbol ports.
+  If unspecified the default is
+  <kbd>inout</kbd>. Allowed values are <kbd>input</kbd>, <kbd>output</kbd>, <kbd>inout</kbd>.<br>
+  Example:  <kbd>verilog_extra_dir="VPWR=input VGND=input"</kbd>
+  </p>
+
   <li><kbd>verilogprefix</kbd></li>
   <p>
   If this attribute is defined in symbol it will be used as a prefix to the symbol name and subcircuit

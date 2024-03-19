@@ -96,6 +96,7 @@ int global_verilog_netlist(int global)  /* netlister driver */
  const char *fmt_attr = NULL;
  Str_hashtable subckt_table = {NULL, 0};
  int lvs_ignore = tclgetboolvar("lvs_ignore");
+ int save_prev_mod = xctx->prev_set_modify;
 
  split_f = tclgetboolvar("split_files");
  xctx->push_undo();
@@ -148,7 +149,7 @@ int global_verilog_netlist(int global)  /* netlister driver */
  fprintf(fd,"module %s (\n", get_cell( xctx->sch[xctx->currsch], 0) );
  /* flush data structures (remove unused symbols) */
  unselect_all(1);
- remove_symbols();  /* removed 25122002, readded 04112003 */
+ if(!tclgetboolvar("keep_symbols")) remove_symbols();
  /* reload data without popping undo stack, this populates embedded symbols if any */
  xctx->pop_undo(2, 0);
  /* link_symbols_to_instances(-1); */ /* done in xctx->pop_undo() */
@@ -315,7 +316,8 @@ int global_verilog_netlist(int global)  /* netlister driver */
    char *current_dirname_save = NULL;
 
    unselect_all(1);
-   remove_symbols(); /* 20161205 ensure all unused symbols purged before descending hierarchy */
+   /* ensure all unused symbols purged before descending hierarchy */
+   if(!tclgetboolvar("keep_symbols")) remove_symbols();
    /* reload data without popping undo stack, this populates embedded symbols if any */
    xctx->pop_undo(2, 0);
    /* link_symbols_to_instances(-1); */ /* done in xctx->pop_undo() */
@@ -342,7 +344,10 @@ int global_verilog_netlist(int global)  /* netlister driver */
       my_strdup(_ALLOC_ID_, &subckt_name, get_cell(xctx->sym[i].name, 0));
       if (str_hash_lookup(&subckt_table, subckt_name, "", XLOOKUP)==NULL)
       {
-        str_hash_lookup(&subckt_table, subckt_name, "", XINSERT);
+        /* do not insert symbols with default_schematic attribute set to ignore in hash since these symbols
+         * will not be processed by *_block_netlist() */
+        if(strcmp(get_tok_value(xctx->sym[i].prop_ptr, "default_schematic", 0), "ignore"))
+          str_hash_lookup(&subckt_table, subckt_name, "", XINSERT);
         if( split_f && strboolcmp(get_tok_value(xctx->sym[i].prop_ptr,"vhdl_netlist",0),"true")==0 )
           err |= vhdl_block_netlist(fd, i);
         else if(split_f && strboolcmp(get_tok_value(xctx->sym[i].prop_ptr,"spice_netlist",0),"true")==0 )
@@ -360,7 +365,9 @@ int global_verilog_netlist(int global)  /* netlister driver */
    my_free(_ALLOC_ID_, &xctx->sch[xctx->currsch]);
    xctx->currsch--;
    unselect_all(1);
+   if(!tclgetboolvar("keep_symbols")) remove_symbols();
    xctx->pop_undo(4, 0);
+   xctx->prev_set_modify = save_prev_mod;
    if(web_url) {
      my_strncpy(xctx->current_dirname, current_dirname_save, S(xctx->current_dirname));
    } else {
@@ -424,14 +431,20 @@ int verilog_block_netlist(FILE *fd, int i)
   char *extra_ptr, *saveptr1, *extra_token, *extra = NULL, *extra2=NULL;
   char *name = NULL;
   int lvs_ignore = tclgetboolvar("lvs_ignore");
+  const char *default_schematic;
 
-  my_strdup(_ALLOC_ID_, &name, tcl_hook2(xctx->sym[i].name));
   split_f = tclgetboolvar("split_files");
   if(!strboolcmp( get_tok_value(xctx->sym[i].prop_ptr,"verilog_stop",0),"true") )
      verilog_stop=1;
   else
      verilog_stop=0;
-  get_sch_from_sym(filename, xctx->sym + i, -1);
+  get_sch_from_sym(filename, xctx->sym + i, -1, 0);
+
+  default_schematic = get_tok_value(xctx->sym[i].prop_ptr, "default_schematic", 0);
+  if(!strcmp(default_schematic, "ignore")) {
+    return err;
+  }
+  my_strdup(_ALLOC_ID_, &name, tcl_hook2(xctx->sym[i].name));
 
   if(split_f) {
     my_snprintf(netl_filename, S(netl_filename), "%s/.%s_%d",
@@ -548,13 +561,22 @@ int verilog_block_netlist(FILE *fd, int i)
     }
     int_hash_free(&table);
     if(extra2) {
+      char *verilog_extra_dir = NULL;
+      const char *dir;
+      my_strdup2(_ALLOC_ID_, &verilog_extra_dir, get_tok_value(xctx->sym[i].prop_ptr, "verilog_extra_dir", 0));
       saveptr1 = NULL;
       for(extra_ptr = extra2; ; extra_ptr=NULL) {
         extra_token=my_strtok_r(extra_ptr, " ", "", 0, &saveptr1);
         if(!extra_token) break;
-        fprintf(fd, "  inout %s ;\n", extra_token);
+        dir = get_tok_value(verilog_extra_dir, extra_token, 0);
+        if(dir[0]) {
+          fprintf(fd, "  %s %s ;\n", dir, extra_token);
+        } else {
+          fprintf(fd, "  inout %s ;\n", extra_token);
+        }
         fprintf(fd, "  wire %s ;\n", extra_token);
       }
+      my_free(_ALLOC_ID_, &verilog_extra_dir);
     }
     dbg(1, "verilog_block_netlist():       netlisting %s\n", get_cell( xctx->sch[xctx->currsch], 0));
     err |= verilog_netlist(fd, verilog_stop);

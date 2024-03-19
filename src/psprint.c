@@ -77,90 +77,90 @@ static Ps_color *ps_colors;
 static char ps_font_name[80] = "Helvetica"; /* Courier Times Helvetica Symbol */
 static char ps_font_family[80] = "Helvetica"; /* Courier Times Helvetica Symbol */
 
-void ps_drawPNG(xRect* r, double x1, double y1, double x2, double y2, int rot, int flip)
+int ps_embedded_image(xRect* r, double x1, double y1, double x2, double y2, int rot, int flip)
 {
   #if defined(HAS_LIBJPEG) && HAS_CAIRO==1
-  int i;
-  size_t data_size = 0;
-  png_to_byte_closure_t closure = {NULL, 0, 0};
-  char* filter = NULL;
-  int png_size_x, png_size_y;
-  unsigned char *png_data = NULL, BG_r, BG_g, BG_b;
+  int i, jpg;
+  int size_x, size_y;
+  unsigned char *ptr = NULL;
   int invertImage;
-  /* static char str[PATH_MAX];
-   * FILE* fp;
-   */
   unsigned char* ascii85EncodedJpeg;
-  char* image_data64_ptr = NULL;
-  cairo_surface_t* surface = NULL;
+  const char* attr;
+  cairo_surface_t *surface = NULL, *orig_sfc = NULL;
+  xEmb_image *emb_ptr;
   unsigned char* jpgData = NULL;
   size_t fileSize = 0;
-  int quality=100;
+  int quality=40;
   const char *quality_attr;
-  size_t image_data_len;
-  size_t oLength;
+  size_t oLength, attr_len;
+  cairo_t *ct;
 
+  invertImage = !strboolcmp(get_tok_value(r->prop_ptr, "InvertOnExport", 0), "true");
+  if(!invertImage)
+    invertImage = !strboolcmp(get_tok_value(r->prop_ptr, "ps_invert", 0), "true");
   quality_attr = get_tok_value(r->prop_ptr, "jpeg_quality", 0);
   if(quality_attr[0]) quality = atoi(quality_attr);
   else {
     quality_attr = get_tok_value(r->prop_ptr, "jpg_quality", 0);
     if(quality_attr[0]) quality = atoi(quality_attr);
   }
-  my_strdup(_ALLOC_ID_, &filter, get_tok_value(r->prop_ptr, "filter", 0));
-  image_data_len = my_strdup2(_ALLOC_ID_, &image_data64_ptr, get_tok_value(r->prop_ptr, "image_data", 0));
-
-  if (filter) {
-    size_t filtersize = 0;
-    char* filterdata = NULL;
-    closure.buffer = NULL;
-    filterdata = (char*)base64_decode(image_data64_ptr, image_data_len, &filtersize);
-    filter_data(filterdata, filtersize, (char**)&closure.buffer, &data_size, filter);
-    my_free(_ALLOC_ID_, &filterdata);
+  attr = get_tok_value(r->prop_ptr, "image_data", 0);
+  attr_len = strlen(attr);
+  if(attr_len > 5) {
+    if(!strncmp(attr, "/9j/", 4)) jpg = 1;
+    else if(!strncmp(attr, "iVBOR", 5)) jpg = 0;
+    else jpg = -1; /* some invalid data */
+  } else {
+    jpg = -1;
   }
-  else {
-    closure.buffer = base64_decode(image_data64_ptr, image_data_len, &data_size);
+  emb_ptr = r->extraptr;
+  if(jpg == -1 || !(emb_ptr && emb_ptr->image)) {
+    return 0;
   }
-  my_free(_ALLOC_ID_, &filter);
-  my_free(_ALLOC_ID_, &image_data64_ptr);
-  closure.pos = 0;
-  closure.size = data_size; /* should not be necessary */
-  surface = cairo_image_surface_create_from_png_stream(png_reader, &closure);
+  orig_sfc = emb_ptr->image;
+  cairo_surface_flush(orig_sfc);
+  /* create a copy of image surface with no alpha */
+  size_x = cairo_image_surface_get_width(orig_sfc);
+  size_y = cairo_image_surface_get_height(orig_sfc);
+  surface = cairo_surface_create_similar_image(orig_sfc, CAIRO_FORMAT_RGB24, size_x, size_y);
+  ct = cairo_create(surface);
+  cairo_set_source_surface(ct, orig_sfc, 0, 0);
+  cairo_set_operator(ct, CAIRO_OPERATOR_SOURCE);
+  cairo_paint(ct);
+  cairo_destroy(ct);
 
-  png_size_x = cairo_image_surface_get_width(surface);
-  png_size_y = cairo_image_surface_get_height(surface);
+  ptr = cairo_image_surface_get_data(surface);
 
-  cairo_surface_flush(surface);
-  my_free(_ALLOC_ID_, &closure.buffer);
-  png_data = cairo_image_surface_get_data(surface);
-
-  invertImage = !strboolcmp(get_tok_value(r->prop_ptr, "InvertOnExport", 0), "true");
-  if(!invertImage)
-    invertImage = !strboolcmp(get_tok_value(r->prop_ptr, "ps_invert", 0), "true");
-  BG_r = 0xFF; BG_g = 0xFF; BG_b = 0xFF;
-  for (i = 0; i < (png_size_x * png_size_y * 4); i += 4)
+  for (i = 0; i < (size_x * size_y * 4); i += 4)
   {
-    unsigned char png_r = png_data[i + 0];
-    unsigned char png_g = png_data[i + 1];
-    unsigned char png_b = png_data[i + 2];
-    unsigned char png_a = png_data[i + 3];
-    double ainv=((double)(0xFF - png_a)) / ((double)(0xFF));
-
-    if(invertImage)
-    {
-      png_data[i + 0] = (unsigned char)(0xFF-png_r) + (unsigned char)((double)BG_r * ainv);
-      png_data[i + 1] = (unsigned char)(0xFF-png_g) + (unsigned char)((double)BG_g * ainv);
-      png_data[i + 2] = (unsigned char)(0xFF-png_b) + (unsigned char)((double)BG_b * ainv);
-      png_data[i + 3] = 0xFF;
-    } else
-    {
-      png_data[i + 0] = png_r + (unsigned char)((double)BG_r * ainv);
-      png_data[i + 1] = png_g + (unsigned char)((double)BG_g * ainv);
-      png_data[i + 2] = png_b + (unsigned char)((double)BG_b * ainv);
-      png_data[i + 3] = 0xFF;
+    unsigned char a = ptr[i + 3];
+    unsigned char r = ptr[i + 2];
+    unsigned char g = ptr[i + 1];
+    unsigned char b = ptr[i + 0];
+    /* invert colors */
+    if(invertImage) {
+      r = a - r;
+      g = a - g;
+      b = a - b;
     }
+    /* blend with white, remove alpha */
+    r += (unsigned char)(0xff - a);
+    g += (unsigned char)(0xff - a);
+    b += (unsigned char)(0xff - a);
+    a  = (unsigned char) 0xff;
+    /* write result back */
+    ptr[i + 3] = a;
+    ptr[i + 2] = r;
+    ptr[i + 1] = g;
+    ptr[i + 0] = b;
   }
   cairo_surface_mark_dirty(surface);
-  cairo_image_surface_write_to_jpeg_mem(surface, &jpgData, &fileSize, quality);
+  if(invertImage || jpg == 0) {
+    cairo_image_surface_write_to_jpeg_mem(surface, &jpgData, &fileSize, quality);
+  } else {
+    jpgData = base64_decode(attr, attr_len, &fileSize);
+  }
+  cairo_surface_destroy(surface);
   ascii85EncodedJpeg = ascii85_encode(jpgData, fileSize, &oLength);
   fprintf(fd, "gsave\n");
   fprintf(fd, "save\n");
@@ -173,29 +173,29 @@ void ps_drawPNG(xRect* r, double x1, double y1, double x2, double y2, int rot, i
   fprintf(fd, "%g %g scale\n", (X_TO_PS(x2) - X_TO_PS(x1))*0.97, (Y_TO_PS(y2) - Y_TO_PS(y1))*0.97);
   fprintf(fd, "/DeviceRGB setcolorspace\n");
   fprintf(fd, "{ << /ImageType 1\n");
-  fprintf(fd, "     /Width %g\n", (double)png_size_x);
-  fprintf(fd, "     /Height %g\n", (double)png_size_y);
+  fprintf(fd, "     /Width %g\n", (double)size_x);
+  fprintf(fd, "     /Height %g\n", (double)size_y);
   
   if(!flip)
   {
     if(rot==1) fprintf(fd, "     /ImageMatrix [%g 0 0 %g 0 %g]\n",
-           (double)png_size_y, (double)png_size_x, (double)png_size_y);
+           (double)size_y, (double)size_x, (double)size_y);
     else if(rot==2) fprintf(fd, "     /ImageMatrix [%g 0 0 %g %g %g]\n",
-           (double)png_size_x, (double)png_size_y, (double)png_size_x, (double)png_size_y);
+           (double)size_x, (double)size_y, (double)size_x, (double)size_y);
     else if(rot==3) fprintf(fd, "     /ImageMatrix [%g 0 0 %g %g 0]\n", 
-           (double)png_size_y, (double)png_size_x, (double)png_size_x);
-    else fprintf(fd, "     /ImageMatrix [%g 0 0 %g 0 0]\n", (double)png_size_x, (double)png_size_y); 
+           (double)size_y, (double)size_x, (double)size_x);
+    else fprintf(fd, "     /ImageMatrix [%g 0 0 %g 0 0]\n", (double)size_x, (double)size_y); 
   }
   else
   {
     if(rot==1) fprintf(fd, "     /ImageMatrix [%g 0 0 %g %g %g]\n",
-          -(double)png_size_y, (double)png_size_x, (double)png_size_x, (double)png_size_y);
+          -(double)size_y, (double)size_x, (double)size_x, (double)size_y);
     else if(rot==2) fprintf(fd, "     /ImageMatrix [%g 0 0 %g 0 %g]\n",
-          -(double)png_size_x, (double)png_size_y, (double)png_size_y);
+          -(double)size_x, (double)size_y, (double)size_y);
     else if(rot==3) fprintf(fd, "     /ImageMatrix [%g 0 0 %g 0 0]\n",
-          -(double)png_size_y, (double)png_size_x);
+          -(double)size_y, (double)size_x);
     else fprintf(fd, "     /ImageMatrix [%g 0 0 %g %g 0]\n",
-          -(double)png_size_x, (double)png_size_y, (double)png_size_x); 
+          -(double)size_x, (double)size_y, (double)size_x); 
   }
   fprintf(fd, "     /DataSource Data\n");
   fprintf(fd, "     /BitsPerComponent 8\n");
@@ -223,19 +223,20 @@ void ps_drawPNG(xRect* r, double x1, double y1, double x2, double y2, int rot, i
   fprintf(fd, "~>\n");
   
   fprintf(fd, "grestore\n");
-  cairo_surface_destroy(surface);
   my_free(_ALLOC_ID_, &ascii85EncodedJpeg);
   free(jpgData);
   #endif
+  return 1;
 }
 
 void ps_embedded_graph(xRect* r, double rx1, double ry1, double rx2, double ry2)
 {
   #if defined(HAS_LIBJPEG) && HAS_CAIRO==1
+  Zoom_info zi;
   double  rw, rh, scale;
   cairo_surface_t* png_sfc;
   int save, save_draw_window, save_draw_grid, rwi, rhi;
-  const double max_size = 2000.0;
+  const double max_size = 3000.0;
   int d_c;
   unsigned char* jpgData = NULL;
   size_t fileSize = 0;
@@ -244,7 +245,7 @@ void ps_embedded_graph(xRect* r, double rx1, double ry1, double rx2, double ry2)
    * static char str[PATH_MAX];
    */
   unsigned char *ascii85EncodedJpeg;
-  int quality=100;
+  int quality=40;
   const char *quality_attr;
   size_t oLength;
   int i;
@@ -259,7 +260,7 @@ void ps_embedded_graph(xRect* r, double rx1, double ry1, double rx2, double ry2)
   if (!has_x) return;
   rw = fabs(rx2 - rx1);
   rh = fabs(ry2 - ry1);
-  scale = 2.0;
+  scale = 3.0;
   if (rw > rh && rw > max_size) {
     scale = max_size / rw;
   }
@@ -268,11 +269,18 @@ void ps_embedded_graph(xRect* r, double rx1, double ry1, double rx2, double ry2)
   }
   rwi = (int)(rw * scale + 1.0);
   rhi = (int)(rh * scale + 1.0);
-  save_restore_zoom(1);
+  dbg(1, "graph size: %dx%d\n", rwi, rhi);
+  save_restore_zoom(1, &zi);
   set_viewport_size(rwi, rhi, xctx->lw);
-  zoom_box(rx1 - xctx->lw, ry1 - xctx->lw, rx2 + xctx->lw, ry2 + xctx->lw, 1.0);
+
+  /* zoom_box(rx1 - xctx->lw, ry1 - xctx->lw, rx2 + xctx->lw, ry2 + xctx->lw, 1.0); */
+
+  xctx->xorigin = -rx1;
+  xctx->yorigin = -ry1;
+  xctx->zoom=(rx2-rx1)/(rwi - 1);
+  xctx->mooz = 1 / xctx->zoom;
+
   resetwin(1, 1, 1, rwi, rhi);
-  change_linewidth(xctx->lw * 4.0);
   dbg(1, "lw=%g\n", xctx->lw);
   save_draw_grid = tclgetboolvar("draw_grid");
   tclsetvar("draw_grid", "0");
@@ -285,9 +293,10 @@ void ps_embedded_graph(xRect* r, double rx1, double ry1, double rx2, double ry2)
   tclsetboolvar("dark_colorscheme", 0);
   build_colors(0, 0);
   draw();
+  dbg(1, "width=%d, rwi=%d height=%d rhi=%d\n", xctx->xrect[0].width, rwi, xctx->xrect[0].height, rhi);
   #ifdef __unix__
   png_sfc = cairo_xlib_surface_create(display, xctx->save_pixmap, visual,
-      xctx->xrect[0].width, xctx->xrect[0].height);
+     xctx->xrect[0].width, xctx->xrect[0].height);
   #else
   /* pixmap doesn't work on windows
        Copy from cairo_save_sfc and use cairo
@@ -313,8 +322,8 @@ void ps_embedded_graph(xRect* r, double rx1, double ry1, double rx2, double ry2)
   cairo_surface_destroy(png_sfc);
   xctx->draw_pixmap = 1;
   tclsetboolvar("draw_grid", save_draw_grid);
-  save_restore_zoom(0);
-  resetwin(1, 1, 1, 0, 0);
+  save_restore_zoom(0, &zi);
+  resetwin(1, 1, 1, xctx->xrect[0].width, xctx->xrect[0].height);
   change_linewidth(xctx->lw);
   tclsetboolvar("dark_colorscheme", d_c);
   build_colors(0, 0);
@@ -413,14 +422,63 @@ static void ps_xfillrectange(int layer, double x1, double y1, double x2,
  /*fprintf(fd,"stroke\n"); */
 }
 
+static void ps_drawbezier(double *x, double *y, int points)
+{
+  const double bez_steps = 1.0/32.0; /* divide the t = [0,1] interval into 32 steps */
+  int b, i;
+  double t;
+  double xp, yp;
+  double x0, x1, x2, y0, y1, y2;
+
+  i = 0;
+  for(b = 0; b < points - 2; b++) {
+    if(points == 3) { /* 3 points: only one bezier */
+      x0 = x[0];
+      y0 = y[0];
+      x1 = x[1];
+      y1 = y[1];
+      x2 = x[2];
+      y2 = y[2];
+    } else if(b == points - 3) { /* last bezier */
+      x0 = (x[points - 3] + x[points - 2]) / 2.0;
+      y0 = (y[points - 3] + y[points - 2]) / 2.0;
+      x1 =  x[points - 2];
+      y1 =  y[points - 2];
+      x2 =  x[points - 1];
+      y2 =  y[points - 1];
+    } else if(b == 0) { /* first bezier */
+      x0 =  x[0];
+      y0 =  y[0];
+      x1 =  x[1];
+      y1 =  y[1];
+      x2 = (x[1] + x[2]) / 2.0;
+      y2 = (y[1] + y[2]) / 2.0;
+    } else { /* beziers in the middle */
+      x0 = (x[b] + x[b + 1]) / 2.0;
+      y0 = (y[b] + y[b + 1]) / 2.0;
+      x1 =  x[b + 1];
+      y1 =  y[b + 1];
+      x2 = (x[b + 1] + x[b + 2]) / 2.0;
+      y2 = (y[b + 1] + y[b + 2]) / 2.0;
+    }
+    for(t = 0; t <= 1.0; t += bez_steps) {
+      xp = (1 - t) * (1 - t) * x0 + 2 * (1 - t) * t * x1 + t * t * x2;
+      yp = (1 - t) * (1 - t) * y0 + 2 * (1 - t) * t * y1 + t * t * y2;
+      if(i==0) fprintf(fd, "NP\n%g %g MT\n",  X_TO_PS(xp), Y_TO_PS(yp));
+      else fprintf(fd, "%g %g LT\n",  X_TO_PS(xp), Y_TO_PS(yp));
+      i++;
+    }
+  }
+}
+
 /* Convex Nonconvex Complex */
 #define Polygontype Nonconvex
-static void ps_drawpolygon(int c, int what, double *x, double *y, int points, int poly_fill, int dash)
+static void ps_drawpolygon(int c, int what, double *x, double *y, int points, int poly_fill, int dash, int flags)
 {
   double x1,y1,x2,y2;
   double xx, yy;
   double psdash;
-  int i;
+  int i, bezier;
   polygon_bbox(x, y, points, &x1,&y1,&x2,&y2);
   x1=X_TO_PS(x1);
   y1=Y_TO_PS(y1);
@@ -429,24 +487,26 @@ static void ps_drawpolygon(int c, int what, double *x, double *y, int points, in
   if( !rectclip(xctx->areax1,xctx->areay1,xctx->areax2,xctx->areay2,&x1,&y1,&x2,&y2) ) {
     return;
   }
-
   psdash = dash / xctx->zoom;
   if(dash) {
     fprintf(fd, "[%g %g] 0 setdash\n", psdash, psdash);
   }
-  for(i=0;i<points; ++i) {
-    xx = X_TO_PS(x[i]);
-    yy = Y_TO_PS(y[i]);
-    if(i==0) fprintf(fd, "NP\n%g %g MT\n", xx, yy);
-    else fprintf(fd, "%g %g LT\n", xx, yy);
+  bezier = flags && (points > 2);
+  if(bezier) {
+    ps_drawbezier(x, y, points);
+  } else {
+    for(i=0;i<points; ++i) {
+      xx = X_TO_PS(x[i]);
+      yy = Y_TO_PS(y[i]);
+      if(i==0) fprintf(fd, "NP\n%g %g MT\n", xx, yy);
+      else fprintf(fd, "%g %g LT\n", xx, yy);
+    }
   }
   if(xctx->fill_pattern && xctx->fill_type[c] && poly_fill) {
     fprintf(fd, "GS C F GR S\n");
   } else {
     fprintf(fd, "S\n");
   }
-
-
   if(dash) {
     fprintf(fd, "[] 0 setdash\n");
   }
@@ -619,17 +679,8 @@ static void ps_draw_string(int layer, const char *str, short rot, short flip, in
   ascent =  size*xctx->mooz * 0.808; /* was 0.908 */
   descent = size*xctx->mooz * 0.219; /* was 0.219 */
 
-  #if HAS_CAIRO==1
-  if(!has_x) 
-    text_bbox_nocairo(str, xscale, yscale, rot, flip, hcenter, vcenter,
-            x,y, &textx1,&texty1,&textx2,&texty2, &no_of_lines, &longest_line);
-  else
-    text_bbox(str, xscale, yscale, rot, flip, hcenter, vcenter,
-            x,y, &textx1,&texty1,&textx2,&texty2, &no_of_lines, &longest_line);
-  #else
-    text_bbox(str, xscale, yscale, rot, flip, hcenter, vcenter,
-            x,y, &textx1,&texty1,&textx2,&texty2, &no_of_lines, &longest_line);
-  #endif
+  text_bbox(str, xscale, yscale, rot, flip, hcenter, vcenter,
+          x,y, &textx1,&texty1,&textx2,&texty2, &no_of_lines, &longest_line);
   
   if(!textclip(xctx->areax1,xctx->areay1,xctx->areax2,
                xctx->areay2,textx1,texty1,textx2,texty2)) {
@@ -773,7 +824,7 @@ static void ps_draw_symbol(int n,int layer, int what, short tmp_flip, short rot,
  xRect rect;
  xText text;
  xArc arc;
- xPoly polygon;
+ xPoly *polygon;
  xSymbol *symptr;
  char *textfont;
 
@@ -803,7 +854,7 @@ static void ps_draw_symbol(int n,int layer, int what, short tmp_flip, short rot,
     if(what != 7) {
       char fname[PATH_MAX];
       if(!strcmp(xctx->sym[xctx->inst[n].ptr].type, "subcircuit")) {
-        get_sch_from_sym(fname, xctx->inst[n].ptr+ xctx->sym, n);
+        get_sch_from_sym(fname, xctx->inst[n].ptr+ xctx->sym, n, 0);
         fprintf(fd, 
           "[ "
           "/Rect [ %g %g %g %g ] "
@@ -838,17 +889,18 @@ static void ps_draw_symbol(int n,int layer, int what, short tmp_flip, short rot,
   }
   for(j=0;j< (xctx->inst[n].ptr+ xctx->sym)->polygons[layer]; ++j)
   {
-    polygon = ((xctx->inst[n].ptr+ xctx->sym)->poly[layer])[j];
+    polygon = &((xctx->inst[n].ptr+ xctx->sym)->poly[layer])[j];
     {   /* scope block so we declare some auxiliary arrays for coord transforms. 20171115 */
-      int k;
-      double *x = my_malloc(_ALLOC_ID_, sizeof(double) * polygon.points);
-      double *y = my_malloc(_ALLOC_ID_, sizeof(double) * polygon.points);
-      for(k=0;k<polygon.points; ++k) {
-        ROTATION(rot, flip, 0.0,0.0,polygon.x[k],polygon.y[k],x[k],y[k]);
+      int k, bezier;
+      double *x = my_malloc(_ALLOC_ID_, sizeof(double) * polygon->points);
+      double *y = my_malloc(_ALLOC_ID_, sizeof(double) * polygon->points);
+      for(k=0;k<polygon->points; ++k) {
+        ROTATION(rot, flip, 0.0,0.0,polygon->x[k],polygon->y[k],x[k],y[k]);
         x[k]+= x0;
         y[k] += y0;
       }
-      ps_drawpolygon(layer, NOW, x, y, polygon.points, polygon.fill, polygon.dash);
+      bezier = !strboolcmp(get_tok_value(polygon->prop_ptr, "bezier", 0), "true");
+      ps_drawpolygon(layer, NOW, x, y, polygon->points, polygon->fill, polygon->dash, bezier);
       my_free(_ALLOC_ID_, &x);
       my_free(_ALLOC_ID_, &y);
     }
@@ -877,7 +929,7 @@ static void ps_draw_symbol(int n,int layer, int what, short tmp_flip, short rot,
      RECTORDER(x1,y1,x2,y2);
      if (rect.flags & 1024) /* image */
      {
-       ps_drawPNG(&rect, x0 + x1, y0 + y1, x0 + x2, y0 + y2, rot, flip);
+       ps_embedded_image(&rect, x0 + x1, y0 + y1, x0 + x2, y0 + y2, rot, flip);
        continue;
      }
      ps_filledrect(layer, x0+x1, y0+y1, x0+x2, y0+y2, rect.dash, rect.fill);
@@ -893,9 +945,12 @@ static void ps_draw_symbol(int n,int layer, int what, short tmp_flip, short rot,
     const char *txtptr;
     for(j=0;j< (xctx->inst[n].ptr+ xctx->sym)->texts; ++j)
     {
+      double xscale, yscale;
+        
+      get_sym_text_size(n, j, &xscale, &yscale);
       text = (xctx->inst[n].ptr+ xctx->sym)->text[j];
-      /* if(text.xscale*FONTWIDTH* xctx->mooz<1) continue; */
-      if(!xctx->show_hidden_texts && (text.flags & HIDE_TEXT)) continue;
+      /* if(xscale*FONTWIDTH* xctx->mooz<1) continue; */
+      if(!xctx->show_hidden_texts && (text.flags & (HIDE_TEXT | HIDE_TEXT_INSTANTIATED))) continue;
       if( hide && text.txt_ptr && strcmp(text.txt_ptr, "@symname") && strcmp(text.txt_ptr, "@name") ) continue;
       txtptr= translate(n, text.txt_ptr);
       ROTATION(rot, flip, 0.0,0.0,text.x0,text.y0,x1,y1);
@@ -929,12 +984,12 @@ static void ps_draw_symbol(int n,int layer, int what, short tmp_flip, short rot,
           ps_draw_string(textlayer, txtptr,
             (text.rot + ( (flip && (text.rot & 1) ) ? rot+2 : rot) ) & 0x3,
             flip^text.flip, text.hcenter, text.vcenter,
-            x0+x1, y0+y1, text.xscale, text.yscale);
+            x0+x1, y0+y1, xscale, yscale);
         } else {
           old_ps_draw_string(textlayer, txtptr,
             (text.rot + ( (flip && (text.rot & 1) ) ? rot+2 : rot) ) & 0x3,
             flip^text.flip, text.hcenter, text.vcenter,
-            x0+x1, y0+y1, text.xscale, text.yscale);
+            x0+x1, y0+y1, xscale, yscale);
         }
       }
     }
@@ -960,8 +1015,12 @@ static void fill_ps_colors()
  }
 
 }
-
-void create_ps(char **psfile, int what, int fullzoom)
+/* fullzoom:
+ *   0: Print area displayed in window
+ *   1: Do a full zoom before generating ps/pdf
+ *   2: set paper size to bounding box instead of a4/letter
+ */
+void create_ps(char **psfile, int what, int fullzoom, int eps)
 {
   double dx, dy, scale, scaley;
   int landscape=1;
@@ -974,11 +1033,7 @@ void create_ps(char **psfile, int what, int fullzoom)
   int c,i, textlayer;
   int old_grid;
   const char *textfont;
-  static double saveadjustedxorigin,saveadjustedyorigin, saveadjustedzoom, saveadjustedmooz, saveadjustedlw;
-  static double savexorigin, saveyorigin, savezoom, savemooz, savelw;
-  static int savex1, savey1, savex2, savey2, savew, saveh;
-  static int saveadjustedx1, saveadjustedy1, saveadjustedx2, saveadjustedy2, saveadjustedw, saveadjustedh;
-  static XRectangle savexrect, saveadjustedxrect;
+  static Zoom_info zi;
 
   dbg(1, "create_ps(): what = %d, fullzoom=%d\n", what, fullzoom);
   if(tcleval("info exists ps_paper_size")[0] == '1') {
@@ -1019,7 +1074,7 @@ void create_ps(char **psfile, int what, int fullzoom)
   dy=boundbox.y2-boundbox.y1;
 
   /* xschem drawing bbox decides if portrait or landscape */
-  if(fullzoom) {
+  if(fullzoom == 1) {
     calc_drawing_bbox(&boundbox, 0);
     dx=boundbox.x2-boundbox.x1;
     dy=boundbox.y2-boundbox.y1;
@@ -1032,20 +1087,9 @@ void create_ps(char **psfile, int what, int fullzoom)
   dbg(1, "dx=%g, dy=%g\n", dx, dy);
 
 
-  if(fullzoom) {
+  if(fullzoom == 1) {
     /* save size and zoom factor */
-    savexorigin = xctx->xorigin;
-    saveyorigin = xctx->yorigin;
-    savezoom = xctx->zoom;
-    savemooz = xctx->mooz;
-    savelw = xctx->lw;
-    savex1 = xctx->areax1;
-    savex2 = xctx->areax2;
-    savey1 = xctx->areay1;
-    savey2 = xctx->areay2;
-    savew = xctx->areaw;
-    saveh = xctx->areah;
-    savexrect = xctx->xrect[0];
+    save_restore_zoom(1, &zi);
     /* this zoom only done to reset lw */
     zoom_full(0, 0, 1 + 2 * tclgetboolvar("zoom_full_center"), 0.97);
     /* adjust aspect ratio to paper size */
@@ -1053,7 +1097,6 @@ void create_ps(char **psfile, int what, int fullzoom)
       xctx->xrect[0].height = (short unsigned int) (xctx->xrect[0].width * pagey / pagex);
     else
       xctx->xrect[0].width = (short unsigned int) (xctx->xrect[0].height * pagey / pagex);
-    saveadjustedxrect = xctx->xrect[0];
     dbg(1, "xrect.width=%d, xrect.height=%d\n", xctx->xrect[0].width, xctx->xrect[0].height);
     xctx->areax1 = -2*INT_WIDTH(xctx->lw);
     xctx->areay1 = -2*INT_WIDTH(xctx->lw);
@@ -1070,17 +1113,6 @@ void create_ps(char **psfile, int what, int fullzoom)
     boundbox.y2 = xctx->areay2;
     dx=boundbox.x2-boundbox.x1;
     dy=boundbox.y2-boundbox.y1;
-    saveadjustedlw = xctx->lw;
-    saveadjustedx1 = xctx->areax1;
-    saveadjustedy1 = xctx->areay1;
-    saveadjustedx2 = xctx->areax2;
-    saveadjustedy2 = xctx->areay2;
-    saveadjustedw = xctx->areaw;
-    saveadjustedh = xctx->areah;
-    saveadjustedzoom = xctx->zoom;
-    saveadjustedmooz = xctx->mooz;
-    saveadjustedxorigin = xctx->xorigin;
-    saveadjustedyorigin = xctx->yorigin;
   }
 
   if(!landscape) { /* decide paper orientation for best schematic fit */
@@ -1089,17 +1121,50 @@ void create_ps(char **psfile, int what, int fullzoom)
     pagex = pagey;
     pagey = tmp;
   }
-
+  if(fullzoom == 2) { /* set media size to bbox */
+    double sc;
+    my_strncpy(papername, "bbox", S(papername));
+    pagex = xctx->xrect[0].width;
+    pagey = xctx->xrect[0].height;
+    if(pagex > pagey) {
+      sc = 842. / pagex;
+      pagex = my_round(pagex * sc);
+      pagey = my_round(pagey * sc);
+    } else {
+      sc = 842. / pagey;
+      pagex = my_round(pagex * sc);
+      pagey = my_round(pagey * sc);
+    }
+    margin = 0.0;
+  }
+    
   if(what & 1) {/* prolog */
     dbg(1, "ps_draw(): bbox: x1=%g y1=%g x2=%g y2=%g\n", boundbox.x1, boundbox.y1, boundbox.x2, boundbox.y2);
-    fprintf(fd, "%%!PS-Adobe-3.0\n");
+    if(!eps) {
+      fprintf(fd, "%%!PS-Adobe-3.0\n");
+    } else {
+      fprintf(fd, "%%!PS-Adobe-2.0 EPSF-2.0\n");
+      fprintf(fd, "%%%%BoundingBox: 0 0 %g %g\n",  pagex, pagey);
+    }
     /* fprintf(fd, "%%%%DocumentMedia: %s %g %g 80 () ()\n", landscape ? "a4land" : "a4", pagex, pagey); */
     fprintf(fd, "%%%%DocumentMedia: %s %g %g 80 () ()\n", papername, pagex, pagey);
     fprintf(fd, "%%%%PageOrientation: %s\n", landscape ? "Landscape" : "Portrait");
     fprintf(fd, "%%%%Title: xschem plot\n");
     fprintf(fd, "%%%%Creator: xschem\n");
-    fprintf(fd, "%%%%Pages: (atend)\n");
+    if(!eps) fprintf(fd, "%%%%Pages: (atend)\n");
     fprintf(fd, "%%%%EndComments\n");
+
+    if(eps) {
+      fprintf(fd, "%%%%BeginProlog\n");
+      fprintf(fd, "save\n");
+      fprintf(fd, "countdictstack\n");
+      fprintf(fd, "mark\n");
+      fprintf(fd, "newpath\n");
+      fprintf(fd, "/showpage {} def\n");
+      fprintf(fd, "/setpagedevice {pop} def\n");
+      fprintf(fd, "%%%%EndProlog\n");
+      fprintf(fd, "%%%%Page 1 1\n");
+    }
     fprintf(fd, "%%%%BeginProlog\n\n");
   
     for(i = 0; i < sizeof(utf8_enc)/sizeof(char *); ++i) {
@@ -1147,14 +1212,18 @@ void create_ps(char **psfile, int what, int fullzoom)
 
   if(what & 2) { /* page */
     ++numpages;
-    fprintf(fd, "%%%%BeginSetup\n");
-    fprintf(fd, "<< /PageSize [%g %g] /Orientation 0 >> setpagedevice\n", pagex, pagey);
-    fprintf(fd, "%%%%Page: %d %d\n\n", numpages, numpages);
-    fprintf(fd, "%%%%BeginPageSetup\n");
-    fprintf(fd, "%%%%EndPageSetup\n");
-  
+
+    if(!eps) {
+      fprintf(fd, "%%%%BeginSetup\n");
+      fprintf(fd, "<< /PageSize [%g %g] /Orientation 0 >> setpagedevice\n", pagex, pagey);
+      fprintf(fd, "%%%%EndSetup\n");
+      fprintf(fd, "%%%%Page: %d %d\n\n", numpages, numpages);
+      fprintf(fd, "%%%%BeginPageSetup\n");
+      fprintf(fd, "%%%%EndPageSetup\n");
+    }
     /* add small page title */
-    fprintf(fd, "/Helvetica FF 10 SCF SF NP 20 %g MT (%s) show\n", pagey - 20, xctx->current_name);
+    if(tclgetboolvar("ps_page_title") && fullzoom != 2)
+       fprintf(fd, "/Helvetica FF 10 SCF SF NP 20 %g MT (%s) show\n", pagey - 20, xctx->current_name);
 
     /* Add anchor for pdfmarks */
     fprintf(fd,
@@ -1224,34 +1293,12 @@ void create_ps(char **psfile, int what, int fullzoom)
         if (c == GRIDLAYER && (xctx->rect[c][i].flags & 1024)) { /* image */
           xRect* r = &xctx->rect[c][i];
           /* PNG Code Here */
-          ps_drawPNG(r, r->x1, r->y1, r->x2, r->y2,0 ,0);
+          ps_embedded_image(r, r->x1, r->y1, r->x2, r->y2,0 ,0);
           continue;
         }
         if (c == GRIDLAYER && (xctx->rect[c][i].flags & 1)) { /* graph */
           xRect* r = &xctx->rect[c][i];
           ps_embedded_graph(r, r->x1, r->y1, r->x2, r->y2);
-          /* restore original size and zoom factor */
-          if(fullzoom) {
-            xctx->xorigin = saveadjustedxorigin;
-            xctx->yorigin = saveadjustedyorigin;
-            xctx->zoom = saveadjustedzoom;
-            xctx->mooz = saveadjustedmooz;
-            xctx->lw = saveadjustedlw;
-            xctx->areax1 = saveadjustedx1;
-            xctx->areax2 = saveadjustedx2;
-            xctx->areay1 = saveadjustedy1;
-            xctx->areay2 = saveadjustedy2;
-            xctx->areaw = saveadjustedw;
-            xctx->areah = saveadjustedh;
-            xctx->xrect[0] = saveadjustedxrect;
-            boundbox.x1 = xctx->areax1;
-            boundbox.x2 = xctx->areax2;
-            boundbox.y1 = xctx->areay1;
-            boundbox.y2 = xctx->areay2;
-            dx=boundbox.x2-boundbox.x1;
-            dy=boundbox.y2-boundbox.y1;
-            change_linewidth(xctx->lw);
-          }
         }
         if(c != GRIDLAYER || !(xctx->rect[c][i].flags & 1) )  {
           ps_filledrect(c, xctx->rect[c][i].x1, xctx->rect[c][i].y1,
@@ -1265,8 +1312,9 @@ void create_ps(char **psfile, int what, int fullzoom)
           xctx->arc[c][i].r, xctx->arc[c][i].a, xctx->arc[c][i].b, xctx->arc[c][i].dash);
       }
       for(i=0;i<xctx->polygons[c]; ++i) {
+        int bezier = !strboolcmp(get_tok_value(xctx->poly[c][i].prop_ptr, "bezier", 0), "true");
         ps_drawpolygon(c, NOW, xctx->poly[c][i].x, xctx->poly[c][i].y, xctx->poly[c][i].points,
-          xctx->poly[c][i].fill, xctx->poly[c][i].dash);
+          xctx->poly[c][i].fill, xctx->poly[c][i].dash, bezier);
       }
       dbg(1, "create_ps(): starting drawing symbols on layer %d\n", c);
     } /* for(c=0;c<cadlayers; ++c) */
@@ -1302,10 +1350,10 @@ void create_ps(char **psfile, int what, int fullzoom)
         }
         i = wireptr->n;
         if( xctx->wire[i].end1 >1 ) {
-          ps_drawarc(WIRELAYER, 1, xctx->wire[i].x1, xctx->wire[i].y1, cadhalfdotsize, 0, 360, 0);
+          ps_drawarc(WIRELAYER, 1, xctx->wire[i].x1, xctx->wire[i].y1, xctx->cadhalfdotsize, 0, 360, 0);
         }
         if( xctx->wire[i].end2 >1 ) {
-          ps_drawarc(WIRELAYER, 1, xctx->wire[i].x2, xctx->wire[i].y2, cadhalfdotsize, 0, 360, 0);
+          ps_drawarc(WIRELAYER, 1, xctx->wire[i].x2, xctx->wire[i].y2, xctx->cadhalfdotsize, 0, 360, 0);
         }
       }
     }
@@ -1315,6 +1363,12 @@ void create_ps(char **psfile, int what, int fullzoom)
   if(what & 4) { /* trailer */
     fprintf(fd, "%%%%trailer\n");
     fprintf(fd, "%%%%Pages: %d\n", numpages);
+    if(eps) {
+      fprintf(fd, "cleartomark\n");
+      fprintf(fd, "countdictstack\n");
+      fprintf(fd, "exch sub { end } repeat\n");
+      fprintf(fd, "restore\n");
+    }
     fprintf(fd, "%%%%EOF\n");
     fclose(fd);
   }
@@ -1323,25 +1377,13 @@ void create_ps(char **psfile, int what, int fullzoom)
 
 
   /* restore original size and zoom factor */
-  if(fullzoom) {
-    xctx->xorigin = savexorigin;
-    xctx->yorigin = saveyorigin;
-    xctx->zoom = savezoom;
-    xctx->mooz = savemooz;
-    xctx->lw = savelw;
-    xctx->areax1 = savex1;
-    xctx->areax2 = savex2;
-    xctx->areay1 = savey1;
-    xctx->areay2 = savey2;
-    xctx->areaw = savew;
-    xctx->areah = saveh;
-    xctx->xrect[0] = savexrect;
-    change_linewidth(-1.);
+  if(fullzoom == 1) {
+    save_restore_zoom(0, &zi);
   }
 
 }
 
-int ps_draw(int what, int fullzoom)
+int ps_draw(int what, int fullzoom, int eps)
 {
  char tmp[2*PATH_MAX+40];
  static char lastdir[PATH_MAX] = "";
@@ -1354,7 +1396,7 @@ int ps_draw(int what, int fullzoom)
      /* tclvareval("tk_getSaveFile -title {Select destination file} -initialfile {",
       *   get_cell(xctx->sch[xctx->currsch], 0) , ".pdf} -initialdir {", lastdir, "}", NULL); */
      tclvareval("save_file_dialog {Select destination file} *.{ps,pdf} INITIALLOADDIR {", pwd_dir, "/",
-       get_cell(xctx->sch[xctx->currsch], 0), ".pdf}", NULL);
+       get_cell(xctx->sch[xctx->currsch], 0), eps ? ".eps}": ".pdf}", NULL);
      r = tclresult();
      if(r[0]) {
        my_strncpy(xctx->plotfile, r, S(xctx->plotfile));
@@ -1364,7 +1406,7 @@ int ps_draw(int what, int fullzoom)
      else return 0;
    }
  }
- create_ps(&psfile, what, fullzoom);
+ create_ps(&psfile, what, fullzoom, eps);
  if(what & 4) { /* trailer */
    if(xctx->plotfile[0]) {
      my_snprintf(tmp, S(tmp), "convert_to_pdf {%s} {%s}", psfile, xctx->plotfile);

@@ -26,7 +26,7 @@
 /* ------------------------------------------------ */
 /* X11 specific globals                             */
 /* ------------------------------------------------ */
-Display *display;
+Display *display = NULL;
 
 #ifdef HAS_XCB
 xcb_connection_t *xcb_conn;
@@ -161,7 +161,6 @@ double nocairo_vert_correct=0.0;
 /* compared to the nocairo xschem version. */
 /* allowed values should be in the range [-4, 4] */
 double cairo_vert_correct=0.0;
-int constrained_move = 0;
 double cairo_font_scale=1.0; /* default: 1.0, allows to adjust font size */
 double cairo_font_line_spacing = 1.0; /* value taken from xschemrc / xschem.tcl */
 int debug_var=-10;  /* will be set to 0 in xinit.c */
@@ -174,16 +173,18 @@ int help=0; /* help option set to global scope, printing help is deferred */
 FILE *errfp = NULL;
 char home_dir[PATH_MAX]; /* home dir obtained via getpwuid */
 char user_conf_dir[PATH_MAX];
+char sel_file[PATH_MAX]="";
+char clip_file[PATH_MAX]="";
 char pwd_dir[PATH_MAX];  /* obtained via getcwd() */
 int tcp_port = 0;
 int text_svg=1; /* use <text> svg element for text instead of xschem's internal vector font */
 int text_ps=1;  /* use ps font for text instead of xschem's internal vector font */
-double cadhalfdotsize = CADHALFDOTSIZE;
 char bus_char[3] = {0, 0, 0};
 int yyparse_error = 0;
 char *xschem_executable=NULL;
 Tcl_Interp *interp = NULL;
 double *character[256]; /* array or per-char coordinates of xschem internal vector font */
+char old_winpath[PATH_MAX] = ".drw"; /* previously switched window, used in callback() */
 #ifndef __unix__
 char win_temp_dir[PATH_MAX]="";
 const char fopen_read_mode[] = "rb";

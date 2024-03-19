@@ -21,7 +21,9 @@
  */
 
 #include "xschem.h"
+#ifdef __unix__
 #include <sys/select.h> /* select() */
+#endif
 static int check_includes(double x1a, double y1a, double x2a, double y2a,
                    double x1b, double y1b, double x2b, double y2b)
 { 
@@ -56,7 +58,7 @@ void update_conn_cues(int layer, int draw_cues, int dr_win)
   hash_wires(); /* must be done also if wires==0 to clear wire_spatial_table */
   if(!xctx->wires) return;
   if(!xctx->draw_dots) return;
-  if(cadhalfdotsize*xctx->mooz<0.7) return;
+  if(xctx->cadhalfdotsize*xctx->mooz<0.7) return;
   x1 = X_TO_XSCHEM(xctx->areax1);
   y1 = Y_TO_XSCHEM(xctx->areay1);
   x2 = X_TO_XSCHEM(xctx->areax2);
@@ -105,10 +107,10 @@ void update_conn_cues(int layer, int draw_cues, int dr_win)
       if(LINE_OUTSIDE(wire[i].x1, wire[i].y1,
                       wire[i].x2, wire[i].y2, x1, y1, x2, y2)) continue;
       if( wire[i].end1 >1 ) {
-        filledarc(layer, ADD, wire[i].x1, wire[i].y1, cadhalfdotsize, 0, 360);
+        filledarc(layer, ADD, wire[i].x1, wire[i].y1, xctx->cadhalfdotsize, 0, 360);
       }
       if( wire[i].end2 >1 ) {
-        filledarc(layer, ADD, wire[i].x2, wire[i].y2, cadhalfdotsize, 0, 360);
+        filledarc(layer, ADD, wire[i].x2, wire[i].y2, xctx->cadhalfdotsize, 0, 360);
       }
     }
     filledarc(layer, END, 0.0, 0.0, 0.0, 0.0, 0.0);
@@ -525,7 +527,7 @@ void break_wires_at_point(double x0, double y0, int align)
     draw();
     xctx->draw_window = 1;
     xctx->draw_pixmap = 0;
-    filledarc(PINLAYER, NOW, x0, y0, cadhalfdotsize, 0, 360);
+    filledarc(PINLAYER, NOW, x0, y0, xctx->cadhalfdotsize, 0, 360);
     xctx->draw_window = w;
     xctx->draw_pixmap = p;
 
@@ -588,8 +590,6 @@ void break_wires_at_pins(int remove)
                 xctx->need_reb_sel_arr=1;
                 xctx->wires++;
               } else {
-                dbg(1, "break_wires_at_pins(): skipping wire creation on wire %d, end1=%d\n",
-                    i, xctx->wire[xctx->wires].end1); 
                 deleted_wire = 1;
               }
               xctx->wire[i].x1 = x0;
@@ -608,6 +608,19 @@ void break_wires_at_pins(int remove)
                 }
               }
             } /* if( (x0!=xctx->wire[i].x1 && x0!=xctx->wire[i].x2) || ... ) */
+            else if(remove) {
+              int t1 = touches_inst_pin(xctx->wire[i].x1, xctx->wire[i].y1, k);
+              int t2 = touches_inst_pin(xctx->wire[i].x2, xctx->wire[i].y2, k);
+              int e1 = xctx->wire[i].end1;
+              int e2 = xctx->wire[i].end2;
+              int inside = RECT_INSIDE(xctx->wire[i].x1, xctx->wire[i].y1, xctx->wire[i].x2, xctx->wire[i].y2,
+                           xctx->inst[k].xx1, xctx->inst[k].yy1, xctx->inst[k].xx2, xctx->inst[k].yy2);
+              dbg(1, "i=%d, t1=%d, t2=%d, e1=%d, e2=%d\n", i, t1, t2, e1, e2);
+              if(inside && ( (t1 && t2) || (t1 && e2 == 0) || (t2 && e1 == 0) )) {
+                xctx->wire[i].sel = SELECTED4; 
+                if(!changed) { xctx->push_undo(); changed=1;}
+              }
+            }
           } /* if( touch(xctx->wire[i].x1, xctx->wire[i].y1, xctx->wire[i].x2, xctx->wire[i].y2, x0,y0) ) */
         } /* for(wptr=xctx->wire_spatial_table[sqx][sqy]; wptr; wptr=wptr->next) */
       } /* for(r=0;r<rects;r++) */

@@ -123,9 +123,11 @@ const char *get_text_floater(int i)
       dbg(1, "floater: %s\n",txt_ptr);
     } else {
       /* do just a tcl substitution if floater does not reference an existing instance 
-       * (but name=something attribute must be present) and text matches tcleval(...) */
-      if(strstr(txt_ptr, "tcleval(") == txt_ptr) {
-        my_strdup2(_ALLOC_ID_, &xctx->text[i].floater_ptr, tcl_hook2(xctx->text[i].txt_ptr));
+       * (but name=something or floater=something attribute must be present) and text
+       * matches tcleval(...) or contains '@' */
+      if(strstr(txt_ptr, "tcleval(") == txt_ptr || strchr(txt_ptr, '@')) {
+        /* my_strdup2(_ALLOC_ID_, &xctx->text[i].floater_ptr, tcl_hook2(xctx->text[i].txt_ptr)); */
+        my_strdup2(_ALLOC_ID_, &xctx->text[i].floater_ptr, translate(-1, xctx->text[i].txt_ptr));
         txt_ptr = xctx->text[i].floater_ptr;
       }
     }
@@ -141,12 +143,43 @@ const char *get_text_floater(int i)
 int set_modify(int mod)
 {
   int i, floaters = 0;
+  
+  dbg(1, "set_modify(): %d, prev_set_modify=%d\n", mod, xctx->prev_set_modify);
 
-  if(mod != -2 && mod != -1) xctx->modified = mod;
-  dbg(1, "set_modify(): %d\n", mod);
-
-  if(mod == 1 || mod == -1 || mod == -2) {
-    /* hash instance names if there are (many) floaters and many instances for faster lookup */
+  /* set modify state */
+  if(mod == 0 || mod == 1) {
+    xctx->modified = mod;
+  }
+  if(mod == 1 || (mod == 0  && xctx->prev_set_modify) || mod == -2) {
+    /*                Do not configure buttons if displaying in preview window */
+    if(has_x && (xctx->top_path[0] == '\0' || strstr(xctx->top_path, ".x") == xctx->top_path)) {
+      char s[256];
+      tclvareval(xctx->top_path, ".menubar.netlist configure -bg $simulate_bg", NULL);
+      tclvareval("set tctx::", xctx->current_win_path, "_netlist $simulate_bg", NULL);
+      my_snprintf(s, S(s), "tctx::%s_simulate_id", xctx->current_win_path);
+      if(tclgetvar(s)) {
+        tclvareval(xctx->top_path, ".menubar.simulate configure -bg ", tclresult(), NULL);
+        tclvareval("set tctx::", xctx->current_win_path, "_simulate ", tclresult(), NULL);
+      } else {
+        tclvareval(xctx->top_path, ".menubar.simulate configure -bg $simulate_bg", NULL);
+        tclvareval("set tctx::", xctx->current_win_path, "_simulate $simulate_bg", NULL);
+      }
+    }
+    if(sch_waves_loaded() >= 0) {
+      if(has_x && (xctx->top_path[0] == '\0' || strstr(xctx->top_path, ".x") == xctx->top_path)) {
+        tclvareval("set tctx::", xctx->current_win_path, "_waves Green", NULL);
+        tclvareval(xctx->top_path, ".menubar.waves configure -bg Green", NULL);
+      }
+    } else {
+      if(has_x && (xctx->top_path[0] == '\0' || strstr(xctx->top_path, ".x") == xctx->top_path)) {
+        tclvareval("set tctx::", xctx->current_win_path, "_waves $simulate_bg", NULL);
+        tclvareval(xctx->top_path, ".menubar.waves configure -bg $simulate_bg", NULL);
+      }
+    }
+  }  
+  
+  /* clear floater caches */
+  if(mod == 1 || mod == -2 || mod == -1) {
     for(i = 0; i < xctx->texts; i++)
     if(xctx->text[i].flags & TEXT_FLOATER) {
       floaters++;
@@ -154,22 +187,26 @@ int set_modify(int mod)
     }
     int_hash_free(&xctx->floater_inst_table);
   }
-  if(mod != -2 && (mod == -1 || mod != xctx->prev_set_modify) ) { /* mod=-1 used to force set title */
-    if(mod != -1) xctx->prev_set_modify = mod;
-    else mod = xctx->modified;
-    if(has_x && strcmp(get_cell(xctx->sch[xctx->currsch],1), "systemlib/font")) {
+
+  /* force title   no mod      mod */
+  if(mod == -1 || mod == 0 || mod == 1) {
+    if(has_x &&
+       strcmp(get_cell(xctx->sch[xctx->currsch],1), "systemlib/font") &&
+       (xctx->prev_set_modify != xctx->modified || mod == -1)
+      ) {
       char *top_path =  xctx->top_path[0] ? xctx->top_path : ".";
-      if(mod == 1) {
+      if(xctx->modified == 1) {
         tclvareval("wm title ", top_path, " \"xschem - [file tail [xschem get schname]]*\"", NULL);
         tclvareval("wm iconname ", top_path, " \"xschem - [file tail [xschem get schname]]*\"", NULL);
       } else {
         tclvareval("wm title ", top_path, " \"xschem - [file tail [xschem get schname]]\"", NULL);
         tclvareval("wm iconname ", top_path, " \"xschem - [file tail [xschem get schname]]\"", NULL);
       }
+      if(xctx->modified) tcleval("set_tab_names *");
+      else tcleval("set_tab_names");
     }
-    if(xctx->modified) tcleval("set_tab_names *");
-    else tcleval("set_tab_names");
   }
+  xctx->prev_set_modify = xctx->modified;
   return floaters;
 }
 
@@ -182,7 +219,7 @@ void print_version()
   printf("warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n");
 }
 
-char *escape_chars(const char *source)
+char *escape_chars(const char *source, const char *charset)
 {
   int s=0;
   int d=0;
@@ -201,32 +238,41 @@ char *escape_chars(const char *source)
       size += 2;
       my_realloc(_ALLOC_ID_, &dest, size);
     }
-    switch(source[s]) {
-      case '\n':
-        dest[d++] = '\\';
-        dest[d++] = 'n';
-        break;
-      case '\t':
-        dest[d++] = '\\';
-        dest[d++] = 't';
-        break;
-      case '\\':
-      case '\'':
-      case ' ':
-      case ';':
-      case '$':
-      case '!':
-      case '#':
-      case '{':
-      case '}':
-      case '[':
-      case ']':
-      case '"':
+    if(!strcmp(charset, "")) {
+      switch(source[s]) {
+        case '\n':
+          dest[d++] = '\\';
+          dest[d++] = 'n';
+          break;
+        case '\t':
+          dest[d++] = '\\';
+          dest[d++] = 't';
+          break;
+        case '\\':
+        case '\'':
+        case ' ':
+        case ';':
+        case '$':
+        case '!':
+        case '#':
+        case '{':
+        case '}':
+        case '[':
+        case ']':
+        case '"':
+          dest[d++] = '\\';
+          dest[d++] = source[s];
+          break;
+        default:
+          dest[d++] = source[s];
+      }
+    } else {
+      if(strchr(charset, source[s])) { 
         dest[d++] = '\\';
         dest[d++] = source[s];
-        break;
-      default:
+      } else {
         dest[d++] = source[s];
+      }
     }
     s++;
   }
@@ -252,6 +298,7 @@ void set_snap(double newsnap) /*  20161212 set new snap factor and just notify n
         tclvareval(xctx->top_path, ".statusbar.3 configure -background OrangeRed", NULL);
       }
     }
+    xctx->cadhalfdotsize = CADHALFDOTSIZE * (cs < 20. ? cs : 20.) / 10.;
     tclsetdoublevar("cadsnap", cs);
 }
 
@@ -277,17 +324,30 @@ void set_grid(double newgrid)
     tclsetdoublevar("cadgrid", cg);
 }
 
-int set_netlist_dir(int force, const char *dir)
+
+/* 
+ *
+ *   
+ * what==0: force creation of $netlist_dir (if netlist_dir variable not empty)
+ *           and return current setting.
+ * 
+ * what==1: if no dir given prompt user
+ *           else set netlist_dir to dir  
+ *   
+ * what==2: just set netlist_dir according to local_netlist_dir setting
+ */
+int set_netlist_dir(int what, const char *dir)
 {
   char cmd[PATH_MAX+200];
-  if(dir) my_snprintf(cmd, S(cmd), "set_netlist_dir %d {%s}", force, dir);
-  else    my_snprintf(cmd, S(cmd), "set_netlist_dir %d", force);
+  if(dir) my_snprintf(cmd, S(cmd), "set_netlist_dir %d {%s}", what, dir);
+  else    my_snprintf(cmd, S(cmd), "set_netlist_dir %d", what);
   tcleval(cmd);
   if(!strcmp("", tclresult()) ) {
     return 0;
   }
   return 1;
 }
+
 /* wrapper to TCL function */
 /* remove parameter section of symbol generator before calculating abs path : xxx(a,b) -> xxx */
 const char *sanitized_abs_sym_path(const char *s, const char *ext)
@@ -397,7 +457,7 @@ void new_xschem_process(const char *cell, int symbol)
   } else {
     /* error */
     fprintf(errfp, "new_xschem_process(): fork error 2\n");
-    tcleval("exit");
+    tcleval("exit 1");
   }
 }
 #else
@@ -481,6 +541,7 @@ int save(int confirm)
 
   if(force || xctx->modified)
   {
+    dbg(1, "save(): force=%d modified=%d\n", force, xctx->modified);
     if(confirm) {
       tcleval("ask_save_optional");
       if(!strcmp(tclresult(), "") ) return -1; /* user clicks "Cancel" */
@@ -505,9 +566,9 @@ void saveas(const char *f, int type) /*  changed name from ask_save_file to save
         if( (p = strrchr(filename, '.')) && !strcmp(p, ".sch") ) {
           my_strncpy(filename, add_ext(filename, ".sym"), S(filename));
         }
-        my_snprintf(name, S(name), "save_file_dialog {Save file} *.\\{sch,sym\\} INITIALLOADDIR {%s}", filename);
+        my_snprintf(name, S(name), "save_file_dialog {Save file} * INITIALLOADDIR {%s}", filename);
       } else {
-        my_snprintf(name, S(name), "save_file_dialog {Save file} *.\\{sch,sym\\} INITIALLOADDIR {%s}", filename);
+        my_snprintf(name, S(name), "save_file_dialog {Save file} * INITIALLOADDIR {%s}", filename);
       }
 
       tcleval(name);
@@ -533,7 +594,7 @@ void ask_new_file(void)
     if(xctx->modified) {
       if(save(1) == -1 ) return; /*  user cancels save, so do nothing. */
     }
-    tcleval("load_file_dialog {Load file} *.\\{sch,sym\\} INITIALLOADDIR");
+    tcleval("load_file_dialog {Load file} *.\\{sch,sym,tcl\\} INITIALLOADDIR");
     my_snprintf(f, S(f),"%s", tclresult());
     if(f[0]) {
       char win_path[WINDOW_PATH_SIZE];
@@ -581,6 +642,7 @@ void remove_symbol(int j)
   dbg(1,"clearing symbol %d: %s\n", j, xctx->sym[j].name);
   my_free(_ALLOC_ID_, &xctx->sym[j].prop_ptr);
   my_free(_ALLOC_ID_, &xctx->sym[j].templ);
+  my_free(_ALLOC_ID_, &xctx->sym[j].parent_prop_ptr);
   my_free(_ALLOC_ID_, &xctx->sym[j].type);
   my_free(_ALLOC_ID_, &xctx->sym[j].name);
   /*  /20150409 */
@@ -760,41 +822,41 @@ int set_inst_flags(xInstance *inst)
       my_strdup2(_ALLOC_ID_, &(inst->lab), get_tok_value(inst->prop_ptr,"lab",0));
     }
   }
+
   if(!strboolcmp(get_tok_value(inst->prop_ptr,"hide",0), "true"))
     inst->flags |= HIDE_INST;
+  if(!strboolcmp(get_tok_value(inst->prop_ptr,"hide_texts",0), "true"))
+    inst->flags |= HIDE_SYMBOL_TEXTS;
               
   ptr = get_tok_value(inst->prop_ptr,"spice_ignore",0);
   if(!strcmp(ptr, "short"))
     inst->flags |= SPICE_SHORT;
   else if(!strboolcmp(ptr, "true") || !strcmp(ptr, "open"))
     inst->flags |= SPICE_IGNORE;
-
+  
   ptr = get_tok_value(inst->prop_ptr,"verilog_ignore",0);
   if(!strcmp(ptr, "short"))
     inst->flags |= VERILOG_SHORT;
   else if(!strboolcmp(ptr, "true") || !strcmp(ptr, "open"))
     inst->flags |= VERILOG_IGNORE;
-
+  
   ptr = get_tok_value(inst->prop_ptr,"vhdl_ignore",0);
   if(!strcmp(ptr, "short"))
     inst->flags |= VHDL_SHORT;
   else if(!strboolcmp(ptr, "true") || !strcmp(ptr, "open"))
     inst->flags |= VHDL_IGNORE;
-
+  
   ptr = get_tok_value(inst->prop_ptr,"tedax_ignore",0);
   if(!strcmp(ptr, "short"))
     inst->flags |= TEDAX_SHORT;
   else if(!strboolcmp(ptr, "true") || !strcmp(ptr, "open"))
     inst->flags |= TEDAX_IGNORE;
-
+  
   ptr = get_tok_value(inst->prop_ptr,"lvs_ignore",0);
   if(!strcmp(ptr, "short"))
     inst->flags |= LVS_IGNORE_SHORT;
   else if(!strboolcmp(ptr, "true") || !strcmp(ptr, "open"))
     inst->flags |= LVS_IGNORE_OPEN;
-
-  if(!strboolcmp(get_tok_value(inst->prop_ptr,"hide_texts",0), "true"))
-    inst->flags |= HIDE_SYMBOL_TEXTS;
 
   if(!strboolcmp(get_tok_value(inst->prop_ptr,"highlight",0), "true"))
     inst->flags |= HILIGHT_CONN;
@@ -826,7 +888,10 @@ int set_text_flags(xText *t)
     str = get_tok_value(t->prop_ptr, "weight", 0);
     t->flags |= strcmp(str, "bold")  ? 0 : TEXT_BOLD;
     str = get_tok_value(t->prop_ptr, "hide", 0);
-    t->flags |= strboolcmp(str, "true")  ? 0 : HIDE_TEXT;
+    if(!strcmp(str, "instance")) t->flags |= HIDE_TEXT_INSTANTIATED;
+    else {
+      t->flags |= strboolcmp(str, "true")  ? 0 : HIDE_TEXT;
+    }
     str = get_tok_value(t->prop_ptr, "name", 0);
     if(!xctx->tok_size) str = get_tok_value(t->prop_ptr, "floater", 0);
     t->flags |= xctx->tok_size ? TEXT_FLOATER : 0;
@@ -836,10 +901,10 @@ int set_text_flags(xText *t)
 }
 
 
-void reset_flags(void)
+void reset_caches(void)
 {
   int i;
-  dbg(1, "reset_flags()\n");
+  dbg(1, "reset_caches()\n");
   for(i = 0; i < xctx->instances; i++) {
     set_inst_flags(&xctx->inst[i]);
   }     
@@ -868,7 +933,9 @@ int set_rect_extraptr(int what, xRect *drptr)
     if(drptr->flags & 1024) { /* embedded image */
       if(drptr->extraptr) {
         xEmb_image *d = drptr->extraptr;
-        if(d->image) cairo_surface_destroy(d->image);
+        if(d->image) {
+           cairo_surface_destroy(d->image);
+        }
         my_free(_ALLOC_ID_, &drptr->extraptr);
       }
     }
@@ -1219,14 +1286,14 @@ void attach_labels_to_inst(int interactive) /*  offloaded from callback.c 201710
       if(interactive && !do_all_inst) {
         dbg(1,"attach_labels_to_inst(): invoking tcl attach_labels_to_inst\n");
         tcleval("attach_labels_to_inst");
-        if(!strcmp(tclgetvar("rcode"),"") ) {
+        if(!strcmp(tclgetvar("tctx::rcode"),"") ) {
           bbox(END, 0., 0., 0., 0.);
           my_free(_ALLOC_ID_, &prop);
           return;
         }
       }
       if(interactive == 0 ) {
-        tclsetvar("rcode", "yes");
+        tclsetvar("tctx::rcode", "yes");
         tclsetvar("use_lab_wire", "0");
         tclsetvar("use_label_prefix", "0");
         tclsetvar("do_all_inst", "1");
@@ -1358,6 +1425,7 @@ void delete_files(void)
 
 void place_net_label(int type)
 {
+  unselect_all(1);
   if(type == 1) {
       const char *lab = tcleval("rel_sym_path [find_file_first lab_pin.sym]");
       place_symbol(-1, lab, xctx->mousex_snap, xctx->mousey_snap, 0, 0, NULL, 4, 1, 1/*to_push_undo*/);
@@ -1455,7 +1523,7 @@ int place_symbol(int pos, const char *symbol_name, double x, double y, short rot
   xctx->inst[n].instname=NULL;
   dbg(1, "place_symbol() :all inst_ptr members set\n");  /*  03-02-2000 */
   if(inst_props) {
-    new_prop_string(n, inst_props,!first_call, tclgetboolvar("disable_unique_names")); /*  20171214 first_call */
+    new_prop_string(n, inst_props, tclgetboolvar("disable_unique_names")); /*  20171214 first_call */
   }
   else {
     set_inst_prop(n); /* no props, get from sym template, also calls new_prop_string() */
@@ -1463,6 +1531,7 @@ int place_symbol(int pos, const char *symbol_name, double x, double y, short rot
   dbg(1, "place_symbol(): done set_inst_prop()\n");  /*  03-02-2000 */
 
   
+  xctx->instances++;/* translate expects the correct balue of xctx->instances */
   /* After having assigned prop_ptr to new instance translate symbol reference
    * to resolve @params  --> res.tcl(@value\) --> res.tcl(100) */
   my_strncpy(name, translate(n, name), S(name));
@@ -1471,7 +1540,6 @@ int place_symbol(int pos, const char *symbol_name, double x, double y, short rot
   set_inst_flags(&xctx->inst[n]);
   hash_names(n, XINSERT);
   if(first_call && (draw_sym & 3) ) bbox(START, 0.0 , 0.0 , 0.0 , 0.0);
-  xctx->instances++; /* must be updated before calling symbol_bbox() */
   /* force these vars to 0 to trigger a prepare_netlist_structs(0) needed by symbol_bbox->translate
    * to translate @#n:net_name texts */
   xctx->prep_net_structs=0;
@@ -1524,19 +1592,110 @@ void symbol_in_new_window(int new_process)
   }
 }
 
- /*  20111007 duplicate current schematic if no inst selected */
-void schematic_in_new_window(int new_process)
+int copy_hierarchy_data(const char *from_win_path, const char *to_win_path)
+{
+  int n;
+  Xschem_ctx **save_xctx;
+  Xschem_ctx *from, *to;
+  char **sch;
+  char **sch_path;
+  int *sch_path_hash;
+  int *sch_inst_number;
+  int *previous_instance;
+  Zoom *zoom_array;
+  Lcc *hier_attr;
+  int i, j;
+  Str_hashentry **fromnext;
+  Str_hashentry **tonext;
+
+  
+  if(!get_window_count()) { return 0; }
+  save_xctx = get_save_xctx();
+  n = get_tab_or_window_number(from_win_path);
+  if(n >= 0) {
+    from = save_xctx[n];
+  } else return 0;
+  n = get_tab_or_window_number(to_win_path);
+  if(n >= 0) {
+    to = save_xctx[n];
+  } else return 0;
+  sch = from->sch;
+  sch_path = from->sch_path;
+  sch_path_hash = from->sch_path_hash;
+  sch_inst_number = from->sch_inst_number;
+  previous_instance = from->previous_instance;
+  zoom_array = from->zoom_array;
+  hier_attr = from->hier_attr;
+  to->currsch = from->currsch;
+  for(i = 0; i <= from->currsch; i++) {
+    my_strdup2(_ALLOC_ID_, &to->sch[i], sch[i]);
+    my_strdup2(_ALLOC_ID_, &to->sch_path[i], sch_path[i]);
+    to->sch_path_hash[i] = sch_path_hash[i];
+    to->sch_inst_number[i] = sch_inst_number[i];
+    to->previous_instance[i] = previous_instance[i];
+    to->zoom_array[i].x = zoom_array[i].x;
+    to->zoom_array[i].y = zoom_array[i].y;
+    to->zoom_array[i].zoom = zoom_array[i].zoom;
+    to->hier_attr[i].x0 = hier_attr[i].x0;
+    to->hier_attr[i].y0 = hier_attr[i].y0;
+    to->hier_attr[i].rot = hier_attr[i].rot;
+    to->hier_attr[i].flip = hier_attr[i].flip;
+    to->hier_attr[i].fd = NULL; /* Never used outside load_sym_def() */
+    my_strdup2(_ALLOC_ID_, &to->hier_attr[i].prop_ptr, hier_attr[i].prop_ptr);
+    my_strdup2(_ALLOC_ID_, &to->hier_attr[i].templ, hier_attr[i].templ);
+    my_strdup2(_ALLOC_ID_, &to->hier_attr[i].symname, hier_attr[i].symname);
+    if(to->portmap[i].table) str_hash_free(&to->portmap[i]);
+    str_hash_init(&to->portmap[i], HASHSIZE);
+    for(j = 0; j < HASHSIZE; j++) {
+      if(!from->portmap[i].table || !from->portmap[i].table[j]) continue;
+      fromnext = &(from->portmap[i].table[j]);
+      tonext =  &(to->portmap[i].table[j]);
+      while(*fromnext) {
+        Str_hashentry *e;
+        e = my_calloc(_ALLOC_ID_, 1, sizeof(Str_hashentry));
+        e->hash = (*fromnext)->hash;
+        my_strdup2(_ALLOC_ID_, &e->token, (*fromnext)->token);
+        my_strdup2(_ALLOC_ID_, &e->value, (*fromnext)->value);
+        *tonext = e;
+        fromnext = &( (*fromnext)->next );
+        tonext = &( (*tonext)->next );
+      }
+    }
+  }
+  return 1;
+}
+
+/*  20111007 duplicate current schematic if no inst selected */
+/* if force set to 1 force opening another new schematic even if already open */
+int schematic_in_new_window(int new_process, int dr, int force)
 {
   char filename[PATH_MAX];
   char win_path[WINDOW_PATH_SIZE];
   rebuild_selected_array();
-  if(xctx->lastsel !=1 || xctx->sel_array[0].type!=ELEMENT) {
+  if(xctx->lastsel == 0) {
     if(new_process) new_xschem_process(xctx->sch[xctx->currsch], 0);
-    else new_schematic("create", NULL, xctx->sch[xctx->currsch], 1);
+    else {
+      int gf = xctx->graph_flags;
+      double c1 = xctx->graph_cursor1_x;
+      double c2 = xctx->graph_cursor2_x;
+      new_schematic("create", force ? "noalert" : "", xctx->sch[xctx->currsch], dr);
+
+      /* propagte raw cursor info to new window */
+      xctx->graph_flags = gf;
+      xctx->graph_cursor1_x = c1;
+      xctx->graph_cursor2_x = c2;
+      dbg(1, "path=%s\n", xctx->current_win_path);
+    }
+    return 1;
   }
-  else {
+  else if(xctx->lastsel > 1) {
+    return 0;
+  }
+  else { /* xctx->lastsel == 1 */
+    if(xctx->inst[xctx->sel_array[0].n].ptr < 0 ) return 0;
+    if(!(xctx->inst[xctx->sel_array[0].n].ptr+ xctx->sym)->type) return 0;
+    if(xctx->sel_array[0].type != ELEMENT) return 0;
     if(                   /*  do not descend if not subcircuit */
-       (xctx->inst[xctx->sel_array[0].n].ptr+ xctx->sym)->type &&
        strcmp(
           (xctx->inst[xctx->sel_array[0].n].ptr+ xctx->sym)->type,
            "subcircuit"
@@ -1545,39 +1704,49 @@ void schematic_in_new_window(int new_process)
           (xctx->inst[xctx->sel_array[0].n].ptr+ xctx->sym)->type,
            "primitive"
        )
-    ) return;
-    get_sch_from_sym(filename, xctx->inst[xctx->sel_array[0].n].ptr+ xctx->sym, xctx->sel_array[0].n);
-    if(!check_loaded(filename, win_path)) {
+    ) return 0;
+    get_sch_from_sym(filename, xctx->inst[xctx->sel_array[0].n].ptr+ xctx->sym, xctx->sel_array[0].n, 0);
+    if(force || !check_loaded(filename, win_path)) {
       if(new_process) new_xschem_process(filename, 0);
-      else new_schematic("create", NULL, filename, 1);
+      else new_schematic("create", "noalert", filename, dr);
     }
   }
+  return 1;
 }
 
 void launcher(void)
 {
   const char *url;
   char program[PATH_MAX];
-  int n;
+  int n, c;
+  char *prop_ptr=NULL;
   rebuild_selected_array();
-  if(xctx->lastsel ==1 && xctx->sel_array[0].type==ELEMENT)
+  tcleval("update");
+  if(xctx->lastsel ==1)
   {
     double mx=xctx->mousex, my=xctx->mousey;
-    select_object(mx,my,SELECTED, 0);
-    tcleval("update; after 300");
-    select_object(mx,my,0, 0);
     n=xctx->sel_array[0].n;
-    my_strncpy(program, get_tok_value(xctx->inst[n].prop_ptr,"program",0), S(program)); /* handle backslashes */
-    url = get_tok_value(xctx->inst[n].prop_ptr,"url",0); /* handle backslashes */
+    c=xctx->sel_array[0].col;
+    if     (xctx->sel_array[0].type==ELEMENT) prop_ptr = xctx->inst[n].prop_ptr;
+    else if(xctx->sel_array[0].type==xRECT)   prop_ptr = xctx->rect[c][n].prop_ptr;
+    else if(xctx->sel_array[0].type==POLYGON) prop_ptr = xctx->poly[c][n].prop_ptr;
+    else if(xctx->sel_array[0].type==ARC)     prop_ptr = xctx->arc[c][n].prop_ptr;
+    else if(xctx->sel_array[0].type==LINE)    prop_ptr = xctx->line[c][n].prop_ptr;
+    else if(xctx->sel_array[0].type==WIRE)    prop_ptr = xctx->wire[n].prop_ptr;
+    else if(xctx->sel_array[0].type==xTEXT)   prop_ptr = xctx->text[n].prop_ptr;
+    my_strncpy(program, get_tok_value(prop_ptr,"program",0), S(program)); /* handle backslashes */
+    url = get_tok_value(prop_ptr,"url",0); /* handle backslashes */
     dbg(1, "launcher(): url=%s\n", url);
     if(url[0] || (program[0])) { /* open url with appropriate program */
       tclvareval("launcher {", url, "} {", program, "}", NULL);
     } else {
-      my_strncpy(program, get_tok_value(xctx->inst[n].prop_ptr,"tclcommand",0), S(program));
+      my_strncpy(program, get_tok_value(prop_ptr,"tclcommand",0), S(program));
       if(program[0]) { /* execute tcl command */
         tcleval(program);
       }
     }
+    tcleval("after 300");
+    select_object(mx,my,0, 0, NULL);
   }
 }
 
@@ -1622,9 +1791,11 @@ void copy_symbol(xSymbol *dest_sym, xSymbol *src_sym)
   dest_sym->prop_ptr = NULL;
   dest_sym->type = NULL;
   dest_sym->templ = NULL;
+  dest_sym->parent_prop_ptr = NULL;
   my_strdup2(_ALLOC_ID_, &dest_sym->name, src_sym->name);
   my_strdup2(_ALLOC_ID_, &dest_sym->type, src_sym->type);
   my_strdup2(_ALLOC_ID_, &dest_sym->templ, src_sym->templ);
+  my_strdup(_ALLOC_ID_, &dest_sym->parent_prop_ptr, src_sym->parent_prop_ptr);
   my_strdup2(_ALLOC_ID_, &dest_sym->prop_ptr, src_sym->prop_ptr);
 
   dest_sym->line = my_calloc(_ALLOC_ID_, cadlayers, sizeof(xLine *));
@@ -1697,6 +1868,39 @@ void copy_symbol(xSymbol *dest_sym, xSymbol *src_sym)
   }
 }   
 
+void toggle_ignore(void)
+{
+  int i, n, first = 1, remove = 0;
+  char *attr;
+  if(xctx->netlist_type == CAD_VERILOG_NETLIST) attr="verilog_ignore";
+  else if(xctx->netlist_type == CAD_VHDL_NETLIST) attr="vhdl_ignore";
+  else if(xctx->netlist_type == CAD_TEDAX_NETLIST) attr="tedax_ignore";
+  else if(xctx->netlist_type == CAD_SPICE_NETLIST) attr="spice_ignore";
+  else attr = NULL;
+  if(attr) {
+    rebuild_selected_array();
+    for(n=0; n < xctx->lastsel; ++n) {
+      if(xctx->sel_array[n].type == ELEMENT) {
+        i = xctx->sel_array[n].n;
+        if(first) {
+          xctx->push_undo();
+          first = 0;
+        }
+        remove = 0;
+        if(!strboolcmp(get_tok_value(xctx->inst[i].prop_ptr, attr, 0), "true")) remove = 1;
+        if(remove) {
+          my_strdup(_ALLOC_ID_, &xctx->inst[i].prop_ptr, subst_token(xctx->inst[i].prop_ptr, attr, NULL));
+        } else {
+          my_strdup(_ALLOC_ID_, &xctx->inst[i].prop_ptr, subst_token(xctx->inst[i].prop_ptr, attr, "true"));
+        }
+        set_inst_flags(&xctx->inst[i]);
+        set_modify(1);
+      }
+    }
+    draw();
+  }
+}
+
 /* what = 1: start
  * what = 0 : end : should NOT be called if match_symbol() has been executed between start & end
  */
@@ -1706,7 +1910,8 @@ void get_additional_symbols(int what)
   static int num_syms; /* no context switch between start and end so it is safe */
   Int_hashentry *found;
   Int_hashtable sym_table = {NULL, 0};
-
+  struct stat buf;
+  int is_gen = 0;
 
   if(what == 1) { /* start */
     int_hash_init(&sym_table, HASHSIZE);
@@ -1719,50 +1924,84 @@ void get_additional_symbols(int what)
       char *spice_sym_def = NULL;
       char *vhdl_sym_def = NULL;
       char *verilog_sym_def = NULL;
+      char *default_schematic = NULL;
       char *sch = NULL;
+      char symbol_base_sch[PATH_MAX] = "";
       
+      /* copy instance based *_sym_def attributes to symbol */
       my_strdup(_ALLOC_ID_, &spice_sym_def, get_tok_value(xctx->inst[i].prop_ptr,"spice_sym_def",0));
       my_strdup(_ALLOC_ID_, &verilog_sym_def, get_tok_value(xctx->inst[i].prop_ptr,"verilog_sym_def",0));
       my_strdup(_ALLOC_ID_, &vhdl_sym_def, get_tok_value(xctx->inst[i].prop_ptr,"vhdl_sym_def",0));
       my_strdup2(_ALLOC_ID_, &sch, tcl_hook2(
          str_replace( get_tok_value(xctx->inst[i].prop_ptr,"schematic",2), "@symname",
            get_cell(xctx->inst[i].name, 0), '\\')));
-      dbg(1, "get_additional_symbols(): sch=%s\n", sch);
-      if(xctx->tok_size) { /* token exists */
+      dbg(1, "get_additional_symbols(): inst=%d sch=%s\n",i,  sch);
+      if(sch[0] && stat(abs_sym_path(sch, ""), &buf)) {/* schematic does not exist */
+        my_snprintf(symbol_base_sch, PATH_MAX, "%s.sch", get_cell(xctx->sym[xctx->inst[i].ptr].name, 9999));
+        dbg(1, "get_additional_symbols(): schematic not existing\n");
+        dbg(1, "using: %s\n", symbol_base_sch);
+      }
+      if(xctx->tok_size && xctx->inst[i].ptr>= 0) { /* token exists and instance points to valid symbol */
         int j;
         char *sym = NULL;
+        int ignore_schematic = 0;
+        xSymbol *symptr = xctx->inst[i].ptr + xctx->sym;
+        my_strdup2(_ALLOC_ID_, &default_schematic, get_tok_value(symptr->prop_ptr,"default_schematic",0));
+        ignore_schematic = !strcmp(default_schematic, "ignore");
 
         dbg(1, "get_additional_symbols(): inst=%d, sch=%s\n", i, sch);
-        if(is_generator(sch)) {
+
+        is_gen = is_generator(sch);
+
+        if(is_gen) {
           my_strdup2(_ALLOC_ID_, &sym, sch);
           dbg(1, "get_additional_symbols(): generator\n");
         } else {
           my_strdup2(_ALLOC_ID_, &sym, add_ext(rel_sym_path(sch), ".sym"));
         }
 
-        found = int_hash_lookup(&sym_table, sym, 0, XLOOKUP);
+        /* if instance symbol has default_schematic set to ignore copy the symbol anyway, since
+         * the base symbol will not be netlisted by *_block_netlist() */
+        found = ignore_schematic ? NULL : int_hash_lookup(&sym_table, sym, 0, XLOOKUP);
         if(!found) {
           j = xctx->symbols;
           int_hash_lookup(&sym_table, sym, j, XINSERT);
           dbg(1, "get_additional_symbols(): adding symbol %s\n", sym);
           check_symbol_storage();
-          copy_symbol(&xctx->sym[j], xctx->inst[i].ptr + xctx->sym);
-          xctx->sym[j].base_name = (xctx->inst[i].ptr + xctx->sym)->name;
+          copy_symbol(&xctx->sym[j], symptr);
+          xctx->sym[j].base_name = symptr->name;
           my_strdup(_ALLOC_ID_, &xctx->sym[j].name, sym);
-          my_free(_ALLOC_ID_, &sym);
-          if(spice_sym_def)
+
+          my_strdup(_ALLOC_ID_, &xctx->sym[j].parent_prop_ptr, xctx->inst[i].prop_ptr);
+          /* the copied symbol will not inherit the default_schematic attribute otherwise it will also
+           * be skipped */
+          if(default_schematic) {
+            my_strdup(_ALLOC_ID_, &xctx->sym[j].prop_ptr, 
+              subst_token(xctx->sym[j].prop_ptr, "default_schematic", NULL)); /* delete attribute */
+          }
+          /* if symbol has no corresponding schematic file use symbol base schematic */
+          if(!is_gen && symbol_base_sch[0]) {
+            my_strdup(_ALLOC_ID_, &xctx->sym[j].prop_ptr,
+              subst_token(xctx->sym[j].prop_ptr, "schematic", symbol_base_sch));
+          }
+          if(spice_sym_def) {
              my_strdup(_ALLOC_ID_, &xctx->sym[j].prop_ptr, 
                subst_token(xctx->sym[j].prop_ptr, "spice_sym_def", spice_sym_def));
-          if(verilog_sym_def)
+          }
+          if(verilog_sym_def) {
              my_strdup(_ALLOC_ID_, &xctx->sym[j].prop_ptr,
                subst_token(xctx->sym[j].prop_ptr, "verilog_sym_def", verilog_sym_def));
-          if(vhdl_sym_def)
+          }
+          if(vhdl_sym_def) {
              my_strdup(_ALLOC_ID_, &xctx->sym[j].prop_ptr,
                subst_token(xctx->sym[j].prop_ptr, "vhdl_sym_def", vhdl_sym_def));
+          }
           xctx->symbols++;
         } else {
          j = found->value;
         }
+        my_free(_ALLOC_ID_, &sym);
+        my_free(_ALLOC_ID_, &default_schematic);
       }
       my_free(_ALLOC_ID_, &sch);
       my_free(_ALLOC_ID_, &spice_sym_def);
@@ -1777,13 +2016,17 @@ void get_additional_symbols(int what)
     xctx->symbols = num_syms;
   }
 }
-
-void get_sch_from_sym(char *filename, xSymbol *sym, int inst)
+/* fallback = 1: if schematic attribute is set but file not existing fallback
+ * to defaut symbol schematic (symname.sym -> symname.sch) */
+void get_sch_from_sym(char *filename, xSymbol *sym, int inst, int fallback)
 {
   char *sch = NULL;
   char *str_tmp = NULL;
   int web_url = 0;
   struct stat buf;
+  int file_exists=0;
+  int cancel = 0;
+  int is_gen = 0;
 
   /* get sch/sym name from parent schematic downloaded from web */
   if(is_from_web(xctx->current_dirname)) {
@@ -1799,6 +2042,7 @@ void get_sch_from_sym(char *filename, xSymbol *sym, int inst)
        get_cell(sym->name, 0), '\\')));
     if(is_generator(sch)) { /* generator: return as is */
       my_strncpy(filename, sch, PATH_MAX);
+      is_gen = 1;
       dbg(1, "get_sch_from_sym(): filename=%s\n", filename);
     } else { /* not generator */
       dbg(1, "get_sch_from_sym(): after tcl_hook2 sch=%s\n", sch);
@@ -1806,7 +2050,24 @@ void get_sch_from_sym(char *filename, xSymbol *sym, int inst)
       if(web_url) my_strncpy(filename, sch, PATH_MAX);
       else my_strncpy(filename, abs_sym_path(sch, ""), PATH_MAX);
     }
-  } else { /* no schematic attribute from instance or symbol */
+  } else {
+    my_strncpy(filename, "", PATH_MAX);
+  }
+  
+  if(has_x && fallback && !is_gen && filename[0]) {
+    file_exists = !stat(filename, &buf);
+    if(!file_exists) {
+      tclvareval("ask_save {Schematic ", filename, "\ndoes not exist.\nDescend into base schematic?}", NULL);
+      if(strcmp(tclresult(), "yes") ) fallback = 0;
+       if(!strcmp(tclresult(), "") ) {
+         my_strncpy(filename, "", PATH_MAX);
+         cancel = 1;
+       }
+    }
+  }
+
+  /* no schematic attr from instance or symbol */
+  if(!cancel && (!str_tmp[0] || (fallback && !is_gen && filename[0] && !file_exists ))) {
     const char *symname_tcl = tcl_hook2(sym->name);
     if(is_generator(symname_tcl))  my_strncpy(filename, symname_tcl, PATH_MAX);
     else if(tclgetboolvar("search_schematic")) {
@@ -1826,7 +2087,7 @@ void get_sch_from_sym(char *filename, xSymbol *sym, int inst)
   }
   if(sch) my_free(_ALLOC_ID_, &sch);
 
-  if(web_url) {
+  if(web_url && filename[0]) {
     char sympath[PATH_MAX];
 
     /* build local cached filename of web_url */
@@ -1845,7 +2106,8 @@ void get_sch_from_sym(char *filename, xSymbol *sym, int inst)
   dbg(1, "get_sch_from_sym(): sym->name=%s, filename=%s\n", sym->name, filename);
 }
 
-int descend_schematic(int instnumber)
+/* fallback = 1: if schematic=.. attr is set but file not existing descend into symbol base schematic */
+int descend_schematic(int instnumber, int fallback, int alert)
 {
  char *str = NULL;
  char filename[PATH_MAX];
@@ -1866,7 +2128,7 @@ int descend_schematic(int instnumber)
      char res[PATH_MAX];
  
      my_strncpy(filename, xctx->sch[xctx->currsch], S(filename));
-     my_snprintf(cmd, S(cmd), "save_file_dialog {Save file} *.\\{sch,sym\\} INITIALLOADDIR {%s}", filename);
+     my_snprintf(cmd, S(cmd), "save_file_dialog {Save file} * INITIALLOADDIR {%s}", filename);
      tcleval(cmd);
      my_strncpy(res, tclresult(), S(res));
      if(!res[0]) return 0;
@@ -1875,6 +2137,9 @@ int descend_schematic(int instnumber)
      if(save_ok==0) return 0;
    }
    n = xctx->sel_array[0].n;
+   get_sch_from_sym(filename, xctx->inst[n].ptr+ xctx->sym, n, fallback);
+
+   if(!filename[0]) return 0; /* no filename returned from get_sch_from_sym() --> abort */
    dbg(1, "descend_schematic(): selected:%s\n", xctx->inst[n].name);
    dbg(1, "descend_schematic(): inst type: %s\n", (xctx->inst[n].ptr+ xctx->sym)->type);
    if(                   /*  do not descend if not subcircuit */
@@ -1992,16 +2257,24 @@ int descend_schematic(int instnumber)
    xctx->currsch++;
    hilight_child_pins();
    unselect_all(1);
-   get_sch_from_sym(filename, xctx->inst[n].ptr+ xctx->sym, n);
    dbg(1, "descend_schematic(): filename=%s\n", filename);
    /* we are descending from a parent schematic downloaded from the web */
-   remove_symbols();
-   load_schematic(1, filename, 1, 1);
+   if(!tclgetboolvar("keep_symbols")) remove_symbols();
+   load_schematic(1, filename, 1, alert);
    if(xctx->hilight_nets) {
      prepare_netlist_structs(0);
      propagate_hilights(1, 0, XINSERT_NOREPLACE);
    }
    dbg(1, "descend_schematic(): before zoom(): prep_hash_inst=%d\n", xctx->prep_hash_inst);
+
+   if(xctx->rects[GRIDLAYER] > 0 && tcleval("info exists ngspice::ngspice_data")[0] == '0') {
+     Graph_ctx *gr = &xctx->graph_struct;
+     xRect *r = &xctx->rect[GRIDLAYER][0];
+     if(r->flags & 1) {
+       backannotate_at_cursor_b_pos(r, gr);
+     }
+   }
+
    zoom_full(1, 0, 1 + 2 * tclgetboolvar("zoom_full_center"), 0.97);
  }
  return 1;
@@ -2033,7 +2306,7 @@ void go_back(int confirm) /*  20171006 add confirm */
   }
   if(save_ok==0) return;
   unselect_all(1);
-  remove_symbols();
+  if(!tclgetboolvar("keep_symbols")) remove_symbols();
   from_embedded_sym=0;
   if(strstr(xctx->sch[xctx->currsch], ".xschem_embedded_")) {
     /* when returning after editing an embedded symbol
@@ -2047,6 +2320,8 @@ void go_back(int confirm) /*  20171006 add confirm */
 
   xctx->sch_path_hash[xctx->currsch] = 0;
   xctx->currsch--;
+  my_free(_ALLOC_ID_, &xctx->hier_attr[xctx->currsch].prop_ptr);
+  my_free(_ALLOC_ID_, &xctx->hier_attr[xctx->currsch].templ);
   save_modified = xctx->modified; /* we propagate modified flag (cleared by load_schematic */
                             /* by default) to parent schematic if going back from embedded symbol */
 
@@ -2221,11 +2496,11 @@ void calc_drawing_bbox(xRect *boundbox, int selected)
        !xctx->wire[i].node[0] || !bus_hilight_hash_lookup(xctx->wire[i].node, 0,XLOOKUP)) continue;
    }
    if(xctx->wire[i].bus){
-     ov = INT_BUS_WIDTH(xctx->lw)> cadhalfdotsize ? INT_BUS_WIDTH(xctx->lw) : CADHALFDOTSIZE;
+     ov = INT_BUS_WIDTH(xctx->lw)> xctx->cadhalfdotsize ? INT_BUS_WIDTH(xctx->lw) : CADHALFDOTSIZE;
      if(xctx->wire[i].y1 < xctx->wire[i].y2) { y1 = xctx->wire[i].y1-ov; y2 = xctx->wire[i].y2+ov; }
      else                        { y1 = xctx->wire[i].y1+ov; y2 = xctx->wire[i].y2-ov; }
    } else {
-     ov = cadhalfdotsize;
+     ov = xctx->cadhalfdotsize;
      if(xctx->wire[i].y1 < xctx->wire[i].y2) { y1 = xctx->wire[i].y1-ov; y2 = xctx->wire[i].y2+ov; }
      else                        { y1 = xctx->wire[i].y1+ov; y2 = xctx->wire[i].y2-ov; }
    }
@@ -2298,7 +2573,7 @@ void zoom_full(int dr, int sel, int flags, double shrink)
   xRect boundbox;
   double yzoom;
   double bboxw, bboxh, schw, schh;
-
+  double cs = tclgetdoublevar("cadsnap");
   if(flags & 1) {
     if(tclgetboolvar("change_lw")) {
       xctx->lw = 1.;
@@ -2321,8 +2596,6 @@ void zoom_full(int dr, int sel, int flags, double shrink)
   yzoom = bboxh / schh;
   if(yzoom > xctx->zoom) xctx->zoom = yzoom;
   xctx->zoom /= shrink;
-  /* we do this here since change_linewidth may not be called  if flags & 1 == 0*/
-  cadhalfdotsize = CADHALFDOTSIZE +  0.04 * (tclgetdoublevar("cadsnap")-10);
 
   xctx->mooz = 1 / xctx->zoom;
   if(flags & 2) {
@@ -2334,6 +2607,8 @@ void zoom_full(int dr, int sel, int flags, double shrink)
   }
   dbg(1, "zoom_full(): dr=%d sel=%d flags=%d areaw=%d, areah=%d\n", sel, dr, flags, xctx->areaw, xctx->areah);
   if(flags & 1) change_linewidth(-1.);
+  /* we do this here since change_linewidth may not be called  if flags & 1 == 0*/
+  xctx->cadhalfdotsize = CADHALFDOTSIZE * (cs < 20. ? cs : 20.) / 10.;
   if(dr && has_x) {
     draw();
     redraw_w_a_l_r_p_rubbers();
@@ -2343,7 +2618,6 @@ void zoom_full(int dr, int sel, int flags, double shrink)
 void view_zoom(double z)
 {
   double factor;
-  /*  int i; */
   factor = z!=0.0 ? z : CADZOOMSTEP;
   if(xctx->zoom<CADMINZOOM) return;
   xctx->zoom/= factor;
@@ -2351,6 +2625,7 @@ void view_zoom(double z)
   xctx->xorigin=-xctx->mousex_snap+(xctx->mousex_snap+xctx->xorigin)/factor;
   xctx->yorigin=-xctx->mousey_snap+(xctx->mousey_snap+xctx->yorigin)/factor;
   change_linewidth(-1.);
+
   draw();
   redraw_w_a_l_r_p_rubbers();
 }
@@ -2358,7 +2633,6 @@ void view_zoom(double z)
 void view_unzoom(double z)
 {
   double factor;
-  /*  int i; */
   factor = z!=0.0 ? z : CADZOOMSTEP;
   if(xctx->zoom>CADMAXZOOM) return;
   xctx->zoom*= factor;
@@ -2392,34 +2666,31 @@ void set_viewport_size(int w, int h, double lw)
     xctx->areah = xctx->areay2-xctx->areay1;
 }
 
-void save_restore_zoom(int save)
+void save_restore_zoom(int save, Zoom_info *zi)
 {
-  static int savew, saveh; /* safe to keep even with multiple schematics */
-  static double savexor, saveyor, savezoom, savelw; /* safe to keep even with multiple schematics */
-
   if(save) {
-    savew = xctx->xrect[0].width;
-    saveh = xctx->xrect[0].height;
-    savelw = xctx->lw;
-    savexor = xctx->xorigin;
-    saveyor = xctx->yorigin;
-    savezoom = xctx->zoom;
+    zi->savew = xctx->xrect[0].width;
+    zi->saveh = xctx->xrect[0].height;
+    zi->savelw = xctx->lw;
+    zi->savexor = xctx->xorigin;
+    zi->saveyor = xctx->yorigin;
+    zi->savezoom = xctx->zoom;
   } else {
     xctx->xrect[0].x = 0;
     xctx->xrect[0].y = 0;
-    xctx->xrect[0].width = (unsigned short)savew;
-    xctx->xrect[0].height = (unsigned short)saveh;
-    xctx->areax2 = savew+2*INT_WIDTH(savelw);
-    xctx->areay2 = saveh+2*INT_WIDTH(savelw);
-    xctx->areax1 = -2*INT_WIDTH(savelw);
-    xctx->areay1 = -2*INT_WIDTH(savelw);
-    xctx->lw = savelw;
+    xctx->xrect[0].width = (unsigned short)zi->savew;
+    xctx->xrect[0].height = (unsigned short)zi->saveh;
+    xctx->areax2 = zi->savew+2*INT_WIDTH(zi->savelw);
+    xctx->areay2 = zi->saveh+2*INT_WIDTH(zi->savelw);
+    xctx->areax1 = -2*INT_WIDTH(zi->savelw);
+    xctx->areay1 = -2*INT_WIDTH(zi->savelw);
+    xctx->lw = zi->savelw;
     xctx->areaw = xctx->areax2-xctx->areax1;
     xctx->areah = xctx->areay2-xctx->areay1;
-    xctx->xorigin = savexor;
-    xctx->yorigin = saveyor;
-    xctx->zoom = savezoom;
-    xctx->mooz = 1 / savezoom;
+    xctx->xorigin = zi->savexor;
+    xctx->yorigin = zi->saveyor;
+    xctx->zoom = zi->savezoom;
+    xctx->mooz = 1 / zi->savezoom;
   }
 }
 
@@ -2557,12 +2828,13 @@ void draw_stuff(void)
 static void restore_selection(double x1, double y1, double x2, double y2)
 {
   double xx1,yy1,xx2,yy2;
+  int intlw = 2 * INT_WIDTH(xctx->lw) + (int)xctx->cadhalfdotsize;
   xx1 = x1; yy1 = y1; xx2 = x2; yy2 = y2;
   RECTORDER(xx1,yy1,xx2,yy2);
   rebuild_selected_array();
   if(!xctx->lastsel) return;
   bbox(START,0.0, 0.0, 0.0, 0.0);
-  bbox(ADD, xx1, yy1, xx2, yy2);
+  bbox(ADD, xx1 - intlw, yy1 - intlw, xx2 + intlw, yy2 + intlw);
   bbox(SET,0.0, 0.0, 0.0, 0.0);
   draw_selection(xctx->gc[SELLAYER], 0);
   bbox(END,0.0, 0.0, 0.0, 0.0);
@@ -2797,14 +3069,14 @@ void change_layer()
    if(modified) set_modify(1);
 }
 
-void new_arc(int what, double sweep)
+void new_arc(int what, double sweep, double mousex_snap, double mousey_snap)
 {
   if(what & PLACE) {
     xctx->nl_state=0;
     xctx->nl_r = -1.;
     xctx->nl_sweep_angle=sweep;
-    xctx->nl_xx1 = xctx->nl_xx2 = xctx->nl_x1 = xctx->nl_x2 = xctx->nl_x3 = xctx->mousex_snap;
-    xctx->nl_yy1 = xctx->nl_yy2 = xctx->nl_y1 = xctx->nl_y2 = xctx->nl_y3 = xctx->mousey_snap;
+    xctx->nl_xx1 = xctx->nl_xx2 = xctx->nl_x1 = xctx->nl_x2 = xctx->nl_x3 = mousex_snap;
+    xctx->nl_yy1 = xctx->nl_yy2 = xctx->nl_y1 = xctx->nl_y2 = xctx->nl_y3 = mousey_snap;
     xctx->ui_state |= STARTARC;
   }
   if(what & SET) {
@@ -2812,6 +3084,7 @@ void new_arc(int what, double sweep)
       xctx->nl_x2 = xctx->mousex_snap;
       xctx->nl_y2 = xctx->mousey_snap;
       drawtempline(xctx->gctiled, NOW, xctx->nl_xx1,xctx->nl_yy1,xctx->nl_xx2,xctx->nl_yy2);
+      restore_selection(xctx->nl_xx1, xctx->nl_yy1, xctx->nl_xx2, xctx->nl_yy2);
       xctx->nl_state=1;
     } else if(xctx->nl_state==1) {
       xctx->nl_x3 = xctx->mousex_snap;
@@ -2832,27 +3105,35 @@ void new_arc(int what, double sweep)
   if(what & RUBBER) {
     if(xctx->nl_state==0) {
       drawtempline(xctx->gctiled, NOW, xctx->nl_xx1,xctx->nl_yy1,xctx->nl_xx2,xctx->nl_yy2);
+      restore_selection(xctx->nl_xx1, xctx->nl_yy1, xctx->nl_xx2, xctx->nl_yy2);
+      xctx->nl_x2 = xctx->mousex_snap;xctx->nl_y2 = xctx->mousey_snap;
       xctx->nl_xx2 = xctx->mousex_snap;
       xctx->nl_yy2 = xctx->mousey_snap;
-      xctx->nl_xx1 = xctx->nl_x1;xctx->nl_yy1 = xctx->nl_y1;
       ORDER(xctx->nl_xx1,xctx->nl_yy1,xctx->nl_xx2,xctx->nl_yy2);
       drawtempline(xctx->gc[SELLAYER], NOW, xctx->nl_xx1,xctx->nl_yy1,xctx->nl_xx2,xctx->nl_yy2);
     }
     else if(xctx->nl_state==1) {
       xctx->nl_x3 = xctx->mousex_snap;
       xctx->nl_y3 = xctx->mousey_snap;
-      if(xctx->nl_r>0.) drawtemparc(xctx->gctiled, NOW, xctx->nl_x, xctx->nl_y, xctx->nl_r, xctx->nl_a, xctx->nl_b);
+      if(xctx->nl_r>0.)
+          drawtemparc(xctx->gctiled, NOW, xctx->nl_x, xctx->nl_y, xctx->nl_r, xctx->nl_a, xctx->nl_b);
       arc_3_points(xctx->nl_x1, xctx->nl_y1, xctx->nl_x2, xctx->nl_y2,
           xctx->nl_x3, xctx->nl_y3, &xctx->nl_x, &xctx->nl_y, &xctx->nl_r, &xctx->nl_a, &xctx->nl_b);
+      restore_selection(xctx->nl_xx1, xctx->nl_yy1, xctx->nl_xx2, xctx->nl_yy2);
+      arc_bbox(xctx->nl_x, xctx->nl_y, xctx->nl_r, xctx->nl_a, xctx->nl_b,
+                &xctx->nl_xx1, &xctx->nl_yy1, &xctx->nl_xx2, &xctx->nl_yy2);
       if(xctx->nl_sweep_angle==360.) xctx->nl_b=360.;
-      if(xctx->nl_r>0.) drawtemparc(xctx->gc[xctx->rectcolor], NOW, xctx->nl_x, xctx->nl_y, xctx->nl_r, xctx->nl_a, xctx->nl_b);
+      if(xctx->nl_r>0.) drawtemparc(xctx->gc[xctx->rectcolor], NOW,
+           xctx->nl_x, xctx->nl_y, xctx->nl_r, xctx->nl_a, xctx->nl_b);
     }
   }
 }
 
-void new_line(int what)
+void new_line(int what, double mousex_snap, double mousey_snap)
 {
   int modified = 0;
+
+
   if( (what & PLACE) )
   {
     if( (xctx->nl_x1!=xctx->nl_x2 || xctx->nl_y1!=xctx->nl_y2) && (xctx->ui_state & STARTLINE) )
@@ -2902,7 +3183,7 @@ void new_line(int what)
       }
       if(modified) set_modify(1);
     }
-    xctx->nl_x1=xctx->nl_x2=xctx->mousex_snap;xctx->nl_y1=xctx->nl_y2=xctx->mousey_snap;
+    xctx->nl_x1=xctx->nl_x2=mousex_snap;xctx->nl_y1=xctx->nl_y2=mousey_snap;
     xctx->ui_state |= STARTLINE;
   }
   if( what & END)
@@ -2913,16 +3194,16 @@ void new_line(int what)
   if(what & RUBBER)
   {
     if(xctx->manhattan_lines==1) {
-      xctx->nl_xx1=xctx->nl_x1;xctx->nl_yy1=xctx->nl_y1;
-      xctx->nl_xx2=xctx->nl_x2;xctx->nl_yy2=xctx->nl_y2;
+      xctx->nl_xx1 = xctx->nl_x1;xctx->nl_yy1 = xctx->nl_y1;
+      xctx->nl_xx2 = xctx->nl_x2;xctx->nl_yy2 = xctx->nl_y2;
       ORDER(xctx->nl_xx1,xctx->nl_yy1,xctx->nl_xx2,xctx->nl_yy1);
       drawtempline(xctx->gctiled, NOW, xctx->nl_xx1,xctx->nl_yy1,xctx->nl_xx2,xctx->nl_yy1);
-      xctx->nl_xx1=xctx->nl_x1;xctx->nl_yy1=xctx->nl_y1;
-      xctx->nl_xx2=xctx->nl_x2;xctx->nl_yy2=xctx->nl_y2;
+      xctx->nl_xx1 = xctx->nl_x1;xctx->nl_yy1 = xctx->nl_y1;
+      xctx->nl_xx2 = xctx->nl_x2;xctx->nl_yy2 = xctx->nl_y2;
       ORDER(xctx->nl_xx2,xctx->nl_yy1,xctx->nl_xx2,xctx->nl_yy2);
       drawtempline(xctx->gctiled, NOW, xctx->nl_xx2,xctx->nl_yy1,xctx->nl_xx2,xctx->nl_yy2);
       restore_selection(xctx->nl_x1, xctx->nl_y1, xctx->nl_x2, xctx->nl_y2);
-      xctx->nl_x2 = xctx->mousex_snap; xctx->nl_y2 = xctx->mousey_snap;
+      xctx->nl_x2 = mousex_snap; xctx->nl_y2 = mousey_snap;
       if(!(what & CLEAR)) {
         xctx->nl_xx1 = xctx->nl_x1; xctx->nl_yy1 = xctx->nl_y1;
         xctx->nl_xx2 = xctx->nl_x2; xctx->nl_yy2 = xctx->nl_y2;
@@ -2943,7 +3224,7 @@ void new_line(int what)
       ORDER(xctx->nl_xx1,xctx->nl_yy2,xctx->nl_xx2,xctx->nl_yy2);
       drawtempline(xctx->gctiled, NOW, xctx->nl_xx1,xctx->nl_yy2,xctx->nl_xx2,xctx->nl_yy2);
       restore_selection(xctx->nl_x1, xctx->nl_y1, xctx->nl_x2, xctx->nl_y2);
-      xctx->nl_x2 = xctx->mousex_snap; xctx->nl_y2 = xctx->mousey_snap;
+      xctx->nl_x2 = mousex_snap; xctx->nl_y2 = mousey_snap;
       if(!(what & CLEAR)) {
         xctx->nl_xx1 = xctx->nl_x1; xctx->nl_yy1 = xctx->nl_y1;
         xctx->nl_xx2 = xctx->nl_x2; xctx->nl_yy2 = xctx->nl_y2;
@@ -2960,7 +3241,7 @@ void new_line(int what)
       ORDER(xctx->nl_xx1,xctx->nl_yy1,xctx->nl_xx2,xctx->nl_yy2);
       drawtempline(xctx->gctiled, NOW, xctx->nl_xx1,xctx->nl_yy1,xctx->nl_xx2,xctx->nl_yy2);
       restore_selection(xctx->nl_x1, xctx->nl_y1, xctx->nl_x2, xctx->nl_y2);
-      xctx->nl_x2 = xctx->mousex_snap; xctx->nl_y2 = xctx->mousey_snap;
+      xctx->nl_x2 = mousex_snap; xctx->nl_y2 = mousey_snap;
       if(!(what & CLEAR)) {
         xctx->nl_xx1 = xctx->nl_x1; xctx->nl_yy1 = xctx->nl_y1;
         xctx->nl_xx2 = xctx->nl_x2; xctx->nl_yy2 = xctx->nl_y2;
@@ -2971,7 +3252,7 @@ void new_line(int what)
   }
 }
 
-void new_rect(int what)
+void new_rect(int what, double mousex_snap, double mousey_snap)
 {
   int modified = 0;
   if( (what & PLACE) )
@@ -2985,12 +3266,12 @@ void new_rect(int what)
     save_draw = xctx->draw_window;
     xctx->draw_window = 1;
     /* draw fill pattern even in xcopyarea mode */
-    filledrect(xctx->rectcolor, NOW, xctx->nl_x1,xctx->nl_y1,xctx->nl_x2,xctx->nl_y2);
+    filledrect(xctx->rectcolor, NOW, xctx->nl_x1,xctx->nl_y1,xctx->nl_x2,xctx->nl_y2, 1);
     xctx->draw_window = save_draw;
     storeobject(-1, xctx->nl_x1,xctx->nl_y1,xctx->nl_x2,xctx->nl_y2,xRECT,xctx->rectcolor, 0, NULL);
     modified = 1;
    }
-   xctx->nl_x1=xctx->nl_x2=xctx->mousex_snap;xctx->nl_y1=xctx->nl_y2=xctx->mousey_snap;
+   xctx->nl_x1 = xctx->nl_x2 = mousex_snap;xctx->nl_y1 = xctx->nl_y2 = mousey_snap;
    xctx->ui_state |= STARTRECT;
    if(modified) set_modify(1);
   }
@@ -3000,18 +3281,19 @@ void new_rect(int what)
   }
   if(what & RUBBER)
   {
-   xctx->nl_xx1=xctx->nl_x1;xctx->nl_yy1=xctx->nl_y1;xctx->nl_xx2=xctx->nl_x2;xctx->nl_yy2=xctx->nl_y2;
+   xctx->nl_xx1 = xctx->nl_x1;xctx->nl_yy1 = xctx->nl_y1;xctx->nl_xx2 = xctx->nl_x2;xctx->nl_yy2 = xctx->nl_y2;
    RECTORDER(xctx->nl_xx1,xctx->nl_yy1,xctx->nl_xx2,xctx->nl_yy2);
    drawtemprect(xctx->gctiled,NOW, xctx->nl_xx1,xctx->nl_yy1,xctx->nl_xx2,xctx->nl_yy2);
-   xctx->nl_x2=xctx->mousex_snap;xctx->nl_y2=xctx->mousey_snap;
-   xctx->nl_xx1=xctx->nl_x1;xctx->nl_yy1=xctx->nl_y1;xctx->nl_xx2=xctx->nl_x2;xctx->nl_yy2=xctx->nl_y2;
+   restore_selection(xctx->nl_x1, xctx->nl_y1, xctx->nl_x2, xctx->nl_y2);
+   xctx->nl_x2 = xctx->mousex_snap;xctx->nl_y2 = xctx->mousey_snap;
+   xctx->nl_xx1 = xctx->nl_x1;xctx->nl_yy1 = xctx->nl_y1;xctx->nl_xx2 = xctx->nl_x2;xctx->nl_yy2 = xctx->nl_y2;
    RECTORDER(xctx->nl_xx1,xctx->nl_yy1,xctx->nl_xx2,xctx->nl_yy2);
    drawtemprect(xctx->gc[xctx->rectcolor], NOW, xctx->nl_xx1,xctx->nl_yy1,xctx->nl_xx2,xctx->nl_yy2);
   }
 }
 
 
-void new_polygon(int what)
+void new_polygon(int what, double mousex_snap, double mousey_snap)
 {
    if( what & PLACE ) xctx->nl_points=0; /*  start new polygon placement */
 
@@ -3023,22 +3305,27 @@ void new_polygon(int what)
    if( what & PLACE )
    {
      /* fprintf(errfp, "new_poly: PLACE, nl_points=%d\n", xctx->nl_points); */
-     xctx->nl_polyy[xctx->nl_points]=xctx->mousey_snap;
-     xctx->nl_polyx[xctx->nl_points]=xctx->mousex_snap;
+     xctx->nl_polyy[xctx->nl_points]=mousey_snap;
+     xctx->nl_polyx[xctx->nl_points]=mousex_snap;
      xctx->nl_points++;
      xctx->nl_polyx[xctx->nl_points]=xctx->nl_polyx[xctx->nl_points-1]; /* prepare next point for rubber */
      xctx->nl_polyy[xctx->nl_points] = xctx->nl_polyy[xctx->nl_points-1];
      /* fprintf(errfp, "added point: %.16g %.16g\n", xctx->nl_polyx[xctx->nl_points-1],
          xctx->nl_polyy[xctx->nl_points-1]); */
+     xctx->nl_x1=xctx->nl_x2=mousex_snap;xctx->nl_y1=xctx->nl_y2=mousey_snap;
      xctx->ui_state |= STARTPOLYGON;
      set_modify(1);
    }
    if( what & ADD)
    {
+     if(xctx->mousex_snap < xctx->nl_x1) xctx->nl_x1 = xctx->mousex_snap;
+     if(xctx->mousex_snap > xctx->nl_x2) xctx->nl_x2 = xctx->mousex_snap;
+     if(xctx->mousey_snap < xctx->nl_y1) xctx->nl_y1 = xctx->mousey_snap;
+     if(xctx->mousey_snap > xctx->nl_y2) xctx->nl_y2 = xctx->mousey_snap;
      /* closed poly */
      if(what & END) {
        /* delete last rubber */
-       drawtemppolygon(xctx->gctiled, NOW, xctx->nl_polyx, xctx->nl_polyy, xctx->nl_points+1);
+       drawtemppolygon(xctx->gctiled, NOW, xctx->nl_polyx, xctx->nl_polyy, xctx->nl_points+1, 0);
        xctx->nl_polyx[xctx->nl_points] = xctx->nl_polyx[0];
        xctx->nl_polyy[xctx->nl_points] = xctx->nl_polyy[0];
      /* add point */
@@ -3060,23 +3347,29 @@ void new_polygon(int what)
         ((what & ADD) && xctx->nl_polyx[xctx->nl_points-1] == xctx->nl_polyx[0] &&
          xctx->nl_polyy[xctx->nl_points-1] == xctx->nl_polyy[0]) ) {
      xctx->push_undo();
-     drawtemppolygon(xctx->gctiled, NOW, xctx->nl_polyx, xctx->nl_polyy, xctx->nl_points+1);
+     drawtemppolygon(xctx->gctiled, NOW, xctx->nl_polyx, xctx->nl_polyy, xctx->nl_points+1, 0);
      store_poly(-1, xctx->nl_polyx, xctx->nl_polyy, xctx->nl_points, xctx->rectcolor, 0, NULL);
      /* fprintf(errfp, "new_poly: finish: nl_points=%d\n", xctx->nl_points); */
-     drawtemppolygon(xctx->gc[xctx->rectcolor], NOW, xctx->nl_polyx, xctx->nl_polyy, xctx->nl_points);
+     drawtemppolygon(xctx->gc[xctx->rectcolor], NOW, xctx->nl_polyx, xctx->nl_polyy, xctx->nl_points, 0);
      xctx->ui_state &= ~STARTPOLYGON;
-     drawpolygon(xctx->rectcolor, NOW, xctx->nl_polyx, xctx->nl_polyy, xctx->nl_points, 0, 0);
+     drawpolygon(xctx->rectcolor, NOW, xctx->nl_polyx, xctx->nl_polyy, xctx->nl_points, 0, 0, 0);
      my_free(_ALLOC_ID_, &xctx->nl_polyx);
      my_free(_ALLOC_ID_, &xctx->nl_polyy);
      xctx->nl_maxpoints = xctx->nl_points = 0;
    }
    if(what & RUBBER)
    {
+     if(xctx->mousex_snap < xctx->nl_x1) xctx->nl_x1 = xctx->mousex_snap;
+     if(xctx->mousex_snap > xctx->nl_x2) xctx->nl_x2 = xctx->mousex_snap;
+     if(xctx->mousey_snap < xctx->nl_y1) xctx->nl_y1 = xctx->mousey_snap;
+     if(xctx->mousey_snap > xctx->nl_y2) xctx->nl_y2 = xctx->mousey_snap;
      /* fprintf(errfp, "new_poly: RUBBER\n"); */
-     drawtemppolygon(xctx->gctiled, NOW, xctx->nl_polyx, xctx->nl_polyy, xctx->nl_points+1);
+     drawtemppolygon(xctx->gctiled, NOW, xctx->nl_polyx, xctx->nl_polyy, xctx->nl_points+1, 0);
      xctx->nl_polyy[xctx->nl_points] = xctx->mousey_snap;
      xctx->nl_polyx[xctx->nl_points] = xctx->mousex_snap;
-     drawtemppolygon(xctx->gc[xctx->rectcolor], NOW, xctx->nl_polyx, xctx->nl_polyy, xctx->nl_points+1);
+     restore_selection(xctx->nl_x1, xctx->nl_y1, xctx->nl_x2, xctx->nl_y2);
+     /* xctx->nl_x2 = xctx->mousex_snap; xctx->nl_y2 = xctx->mousey_snap; */
+     drawtemppolygon(xctx->gc[xctx->rectcolor], NOW, xctx->nl_polyx, xctx->nl_polyy, xctx->nl_points+1, 0);
    }
 }
 
@@ -3092,8 +3385,9 @@ int text_bbox(const char *str, double xscale, double yscale,
   cairo_font_extents_t fext;
   double ww, hh, maxw;
   
-  /*                will not match exactly font metrics when doing ps/svg output , but better than nothing */
-  if(!has_x) return text_bbox_nocairo(str, xscale, yscale, rot, flip, hcenter, vcenter, x1, y1,
+  /* if no cairo_ctx is available use text_bbox_nocairo().
+  * will not match exactly font metrics when doing ps/svg output, but better than nothing */
+  if(!has_x && !xctx->cairo_ctx) return text_bbox_nocairo(str, xscale, yscale, rot, flip, hcenter, vcenter, x1, y1,
                                       rx1, ry1, rx2, ry2, cairo_lines, cairo_longest_line);
   size = xscale*52.*cairo_font_scale;
 
@@ -3285,7 +3579,7 @@ int create_text(int draw_text, double x, double y, int rot, int flip, const char
   my_strdup(_ALLOC_ID_, &t->prop_ptr, props);
   /*  debug ... */
   /*  t->prop_ptr=NULL; */
-  dbg(1, "place_text(): done text input\n");
+  dbg(1, "create_text(): done text input\n");
   set_text_flags(t);
   textlayer = t->layer;
   if(textlayer < 0 || textlayer >= cadlayers) textlayer = TEXTLAYER;
@@ -3333,20 +3627,20 @@ int place_text(int draw_text, double mx, double my)
   tclsetvar("props","");
   tclsetvar("retval","");
 
-  if(!tclgetvar("hsize"))
-   tclsetvar("hsize","0.4");
-  if(!tclgetvar("vsize"))
-   tclsetvar("vsize","0.4");
+  if(!tclgetvar("tctx::hsize"))
+   tclsetvar("tctx::hsize","0.4");
+  if(!tclgetvar("tctx::vsize"))
+   tclsetvar("tctx::vsize","0.4");
   xctx->semaphore++;
   tcleval("enter_text {text:} normal");
   xctx->semaphore--;
 
-  dbg(1, "place_text(): hsize=%s vsize=%s\n",tclgetvar("hsize"), tclgetvar("vsize") );
+  dbg(1, "place_text(): hsize=%s vsize=%s\n",tclgetvar("tctx::hsize"), tclgetvar("tctx::vsize") );
   /* get: retval, hsize, vsize, props,  */
   txt =  (char *)tclgetvar("retval");
   props =  (char *)tclgetvar("props");
-  hsize =  (char *)tclgetvar("hsize");
-  vsize =  (char *)tclgetvar("vsize");
+  hsize =  (char *)tclgetvar("tctx::hsize");
+  vsize =  (char *)tclgetvar("tctx::vsize");
   if(!txt || !strcmp(txt,"")) return 0;   /*  dont allocate text object if empty string given */
   xctx->push_undo();
   dbg(1,"props=%s, txt=%s\n", props, txt);
@@ -3387,6 +3681,7 @@ void pan(int what, int mx, int my)
  * XCopy Area operations */
 void fix_restore_rect(double x1, double y1, double x2, double y2)
 {
+  dbg(1, "%g %g %g %g\n", x1, y1, x2, y2);
   /* horizontal lines */
   MyXCopyAreaDouble(display, xctx->save_pixmap, xctx->window, xctx->gc[0],
       x1, y1, x2, y1, x1, y1,
@@ -3410,6 +3705,7 @@ void fix_restore_rect(double x1, double y1, double x2, double y2)
 /*  20150927 select=1: select objects, select=0: unselect objects */
 void select_rect(int what, int select)
 {
+ int incremental_select = tclgetboolvar("incremental_select");
  dbg(1, "select_rect(): what=%d, mousex_save=%g mousey_save=%g, mousex_snap=%g mousey_snap=%g\n", 
         what, xctx->mx_double_save, xctx->my_double_save, xctx->mousex_snap, xctx->mousey_snap);
  if(what & RUBBER)
@@ -3420,20 +3716,17 @@ void select_rect(int what, int select)
     }
     xctx->nl_xx1=xctx->nl_xr;xctx->nl_xx2=xctx->nl_xr2;xctx->nl_yy1=xctx->nl_yr;xctx->nl_yy2=xctx->nl_yr2;
     RECTORDER(xctx->nl_xx1,xctx->nl_yy1,xctx->nl_xx2,xctx->nl_yy2);
-    if(fix_broken_tiled_fill || !_unix) {
-      fix_restore_rect(xctx->nl_xx1,xctx->nl_yy1,xctx->nl_xx2,xctx->nl_yy2);
-    } else {
-      drawtemprect(xctx->gctiled,NOW, xctx->nl_xx1,xctx->nl_yy1,xctx->nl_xx2,xctx->nl_yy2);
-    }
+    drawtemprect(xctx->gctiled,NOW, xctx->nl_xx1,xctx->nl_yy1,xctx->nl_xx2,xctx->nl_yy2);
     xctx->nl_xr2=xctx->mousex_snap;xctx->nl_yr2=xctx->mousey_snap;
 
     /*  20171026 update unselected objects while dragging */
     rebuild_selected_array();
     draw_selection(xctx->gc[SELLAYER], 0);
-    /* if(xctx->nl_sel) { */
+    
+    if(incremental_select || !xctx->nl_sel) {
       if(xctx->nl_dir == 0) select_inside(xctx->nl_xx1, xctx->nl_yy1, xctx->nl_xx2, xctx->nl_yy2, xctx->nl_sel);
       else select_touch(xctx->nl_xx1, xctx->nl_yy1, xctx->nl_xx2, xctx->nl_yy2, xctx->nl_sel);
-    /* } */
+    }
     xctx->nl_xx1=xctx->nl_xr;xctx->nl_xx2=xctx->nl_xr2;xctx->nl_yy1=xctx->nl_yr;xctx->nl_yy2=xctx->nl_yr2;
     RECTORDER(xctx->nl_xx1,xctx->nl_yy1,xctx->nl_xx2,xctx->nl_yy2);
     drawtemprect(xctx->gc[SELLAYER],NOW, xctx->nl_xx1,xctx->nl_yy1,xctx->nl_xx2,xctx->nl_yy2);
@@ -3462,12 +3755,7 @@ void select_rect(int what, int select)
  else if(what & END)
  {
     RECTORDER(xctx->nl_xr,xctx->nl_yr,xctx->nl_xr2,xctx->nl_yr2);
-
-    if(fix_broken_tiled_fill || !_unix) {
-      fix_restore_rect(xctx->nl_xr, xctx->nl_yr, xctx->nl_xr2, xctx->nl_yr2);
-    } else {
-      drawtemprect(xctx->gctiled, NOW, xctx->nl_xr,xctx->nl_yr,xctx->nl_xr2,xctx->nl_yr2);
-    }
+    drawtemprect(xctx->gctiled, NOW, xctx->nl_xr,xctx->nl_yr,xctx->nl_xr2,xctx->nl_yr2);
     if(xctx->nl_dir == 0) select_inside(xctx->nl_xr,xctx->nl_yr,xctx->nl_xr2,xctx->nl_yr2, xctx->nl_sel);
     else select_touch(xctx->nl_xr,xctx->nl_yr,xctx->nl_xr2,xctx->nl_yr2, xctx->nl_sel);
 

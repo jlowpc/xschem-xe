@@ -352,8 +352,12 @@ void symbol_bbox(int i, double *x1,double *y1, double *x2, double *y2)
    /* strings bbox */
    for(j=0;j< (xctx->inst[i].ptr+ xctx->sym)->texts; ++j)
    {
+     double xscale, yscale;
+
+     get_sym_text_size(i, j, &xscale, &yscale);
+
      text = (xctx->inst[i].ptr+ xctx->sym)->text[j];
-     if(!xctx->show_hidden_texts && (text.flags & HIDE_TEXT)) continue;
+     if(!xctx->show_hidden_texts && (text.flags & (HIDE_TEXT | HIDE_TEXT_INSTANTIATED))) continue;
      sym_flip = flip;
      sym_rot = rot;
      /* dbg(2, "symbol_bbox(): instance %d text n: %d text str=%s\n", i,j, text.txt_ptr? text.txt_ptr:"NULL"); */
@@ -363,7 +367,7 @@ void symbol_bbox(int i, double *x1,double *y1, double *x2, double *y2)
      #if HAS_CAIRO==1
      customfont=set_text_custom_font(&text);
      #endif
-     text_bbox(tmp_txt, text.xscale, text.yscale,
+     text_bbox(tmp_txt, xscale, yscale,
        (text.rot + ( (sym_flip && (text.rot & 1) ) ? sym_rot+2 : sym_rot)) &0x3,
        sym_flip ^ text.flip, text.hcenter, text.vcenter,
        x0+text_x0,y0+text_y0, &xx1,&yy1,&xx2,&yy2, &tmp, &dtmp);
@@ -433,7 +437,7 @@ static void del_rect_line_arc_poly()
    {
     ++j;
 
-    if(xctx->arc[c][i].fill)
+    if(xctx->arc[c][i].fill & 1) /* .fill: 1: stippled fill, 3: solid fill */
       arc_bbox(xctx->arc[c][i].x, xctx->arc[c][i].y, xctx->arc[c][i].r, 0, 360,
                &tmp.x1, &tmp.y1, &tmp.x2, &tmp.y2);
     else
@@ -479,7 +483,10 @@ static void del_rect_line_arc_poly()
   }
   xctx->polygons[c] -= j;
  }
- if(deleted) set_modify(1);
+ if(deleted) {
+   set_modify(1);
+   xctx->need_reb_sel_arr = 1;
+ }
 }
 
 int delete_wires(int selected_flag)
@@ -489,7 +496,7 @@ int delete_wires(int selected_flag)
   {
     if(xctx->wire[i].sel == selected_flag) {
       ++j;
-      hash_wire(XDELETE, i, 0);
+      /* hash_wire(XDELETE, i, 0); */ /* can not be done since wire deletions change wire idexes in array */
       my_free(_ALLOC_ID_, &xctx->wire[i].prop_ptr);
       my_free(_ALLOC_ID_, &xctx->wire[i].node);
 
@@ -603,7 +610,6 @@ void delete(int to_push_undo)
 void delete_only_rect_line_arc_poly(void)
 {
  del_rect_line_arc_poly();
- xctx->lastsel = 0;
  draw();
  xctx->ui_state &= ~SELECTION;
  set_first_sel(0, -1, 0);
@@ -725,17 +731,43 @@ void bbox(int what,double x1,double y1, double x2, double y2)
  }
 }
 
-void set_first_sel(unsigned short type, int n, unsigned int col)
+/* n = -1 : clear first selected info 
+ * n = -2 : return first selected element if still selected, or get first from 
+ *          selected list. Id no elements selected return first selected item (j = 0) 
+ * n >= 0 : store indicated element as first selected
+ */
+int set_first_sel(unsigned short type, int n, unsigned int col)
 {
-  if(n == -1) { /* reset first_sel */
+  if(n == -2) {
+    int j;
+    /* retrieve first selected element (if still selected)... */
+    if(xctx->first_sel.n >=0 && xctx->first_sel.type == ELEMENT && 
+       xctx->inst[xctx->first_sel.n].sel == SELECTED) {
+      for(j=0; j < xctx->lastsel; j++) {
+        if(xctx->sel_array[j].type == ELEMENT && xctx->sel_array[j].n == xctx->first_sel.n) {
+          break;
+        }
+      }
+    /* ... otherwise get first from sel_array[] list */
+    } else {
+      for(j=0; j < xctx->lastsel; j++) {
+        if(xctx->sel_array[j].type == ELEMENT) {
+          break;
+        }
+      }
+    }
+    if(j >= xctx->lastsel) j = 0;
+    return j;
+  } else if(n == -1) { /* reset first_sel */
     xctx->first_sel.type = 0;
     xctx->first_sel.n = -1;
     xctx->first_sel.col = 0;
-  }else if(xctx->first_sel.n == -1) {
+  } else if(xctx->first_sel.n == -1) {
     xctx->first_sel.type = type;
     xctx->first_sel.n = n;
     xctx->first_sel.col = col;
   }
+  return 0;
 }
 
 void unselect_all(int dr)
@@ -837,9 +869,13 @@ void unselect_all(int dr)
       if(xctx->poly[c][i].sel)
       {
        int k;
+       int bezier = 2 + !strboolcmp(get_tok_value(xctx->poly[c][i].prop_ptr, "bezier", 0), "true");
        for(k=0;k<xctx->poly[c][i].points; ++k) xctx->poly[c][i].selected_point[k] = 0;
        xctx->poly[c][i].sel = 0;
-       if(dr) drawtemppolygon(xctx->gctiled, NOW, xctx->poly[c][i].x, xctx->poly[c][i].y, xctx->poly[c][i].points);
+       if(dr) {
+         drawtemppolygon(xctx->gctiled, NOW,
+               xctx->poly[c][i].x, xctx->poly[c][i].y, xctx->poly[c][i].points, bezier);
+       }
       }
      }
     }
@@ -940,6 +976,7 @@ void select_element(int i,unsigned short select_mode, int fast, int override_loc
       draw_temp_symbol(ADD, xctx->gc[SELLAYER], i,c,0,0,0.0,0.0);
     }
   } else {
+    symbol_bbox(i, &xctx->inst[i].x1, &xctx->inst[i].y1, &xctx->inst[i].x2, &xctx->inst[i].y2 );
     for(c=0;c<cadlayers; ++c) {
       draw_temp_symbol(NOW, xctx->gctiled, i,c,0,0,0.0,0.0);
     }
@@ -1054,7 +1091,6 @@ void select_arc(int c, int i, unsigned short select_mode, int fast)
   }
   if(xctx->arc[c][i].sel == SELECTED) set_first_sel(ARC, i, c);
 
-  /*if( xctx->arc[c][i].sel == (SELECTED1|SELECTED2|SELECTED3|SELECTED4)) xctx->arc[c][i].sel = SELECTED; */
 
   xctx->need_reb_sel_arr=1;
 }
@@ -1063,6 +1099,7 @@ void select_polygon(int c, int i, unsigned short select_mode, int fast )
 {
   char str[1024];       /* overflow safe */
   char s[256];          /* overflow safe */
+  int bezier;
   if(!fast)
   {
    my_strncpy(s,xctx->poly[c][i].prop_ptr!=NULL?xctx->poly[c][i].prop_ptr:"<NULL>",S(s));
@@ -1073,12 +1110,15 @@ void select_polygon(int c, int i, unsigned short select_mode, int fast )
    my_snprintf(str, S(str), "n=%4d x0 = %.16g  y0 = %.16g ...", i, xctx->poly[c][i].x[0], xctx->poly[c][i].y[0]);
    statusmsg(str,1);
   }
+  bezier = 2 + !strboolcmp(get_tok_value(xctx->poly[c][i].prop_ptr, "bezier", 0), "true");
   xctx->poly[c][i].sel = select_mode;
   if(select_mode) {
-    drawtemppolygon(xctx->gc[SELLAYER], NOW, xctx->poly[c][i].x, xctx->poly[c][i].y, xctx->poly[c][i].points);
+    drawtemppolygon(xctx->gc[SELLAYER], NOW,
+       xctx->poly[c][i].x, xctx->poly[c][i].y, xctx->poly[c][i].points, bezier);
   }
   else {
-    drawtemppolygon(xctx->gctiled, NOW, xctx->poly[c][i].x, xctx->poly[c][i].y, xctx->poly[c][i].points);
+    drawtemppolygon(xctx->gctiled, NOW,
+       xctx->poly[c][i].x, xctx->poly[c][i].y, xctx->poly[c][i].points, bezier);
   }
   if(xctx->poly[c][i].sel == SELECTED) set_first_sel(POLYGON, i, c);
   xctx->need_reb_sel_arr=1;
@@ -1128,11 +1168,15 @@ void select_line(int c, int i, unsigned short select_mode, int fast )
 }
 
 /* 20160503 return type field */
-Selected select_object(double mx,double my, unsigned short select_mode, int override_lock)
+Selected select_object(double mx,double my, unsigned short select_mode,
+                       int override_lock, Selected *selptr)
 {
    Selected sel;
    xctx->already_selected = 0;
-   sel = find_closest_obj(mx, my, override_lock);
+   if(!selptr) 
+     sel = find_closest_obj(mx, my, override_lock);
+   else
+     sel = *selptr;
    dbg(1, "select_object(): sel.n=%d, sel.col=%d, sel.type=%d\n", sel.n, sel.col, sel.type);
 
    switch(sel.type)
@@ -1259,21 +1303,29 @@ void select_inside(double x1,double y1, double x2, double y2, int sel) /*added u
  en_s = tclgetboolvar("enable_stretch");
  for(i=0;i<xctx->wires; ++i)
  {
-  if(RECT_INSIDE(xctx->wire[i].x1,xctx->wire[i].y1,xctx->wire[i].x2,xctx->wire[i].y2, x1,y1,x2,y2))
-  {
-   xctx->ui_state |= SELECTION; /* set xctx->ui_state to SELECTION also if unselecting by area ???? */
-   sel ? select_wire(i,SELECTED, 1): select_wire(i,0, 1);
-  }
-  else if( sel && en_s && POINTINSIDE(xctx->wire[i].x1,xctx->wire[i].y1, x1,y1,x2,y2) )
-  {
-   xctx->ui_state |= SELECTION;
-   select_wire(i,SELECTED1, 1);
-  }
-  else if( sel && en_s && POINTINSIDE(xctx->wire[i].x2,xctx->wire[i].y2, x1,y1,x2,y2) )
-  {
-   xctx->ui_state |= SELECTION;
-   select_wire(i,SELECTED2, 1);
-  }
+   if(sel) {
+     if(RECT_INSIDE(xctx->wire[i].x1,xctx->wire[i].y1,xctx->wire[i].x2,xctx->wire[i].y2, x1,y1,x2,y2))
+     {
+       xctx->ui_state |= SELECTION; /* set xctx->ui_state to SELECTION also if unselecting by area ???? */
+       select_wire(i, SELECTED, 1);
+     }
+     else if(en_s && POINTINSIDE(xctx->wire[i].x1,xctx->wire[i].y1, x1,y1,x2,y2) )
+     {
+       xctx->ui_state |= SELECTION;
+       select_wire(i, SELECTED1, 1);
+     }
+     else if(en_s && POINTINSIDE(xctx->wire[i].x2,xctx->wire[i].y2, x1,y1,x2,y2) )
+     {
+       xctx->ui_state |= SELECTION;
+       select_wire(i, SELECTED2, 1);
+     }
+   } else {
+     if(RECT_INSIDE(xctx->wire[i].x1,xctx->wire[i].y1,xctx->wire[i].x2,xctx->wire[i].y2, x1,y1,x2,y2))
+     {
+       xctx->ui_state |= SELECTION; /* set xctx->ui_state to SELECTION also if unselecting by area ???? */
+       select_wire(i, 0, 1);
+     }
+   }
  }
  for(i=0;i<xctx->texts; ++i)
  {
@@ -1301,17 +1353,25 @@ void select_inside(double x1,double y1, double x2, double y2, int sel) /*added u
  }
  for(i=0;i<xctx->instances; ++i)
  {
-  if(RECT_INSIDE(xctx->inst[i].xx1, xctx->inst[i].yy1, xctx->inst[i].xx2, xctx->inst[i].yy2, x1,y1,x2,y2))
-  {
-   xctx->ui_state |= SELECTION; /* set xctx->ui_state to SELECTION also if unselecting by area ???? */
-   if(sel) {
-     if(strboolcmp(get_tok_value(xctx->inst[i].prop_ptr, "lock", 0), "true")) {
-       select_element(i, SELECTED, 1, 1);
+   if(RECT_INSIDE(xctx->inst[i].xx1, xctx->inst[i].yy1, xctx->inst[i].xx2, xctx->inst[i].yy2, x1,y1,x2,y2))
+   {
+     xctx->ui_state |= SELECTION; /* set xctx->ui_state to SELECTION also if unselecting by area ???? */
+     if(sel) {
+       if(strboolcmp(get_tok_value(xctx->inst[i].prop_ptr, "lock", 0), "true")) {
+         select_element(i, SELECTED, 1, 1);
+       }
+     } else {
+       select_element(i, 0, 1, 0);
      }
-   } else {
-     select_element(i, 0, 1, 0);
    }
-  }
+   #if 0
+   else {
+     xctx->ui_state |= SELECTION; /* set xctx->ui_state to SELECTION also if unselecting by area ???? */
+     if(sel) {
+       select_element(i, 0, 1, 0);
+     }
+   }
+   #endif
  }
  for(c=0;c<cadlayers; ++c)
  {
@@ -1347,21 +1407,29 @@ void select_inside(double x1,double y1, double x2, double y2, int sel) /*added u
    }
    for(i=0;i<xctx->lines[c]; ++i)
    {
-    if(RECT_INSIDE(xctx->line[c][i].x1,xctx->line[c][i].y1,xctx->line[c][i].x2,xctx->line[c][i].y2, x1,y1,x2,y2))
-    {
-     xctx->ui_state |= SELECTION;
-     sel? select_line(c,i,SELECTED,1): select_line(c,i,0,1);
-    }
-    else if( sel && en_s && POINTINSIDE(xctx->line[c][i].x1,xctx->line[c][i].y1, x1,y1,x2,y2) )
-    {
-     xctx->ui_state |= SELECTION; /* set xctx->ui_state to SELECTION also if unselecting by area ???? */
-     select_line(c, i,SELECTED1,1);
-    }
-    else if( sel && en_s && POINTINSIDE(xctx->line[c][i].x2,xctx->line[c][i].y2, x1,y1,x2,y2) )
-    {
-     xctx->ui_state |= SELECTION;
-     select_line(c, i,SELECTED2,1);
-    }
+     if(sel) {
+       if(RECT_INSIDE(xctx->line[c][i].x1,xctx->line[c][i].y1,xctx->line[c][i].x2,xctx->line[c][i].y2, x1,y1,x2,y2))
+       {
+         xctx->ui_state |= SELECTION;
+         select_line(c,i,SELECTED,1);
+       }
+       else if(en_s && POINTINSIDE(xctx->line[c][i].x1,xctx->line[c][i].y1, x1,y1,x2,y2) )
+       {
+         xctx->ui_state |= SELECTION; /* set xctx->ui_state to SELECTION also if unselecting by area ???? */
+         select_line(c, i,SELECTED1,1);
+       }
+       else if(en_s && POINTINSIDE(xctx->line[c][i].x2,xctx->line[c][i].y2, x1,y1,x2,y2) )
+       {
+         xctx->ui_state |= SELECTION;
+         select_line(c, i,SELECTED2,1);
+       }
+     } else {
+       if(RECT_INSIDE(xctx->line[c][i].x1,xctx->line[c][i].y1,xctx->line[c][i].x2,xctx->line[c][i].y2, x1,y1,x2,y2))
+       {
+         xctx->ui_state |= SELECTION;
+         select_line(c,i,0,1);
+       }
+     }
    }
    for(i=0;i<xctx->arcs[c]; ++i) {
      x = xctx->arc[c][i].x;
@@ -1579,6 +1647,68 @@ void select_touch(double x1,double y1, double x2, double y2, int sel) /*added un
    draw_selection(xctx->gc[SELLAYER], 0);
  }
 
+}
+
+
+int floaters_from_selected_inst()
+{
+  int res = 0, first = 1;
+  int i, n, t;
+  int instrot, instflip;
+  double instx0, insty0;
+  xSymbol *sym;
+  for(n = 0; n < xctx->lastsel; ++n) {
+    i = xctx->sel_array[n].n;
+    if(xctx->sel_array[n].type == ELEMENT) {
+      if(xctx->inst[i].ptr < 0) continue;
+      if(xctx->inst[i].flags & HIDE_SYMBOL_TEXTS) continue;
+      sym = xctx->sym + xctx->inst[i].ptr;
+      if( sym->type && (IS_LABEL_SH_OR_PIN(sym->type) || !strcmp(sym->type, "probe") )) continue;
+      instx0 = xctx->inst[i].x0;
+      insty0 = xctx->inst[i].y0;
+      instrot = xctx->inst[i].rot;
+      instflip = xctx->inst[i].flip;
+      if(first) {
+        xctx->push_undo();
+        set_modify(1);
+        first = 0;
+      }
+      my_strdup2(_ALLOC_ID_, &xctx->inst[i].prop_ptr,
+           subst_token(xctx->inst[i].prop_ptr, "hide_texts", "true"));
+      set_inst_flags(&xctx->inst[i]);
+      for(t = 0; t < sym->texts; t++) {
+        double txtx0, txty0;
+        int txtrot, txtflip;
+        int rot, flip;
+        double x0, y0;
+        xText *symtxt;
+        symtxt = &sym->text[t];
+        if(strstr(symtxt->txt_ptr, ":net_name")) continue;
+        txtx0 = symtxt->x0;
+        txty0 = symtxt->y0;
+        txtrot = symtxt->rot;
+        txtflip = symtxt->flip;
+       
+        rot = (txtrot + ( (instflip && (txtrot & 1) ) ? instrot+2 : instrot) ) & 0x3;
+        flip = txtflip ^ instflip;
+  
+        ROTATION(instrot, instflip, 0.0, 0.0, txtx0, txty0, x0, y0);
+        x0 += instx0;
+        y0 += insty0;
+  
+        create_text(0, x0, y0, rot, flip, symtxt->txt_ptr, 
+              subst_token(symtxt->prop_ptr, "name", xctx->inst[i].instname),
+              symtxt->xscale, symtxt->yscale);
+        xctx->text[xctx->texts - 1].sel = SELECTED;
+        set_text_flags(&xctx->text[xctx->texts - 1]);
+        dbg(1, "instance %d: symtext %d: %s\n", i, t, symtxt->txt_ptr);
+      }
+    }
+  }
+  xctx->need_reb_sel_arr=1;
+  rebuild_selected_array();
+  draw();
+  return res;
 }
 
 void select_all(void)

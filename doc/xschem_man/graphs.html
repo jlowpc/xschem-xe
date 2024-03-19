@@ -51,7 +51,7 @@ p{padding: 15px  30px 10px;}
  <a id="graphs"><h2>Using XSCHEM's internal graph functions</h2></a>
  <p>
   Xschem can now display waveforms by itself in the drawing area. in the Simulation menu there is an entry to
-  add a graph: <kbd>Add waveform graph</kbd>. When this menu is pressed a box can be placed in the schematic:
+  add a graph: <kbd>Graph -&gt; Add waveform graph</kbd>. When this menu is pressed a box can be placed in the schematic:
  </p>
  <img src="graphs06.png">
  <p class="important">
@@ -63,15 +63,14 @@ p{padding: 15px  30px 10px;}
  <img src="graphs16.png">
  <p>
   The next step is loading the simulation data, This is done by menu
-  <kbd>Simulation-&gt;Load/Unload ngspice .raw file</kbd>. This command loads a .raw file produced by a ngspice/Xyce
-  simulation. The file name is expected to be <kbd>circuit.raw</kbd> where 
-  <kbd>circuit.sch</kbd> is the name of the schematic opened in the drawing area. 
+  <kbd>Waves-&gt;Op | Ac | Dc | Tran | Tran | Noise | Sp </kbd>. This command loads  the user selected
+  .raw file produced by a ngspice/Xyce simulation.
  </p>
  <p class="important">
    Ensure the <kbd>circuit.raw</kbd> is saved in binary format (no <kbd>set filetype=ascii</kbd> in your testbench)
  </p>
  <p>
-  The raw file is searched for in the simulation/netlisting directory 
+  The raw file is usually located in the simulation/netlisting directory 
   <kbd>Simulation -&gt;set netlist dir</kbd>.<br>
   After placing a graph box and loading simulation data a wave can be added. If you place the mouse on the inside
   of the box, close to the bottom/left/right edges and click the graph will be selected. 
@@ -183,18 +182,30 @@ p{padding: 15px  30px 10px;}
   <li><kbd>exch()</kbd> Exchange top 2 operands on stack</li>
   <li><kbd>ravg()</kbd> Running average of over a specified time window</li>
   <li><kbd>del()</kbd> Delete waveform by specified quantity on the X-axis</li>
+  <li><kbd>re()</kbd> Return real part of complex number specified as magnitude and phase (in deg)</li>
+  <li><kbd>im()</kbd> Return imaginary part of complex number specified as magnitude and phase (in deg)</li>
   </ul>
   <p>1 argument operators:</p>
   <ul>
   <li><kbd>sin()</kbd> Trig. sin function</li>
   <li><kbd>cos()</kbd> Trig. cos function</li>
   <li><kbd>tan()</kbd> Trig. tan function</li>
+  <li><kbd>sinh()</kbd> Hyp. sin function</li>
+  <li><kbd>cosh()</kbd> Hyp. cos function</li>
+  <li><kbd>tanh()</kbd> Hyp. tan function</li>
+  <li><kbd>asinh()</kbd> Inv hyp. sin function</li>
+  <li><kbd>acosh()</kbd> Inv hyp. cos function</li>
+  <li><kbd>atanh()</kbd> Inv hyp. tan function</li>
+  <li><kbd>asin()</kbd> Inverse trig. sin function</li>
+  <li><kbd>acos()</kbd> Inverse trig. cos function</li>
+  <li><kbd>atan()</kbd> Inverse trig. tan function</li>
   <li><kbd>sqrt()</kbd> Square root</li>
   <li><kbd>sgn()</kbd> Sign</li>
   <li><kbd>abs()</kbd> Absolute value</li>
   <li><kbd>exp()</kbd> Base-e Exponentiation</li>
   <li><kbd>ln()</kbd> Base-e logarithm</li>
   <li><kbd>log10()</kbd> Base 10 logarithm</li>
+  <li><kbd>idx()</kbd> point number (0, 1, 2, ...) in vector</li>
   <li><kbd>db20()</kbd> Value in deciBel (20 * log10(n))</li>
   <li><kbd>avg()</kbd> Average</li>
   <li><kbd>prev()</kbd> Delay waveform by one point (at any x-axis position take the previous value)</li>
@@ -241,10 +252,38 @@ The following syntax:
   all graphs with data taken from the updated raw file(s).
   <br>
   <img src="graphs19.png"><br>
-
  </p>
 
+ <h3>Specify a different raw file for a single signal in a graph</h3>
+ <p>
+  The general syntax for a signal in a graph is the following:<br>
+  <kbd>"alias_name; signal_name % dataset# raw_file sim_type</kbd><br>
+   where:<br>
+   <kbd>dataset#</kbd> is the dataset index to display (only meaningful and needed
+   if multiple datasets are present like in Montecarloo / Mismatch simulations).<br>
+   <kbd>raw_file</kbd> is the location and name of the raw file to load. You can use 
+   <kbd>$netlist_dir</kbd> to quickly reference the simulation directory where usually such
+   raw files are located.<br>
+   <kbd>sim_type</kbd> is the simulation type, like
+   <kbd>ac</kbd>, <kbd>sp</kbd>, <kbd>spectrum</kbd>, <kbd>dc</kbd>, <kbd>op</kbd>,
+   <kbd>tran</kbd>, <kbd>noise</kbd>.<br>
+  Example:<br>
+  <kbd>"SAOUT; saout % 2 $netlist_dir/autozero_comp.raw tran</kbd><br>
+  <br>
+  <img src="graphs20.png"><br>
+ </p>
 
+ <h3>Change sweep variable</h3>
+ <p> The graph dialog box has a <kbd>Sweep</kbd> textbox where you can write the 
+  X-axis variable. By default xschem uses the first variable in the raw file for the X-axis, and this is the 
+  sweep variable the simulation was done, so time for transients, frequency for AC sims, voltage or current sweep
+  for DC sims. Example below shows a cmos latch where a DC simulation has been done sweeping the voltage generator
+  on the <kbd>a</kbd> input from 0 to 3V.<br>
+  <img src="graphs21.png"><br><br>
+  If <kbd>v(a) v(z)</kbd> is specified in the Sweep textbox (or <kbd>a z</kbd>) the <kbd>z</kbd> signal
+  will be plotted vs <kbd>a</kbd> and the <kbd>a</kbd> signal will be plotted vs <kbd>z</kbd>.<br>
+  <img src="graphs22.png"><br><br>
+  </p>
 
  <!-- end of slide -->
  <div class="filler"></div>

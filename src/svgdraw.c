@@ -39,7 +39,7 @@ static double svg_linew;      /* current width of lines / rectangles */
 
 static void svg_restore_lw(void)
 {
-   svg_linew = xctx->lw*1.2;
+   svg_linew = (xctx->lw <= 0.01 ? 0.2 : xctx->lw) * 1.2;
 }
 
 static void svg_xdrawline(int layer, int bus, double x1, double y1, double x2, double y2, int dash)
@@ -60,17 +60,69 @@ static void svg_xfillrectangle(int layer, double x1, double y1, double x2, doubl
 {
   fprintf(fd,"<path class=\"l%d\" ", layer);
   if(dash) fprintf(fd, "stroke-dasharray=\"%g,%g\" ", 1.4*dash/xctx->zoom, 1.4*dash/xctx->zoom);
-  if(!fill) {
+  if(fill == 0) {
     fprintf(fd,"style=\"fill:none;\" ");
-  } 
+  } else if(fill == 3) {
+   fprintf(fd, "style=\"fill-opacity:1.0;\" ");
+  }
   fprintf(fd,"d=\"M%g %gL%g %gL%g %gL%g %gL%g %gz\"/>\n", x1, y1, x2, y1, x2, y2, x1, y2, x1, y1);
 }
 
-static void svg_drawpolygon(int c, int what, double *x, double *y, int points, int fill, int dash)
+static void svg_drawbezier(double *x, double *y, int points)
+{
+  const double bez_steps = 1.0/32.0; /* divide the t = [0,1] interval into 32 steps */
+  int b, i;
+  double t;
+  double xp, yp;
+  double x0, x1, x2, y0, y1, y2;
+
+  i = 0;
+  fprintf(fd, "d=\"");
+  for(b = 0; b < points - 2; b++) {
+    if(points == 3) { /* 3 points: only one bezier */
+      x0 = x[0];
+      y0 = y[0];
+      x1 = x[1];
+      y1 = y[1];
+      x2 = x[2];
+      y2 = y[2];
+    } else if(b == points - 3) { /* last bezier */
+      x0 = (x[points - 3] + x[points - 2]) / 2.0;
+      y0 = (y[points - 3] + y[points - 2]) / 2.0;
+      x1 =  x[points - 2];
+      y1 =  y[points - 2];
+      x2 =  x[points - 1];
+      y2 =  y[points - 1];
+    } else if(b == 0) { /* first bezier */
+      x0 =  x[0];
+      y0 =  y[0];
+      x1 =  x[1];
+      y1 =  y[1];
+      x2 = (x[1] + x[2]) / 2.0;
+      y2 = (y[1] + y[2]) / 2.0;
+    } else { /* beziers in the middle */
+      x0 = (x[b] + x[b + 1]) / 2.0;
+      y0 = (y[b] + y[b + 1]) / 2.0;
+      x1 =  x[b + 1];
+      y1 =  y[b + 1];
+      x2 = (x[b + 1] + x[b + 2]) / 2.0;
+      y2 = (y[b + 1] + y[b + 2]) / 2.0;
+    }
+    for(t = 0; t <= 1.0; t += bez_steps) {
+      xp = (1 - t) * (1 - t) * x0 + 2 * (1 - t) * t * x1 + t * t * x2;
+      yp = (1 - t) * (1 - t) * y0 + 2 * (1 - t) * t * y1 + t * t * y2;
+      if(i==0) fprintf(fd, "M%g %g", X_TO_SVG(xp), Y_TO_SVG(yp));
+      else fprintf(fd, "L%g %g", X_TO_SVG(xp), Y_TO_SVG(yp));
+      i++;
+    }
+  }
+}
+
+static void svg_drawpolygon(int c, int what, double *x, double *y, int points, int fill, int dash, int flags)
 {
   double x1,y1,x2,y2;
   double xx, yy;
-  int i;
+  int bezier, i;
   polygon_bbox(x, y, points, &x1,&y1,&x2,&y2);
   x1=X_TO_SVG(x1);
   y1=Y_TO_SVG(y1);
@@ -81,15 +133,22 @@ static void svg_drawpolygon(int c, int what, double *x, double *y, int points, i
   }
   fprintf(fd, "<path class=\"l%d\" ", c);
   if(dash) fprintf(fd, "stroke-dasharray=\"%g,%g\" ", 1.4*dash/xctx->zoom, 1.4*dash/xctx->zoom);
-  if(!fill) {
+  if(fill == 0) {
     fprintf(fd,"style=\"fill:none;\" ");
+  } else if(fill == 3) {
+   fprintf(fd, "style=\"fill-opacity:1.0;\" ");
   }
-  fprintf(fd, "d=\"");
-  for(i=0;i<points; ++i) {
-    xx = X_TO_SVG(x[i]);
-    yy = Y_TO_SVG(y[i]);
-    if(i==0) fprintf(fd, "M%g %g", xx, yy);
-    else fprintf(fd, "L%g %g", xx, yy);
+  bezier = flags && (points > 2);
+  if(bezier) {
+    svg_drawbezier(x, y, points);
+  } else {
+    fprintf(fd, "d=\"");
+    for(i=0;i<points; ++i) {
+      xx = X_TO_SVG(x[i]);
+      yy = Y_TO_SVG(y[i]);
+      if(i==0) fprintf(fd, "M%g %g", xx, yy);
+      else fprintf(fd, "L%g %g", xx, yy);
+    }
   }
   /* fprintf(fd, "z\"/>\n"); */
   fprintf(fd, "\"/>\n");
@@ -150,7 +209,9 @@ static void svg_drawarc(int gc, int fillarc, double x,double y,double r,double a
     if(b == 360.) {
       fprintf(fd, "<circle class=\"l%d\" cx=\"%g\" cy=\"%g\" r=\"%g\" ", gc, xx, yy, rr);
       if(dash) fprintf(fd, "stroke-dasharray=\"%g,%g\" ", 1.4*dash/xctx->zoom, 1.4*dash/xctx->zoom);
-      if(!fillarc) fprintf(fd, "style=\"fill:none;\"");
+      if(fillarc == 0) fprintf(fd, "style=\"fill:none;\" ");
+      else if(fillarc == 3) fprintf(fd, "style=\"fill-opacity:1.0;\" ");
+
       fprintf(fd, "/>\n");
     } else {
       xx1 = rr * cos(a * XSCH_PI / 180.) + xx;
@@ -162,9 +223,12 @@ static void svg_drawarc(int gc, int fillarc, double x,double y,double r,double a
 
       fprintf(fd,"<path class=\"l%d\" ", gc);
       if(dash) fprintf(fd, "stroke-dasharray=\"%g,%g\" ", 1.4*dash/xctx->zoom, 1.4*dash/xctx->zoom);
-      if(!fillarc) {
-        fprintf(fd,"style=\"fill:none;\" ");
-        fprintf(fd, "d=\"M%g %g A%g %g 0 %d %d %g %g\"/>\n", xx1, yy1, rr, rr, fa, fs, xx2, yy2);
+      if(fillarc == 0) {
+         fprintf(fd,"style=\"fill:none;\" ");
+         fprintf(fd, "d=\"M%g %g A%g %g 0 %d %d %g %g\"/>\n", xx1, yy1, rr, rr, fa, fs, xx2, yy2);
+      } else if(fillarc == 3) {
+        fprintf(fd, "style=\"fill-opacity:1.0;\" ");
+        fprintf(fd, "d=\"M%g %g A%g %g 0 %d %d %g %gL%g %gz\"/>\n", xx1, yy1, rr, rr, fa, fs, xx2, yy2, xx, yy);
       } else {
         fprintf(fd, "d=\"M%g %g A%g %g 0 %d %d %g %gL%g %gz\"/>\n", xx1, yy1, rr, rr, fa, fs, xx2, yy2, xx, yy);
      }
@@ -392,9 +456,10 @@ static void svg_drawgrid()
  }
 }
 
-static void svg_embedded_image(xRect *r, double rx1, double ry1, double rx2, double ry2, int rot, int flip)
+static int svg_embedded_image(xRect *r, double rx1, double ry1, double rx2, double ry2, int rot, int flip)
 {
-  const char *ptr;
+  const char *attr;
+  size_t attr_len;
   double x1, y1, x2, y2, w, h, scalex = 1.0, scaley = 1.0;
   int jpg = 0;
   char opacity[100];
@@ -415,20 +480,29 @@ static void svg_embedded_image(xRect *r, double rx1, double ry1, double rx2, dou
 
   if(flip && (rot == 0 || rot == 2)) scalex = -1.0;
   else if(flip && (rot == 1 || rot == 3)) scaley = -1.0;
-  ptr =  get_tok_value(r->prop_ptr, "alpha", 0);
-  if(ptr[0]) alpha = atof(ptr);
-  ptr =  get_tok_value(r->prop_ptr, "image_data", 0);
+  attr =  get_tok_value(r->prop_ptr, "alpha", 0);
+  if(attr[0]) alpha = atof(attr);
+  attr =  get_tok_value(r->prop_ptr, "image_data", 0);
+  attr_len = strlen(attr);
   
+  if(attr_len > 5) {
+    if(!strncmp(attr, "/9j/", 4)) jpg = 1;
+    else if(!strncmp(attr, "iVBOR", 5)) jpg = 0;
+    else jpg = -1; /* some invalid data */
+  } else {
+    jpg = -1;
+  }
+  if(jpg == -1) {
+    return 0;
+  }
   my_snprintf(transform, S(transform), 
     "transform=\"translate(%g,%g) scale(%g,%g) rotate(%d)\"", x1, y1, scalex, scaley, rot * 90);
   if(alpha == 1.0)  strcpy(opacity, "");
   else my_snprintf(opacity, S(opacity), "style=\"opacity:%g;\"", alpha);
-  if(ptr[0]) {
-    if(!strncmp(ptr, "/9j/4", 5)) jpg = 1; /* jpeg base64 header (30 bits checked) */
-    fprintf(fd, "<image x=\"%g\" y=\"%g\" width=\"%g\" height=\"%g\" %s %s "
-                "xlink:href=\"data:image/%s;base64,%s\"/>\n",
-                0.0, 0.0, w, h, transform, opacity, jpg ? "jpg" : "png", ptr);
-  }
+  fprintf(fd, "<image x=\"%g\" y=\"%g\" width=\"%g\" height=\"%g\" %s %s "
+              "xlink:href=\"data:image/%s;base64,%s\"/>\n",
+              0.0, 0.0, w, h, transform, opacity, jpg ? "jpeg" : "png", attr);
+  return 1;
 }
 
 static void svg_draw_symbol(int c, int n,int layer,short tmp_flip, short rot,
@@ -443,7 +517,7 @@ static void svg_draw_symbol(int c, int n,int layer,short tmp_flip, short rot,
   xRect *rect;
   xText text;
   xArc arc;
-  xPoly polygon;
+  xPoly *polygon;
   xSymbol *symptr;
   char *textfont;
 
@@ -486,17 +560,18 @@ static void svg_draw_symbol(int c, int n,int layer,short tmp_flip, short rot,
     svg_drawline(c, line.bus, x0+x1, y0+y1, x0+x2, y0+y2, line.dash);
   }
   for(j=0;j< symptr->polygons[layer]; ++j) {
-    polygon = (symptr->poly[layer])[j];
+    polygon =&(symptr->poly[layer])[j];
     { /* scope block so we declare some auxiliary arrays for coord transforms. 20171115 */
-      int k;
-      double *x = my_malloc(_ALLOC_ID_, sizeof(double) * polygon.points);
-      double *y = my_malloc(_ALLOC_ID_, sizeof(double) * polygon.points);
-      for(k=0;k<polygon.points; ++k) {
-        ROTATION(rot, flip, 0.0,0.0,polygon.x[k],polygon.y[k],x[k],y[k]);
+      int k, bezier;
+      double *x = my_malloc(_ALLOC_ID_, sizeof(double) * polygon->points);
+      double *y = my_malloc(_ALLOC_ID_, sizeof(double) * polygon->points);
+      for(k=0;k<polygon->points; ++k) {
+        ROTATION(rot, flip, 0.0,0.0,polygon->x[k],polygon->y[k],x[k],y[k]);
         x[k]+= x0;
         y[k] += y0;
       }
-      svg_drawpolygon(c, NOW, x, y, polygon.points, polygon.fill, polygon.dash);
+      bezier = !strboolcmp(get_tok_value(polygon->prop_ptr, "bezier", 0), "true");
+      svg_drawpolygon(c, NOW, x, y, polygon->points, polygon->fill, polygon->dash, bezier);
       my_free(_ALLOC_ID_, &x);
       my_free(_ALLOC_ID_, &y);
     }
@@ -542,9 +617,12 @@ static void svg_draw_symbol(int c, int n,int layer,short tmp_flip, short rot,
   {
     const char *txtptr;
     for(j=0;j< symptr->texts; ++j) {
+      double xscale, yscale;
+        
+      get_sym_text_size(n, j, &xscale, &yscale);
       text = symptr->text[j];
-      /* if(text.xscale*FONTWIDTH* xctx->mooz<1) continue; */
-      if(!xctx->show_hidden_texts && (symptr->text[j].flags & HIDE_TEXT)) continue;
+      /* if(xscale*FONTWIDTH* xctx->mooz<1) continue; */
+      if(!xctx->show_hidden_texts && (symptr->text[j].flags & (HIDE_TEXT | HIDE_TEXT_INSTANTIATED))) continue;
       if( hide && text.txt_ptr && strcmp(text.txt_ptr, "@symname") && strcmp(text.txt_ptr, "@name") ) continue;
       txtptr= translate(n, text.txt_ptr);
       ROTATION(rot, flip, 0.0,0.0,text.x0,text.y0,x1,y1);
@@ -573,12 +651,12 @@ static void svg_draw_symbol(int c, int n,int layer,short tmp_flip, short rot,
           svg_draw_string(textlayer, txtptr,
             (text.rot + ( (flip && (text.rot & 1) ) ? rot+2 : rot) ) & 0x3,
             flip^text.flip, text.hcenter, text.vcenter,
-            x0+x1, y0+y1, text.xscale, text.yscale);
+            x0+x1, y0+y1, xscale, yscale);
         else
           old_svg_draw_string(textlayer, txtptr,
             (text.rot + ( (flip && (text.rot & 1) ) ? rot+2 : rot) ) & 0x3,
             flip^text.flip, text.hcenter, text.vcenter,
-            x0+x1, y0+y1, text.xscale, text.yscale);
+            x0+x1, y0+y1, xscale, yscale);
       }
     }
   }
@@ -746,13 +824,14 @@ void svg_draw(void)
     if(unused_layer[i]) continue;
     fprintf(fd, ".l%d{\n", i);
     if( xctx->fill_pattern == 0 || xctx->fill_type[i] == 0) 
-       fprintf(fd, "  fill: none;\n");
+      fprintf(fd, "  fill: #%02x%02x%02x; fill-opacity: 0.2;\n", 
+         svg_colors[i].red, svg_colors[i].green, svg_colors[i].blue);
     else if( xctx->fill_pattern == 2 && xctx->fill_type[i]) 
-      fprintf(fd, " fill: #%02x%02x%02x;\n", svg_colors[i].red, svg_colors[i].green, svg_colors[i].blue);
+      fprintf(fd, "  fill: #%02x%02x%02x;\n", svg_colors[i].red, svg_colors[i].green, svg_colors[i].blue);
     else if( xctx->fill_pattern && xctx->fill_type[i] == 1) 
-      fprintf(fd, " fill: #%02x%02x%02x;\n", svg_colors[i].red, svg_colors[i].green, svg_colors[i].blue);
+      fprintf(fd, "  fill: #%02x%02x%02x;\n", svg_colors[i].red, svg_colors[i].green, svg_colors[i].blue);
     else 
-      fprintf(fd, " fill: #%02x%02x%02x; fill-opacity: 0.5;\n", 
+      fprintf(fd, "  fill: #%02x%02x%02x; fill-opacity: 0.5;\n", 
          svg_colors[i].red, svg_colors[i].green, svg_colors[i].blue);
     fprintf(fd, "  stroke: #%02x%02x%02x;\n", svg_colors[i].red, svg_colors[i].green, svg_colors[i].blue);
     fprintf(fd, "  stroke-linecap:round;\n");
@@ -838,8 +917,9 @@ void svg_draw(void)
                     xctx->arc[c][i].a, xctx->arc[c][i].b, xctx->arc[c][i].dash);
      }
      for(i=0;i<xctx->polygons[c]; ++i) {
+       int bezier = !strboolcmp(get_tok_value(xctx->poly[c][i].prop_ptr, "bezier", 0), "true");
        svg_drawpolygon(c, NOW, xctx->poly[c][i].x, xctx->poly[c][i].y, xctx->poly[c][i].points,
-                       xctx->poly[c][i].fill, xctx->poly[c][i].dash);
+                       xctx->poly[c][i].fill, xctx->poly[c][i].dash, bezier);
      }
      for(i=0;i<xctx->instances; ++i) {
        color = c;
@@ -875,10 +955,10 @@ void svg_draw(void)
           color = get_color(entry->value);
         }
         if( xctx->wire[i].end1 >1 ) {
-          svg_drawcircle(color, 1, xctx->wire[i].x1, xctx->wire[i].y1, cadhalfdotsize, 0, 360);
+          svg_drawcircle(color, 1, xctx->wire[i].x1, xctx->wire[i].y1, xctx->cadhalfdotsize, 0, 360);
         }
         if( xctx->wire[i].end2 >1 ) {
-          svg_drawcircle(color, 1, xctx->wire[i].x2, xctx->wire[i].y2, cadhalfdotsize, 0, 360);
+          svg_drawcircle(color, 1, xctx->wire[i].x2, xctx->wire[i].y2, xctx->cadhalfdotsize, 0, 360);
         }
       }
     }

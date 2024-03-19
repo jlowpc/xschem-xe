@@ -29,7 +29,7 @@
 static int waves_selected(int event, KeySym key, int state, int button)
 {
   int rstate; /* state without ShiftMask */
-  int i;
+  int i, check;
   int is_inside = 0, skip = 0;
   static unsigned int excl = STARTZOOM | STARTRECT | STARTLINE | STARTWIRE |
                              STARTPAN | STARTSELECT | STARTMOVE | STARTCOPY;
@@ -49,9 +49,13 @@ static int waves_selected(int event, KeySym key, int state, int button)
     r = &xctx->rect[GRIDLAYER][i];
     if(!(r->flags & 1) ) continue;
     if(!strboolcmp(get_tok_value(xctx->rect[GRIDLAYER][i].prop_ptr, "lock", 0), "true")) continue;
-    if( (xctx->ui_state & GRAPHPAN) ||
-       POINTINSIDE(xctx->mousex, xctx->mousey, r->x1,  r->y1,  r->x2 - 40,  r->y1 + 20) ||
-       POINTINSIDE(xctx->mousex, xctx->mousey, r->x1 + 20,  r->y1,  r->x2 - 30,  r->y2 - 10) ) {
+    check =
+      (event != -3 &&
+         POINTINSIDE(xctx->mousex, xctx->mousey, r->x1 + 20,  r->y1+10,  r->x2 - 20,  r->y2 - 10)) ||
+      ( event == -3 &&
+        (POINTINSIDE(xctx->mousex, xctx->mousey, r->x1,  r->y1,  r->x2 - 40,  r->y1 + 20) ||
+         POINTINSIDE(xctx->mousex, xctx->mousey, r->x1 + 20,  r->y1,  r->x2 - 30,  r->y2 - 10)));
+    if( (xctx->ui_state & GRAPHPAN) || check) {
        is_inside = 1;
        draw_crosshair(1);
        tclvareval(xctx->top_path, ".drw configure -cursor tcross" , NULL);
@@ -72,25 +76,25 @@ static int waves_selected(int event, KeySym key, int state, int button)
 void redraw_w_a_l_r_p_rubbers(void)
 {
   if(xctx->ui_state & STARTWIRE) {
-    if(constrained_move == 1) xctx->mousey_snap = xctx->my_double_save;
-    if(constrained_move == 2) xctx->mousex_snap = xctx->mx_double_save;
+    if(xctx->constr_mv == 1) xctx->mousey_snap = xctx->my_double_save;
+    if(xctx->constr_mv == 2) xctx->mousex_snap = xctx->mx_double_save;
     new_wire(RUBBER, xctx->mousex_snap, xctx->mousey_snap);
   }
   if(xctx->ui_state & STARTARC) {
-    if(constrained_move == 1) xctx->mousey_snap = xctx->my_double_save;
-    if(constrained_move == 2) xctx->mousex_snap = xctx->mx_double_save;
-    new_arc(RUBBER, 0);
+    if(xctx->constr_mv == 1) xctx->mousey_snap = xctx->my_double_save;
+    if(xctx->constr_mv == 2) xctx->mousex_snap = xctx->mx_double_save;
+    new_arc(RUBBER, 0, xctx->mousex_snap, xctx->mousey_snap);
   }
   if(xctx->ui_state & STARTLINE) {
-    if(constrained_move == 1) xctx->mousey_snap = xctx->my_double_save;
-    if(constrained_move == 2) xctx->mousex_snap = xctx->mx_double_save;
-    new_line(RUBBER);
+    if(xctx->constr_mv == 1) xctx->mousey_snap = xctx->my_double_save;
+    if(xctx->constr_mv == 2) xctx->mousex_snap = xctx->mx_double_save;
+    new_line(RUBBER, xctx->mousex_snap, xctx->mousey_snap);
   }
-  if(xctx->ui_state & STARTRECT) new_rect(RUBBER);
+  if(xctx->ui_state & STARTRECT) new_rect(RUBBER,xctx->mousex_snap, xctx->mousey_snap);
   if(xctx->ui_state & STARTPOLYGON) {
-    if(constrained_move == 1) xctx->mousey_snap = xctx->my_double_save;
-    if(constrained_move == 2) xctx->mousex_snap = xctx->mx_double_save;
-    new_polygon(RUBBER);
+    if(xctx->constr_mv == 1) xctx->mousey_snap = xctx->my_double_save;
+    if(xctx->constr_mv == 2) xctx->mousex_snap = xctx->mx_double_save;
+    new_polygon(RUBBER, xctx->mousex_snap, xctx->mousey_snap);
   }
 }
 
@@ -98,16 +102,23 @@ void redraw_w_a_l_r_p_rubbers(void)
 void abort_operation(void)
 {
   xctx->no_draw = 0;
-  tcleval("set constrained_move 0" );
-  constrained_move=0;
+  tcleval("set constr_mv 0" );
+  dbg(1, "abort_operation(): Escape: ui_state=%d, last_command=%d\n", xctx->ui_state, xctx->last_command);
+  xctx->constr_mv=0;
+  if(xctx->last_command && xctx->ui_state & (STARTWIRE | STARTLINE)) {
+    if(xctx->ui_state & STARTWIRE) new_wire(RUBBER|CLEAR, xctx->mousex_snap, xctx->mousey_snap);
+    if(xctx->ui_state & STARTLINE) new_line(RUBBER|CLEAR, xctx->mousex_snap, xctx->mousey_snap);
+    if(tclgetboolvar("draw_crosshair")) draw_crosshair(2);
+    xctx->ui_state = 0;
+    return;
+  }
   xctx->last_command=0;
   xctx->manhattan_lines = 0;
-  dbg(1, "abort_operation(): Escape: ui_state=%d\n", xctx->ui_state);
   if(xctx->ui_state & STARTMOVE)
   {
-   int save;
    move_objects(ABORT,0,0,0);
    if(xctx->ui_state & (START_SYMPIN | PLACE_SYMBOL | PLACE_TEXT)) {
+     int save;
      save =  xctx->modified;
      delete(1/* to_push_undo */);
      set_modify(save); /* aborted placement: no change, so reset modify flag set by delete() */
@@ -115,7 +126,6 @@ void abort_operation(void)
      xctx->ui_state &= ~PLACE_SYMBOL;
      xctx->ui_state &= ~PLACE_TEXT;
    }
-   return;
   }
   if(xctx->ui_state & STARTCOPY)
   {
@@ -131,7 +141,7 @@ void abort_operation(void)
   draw();
 }
 
-static void start_place_symbol(double mx, double my)
+static void start_place_symbol(void)
 {
     xctx->last_command = 0;
     rebuild_selected_array();
@@ -154,39 +164,38 @@ static void start_line(double mx, double my)
 {
     xctx->last_command = STARTLINE;
     if(xctx->ui_state & STARTLINE) {
-      if(constrained_move != 2) {
-        xctx->mx_double_save=xctx->mousex_snap;
+      if(xctx->constr_mv != 2) {
+        xctx->mx_double_save=mx;
       }
-      if(constrained_move != 1) {
-        xctx->my_double_save=xctx->mousey_snap;
+      if(xctx->constr_mv != 1) {
+        xctx->my_double_save=my;
       }
-      if(constrained_move == 1) xctx->mousey_snap = xctx->my_double_save;
-      if(constrained_move == 2) xctx->mousex_snap = xctx->mx_double_save;
+      if(xctx->constr_mv == 1) my = xctx->my_double_save;
+      if(xctx->constr_mv == 2) mx = xctx->mx_double_save;
     } else {
-      xctx->mx_double_save=xctx->mousex_snap;
-      xctx->my_double_save=xctx->mousey_snap;
+      xctx->mx_double_save=mx;
+      xctx->my_double_save=my;
     }
-    new_line(PLACE);
+    new_line(PLACE, mx, my);
 }
 
 static void start_wire(double mx, double my)
 {
      xctx->last_command = STARTWIRE;
      if(xctx->ui_state & STARTWIRE) {
-       if(constrained_move != 2) {
-         xctx->mx_double_save=xctx->mousex_snap;
+       if(xctx->constr_mv != 2) {
+         xctx->mx_double_save = mx;
        }
-       if(constrained_move != 1) {
-         xctx->my_double_save=xctx->mousey_snap;
+       if(xctx->constr_mv != 1) {
+         xctx->my_double_save = my;
        }
-       if(constrained_move == 1) xctx->mousey_snap = xctx->my_double_save;
-       if(constrained_move == 2) xctx->mousex_snap = xctx->mx_double_save;
+       if(xctx->constr_mv == 1) my = xctx->my_double_save;
+       if(xctx->constr_mv == 2) mx = xctx->mx_double_save;
      } else {
-       xctx->mx_double_save=xctx->mousex_snap;
-       xctx->my_double_save=xctx->mousey_snap;
+       xctx->mx_double_save=mx;
+       xctx->my_double_save=my;
      }
-     new_wire(PLACE,xctx->mousex_snap, xctx->mousey_snap);
-
+     new_wire(PLACE,mx, my);
 }
 
 static double interpolate_yval(int idx, int point_not_last)
@@ -208,16 +217,23 @@ static double interpolate_yval(int idx, int point_not_last)
   return val;
 }      
      
-static void backannotate_at_cursor_b_pos(xRect *r, Graph_ctx *gr)
+void backannotate_at_cursor_b_pos(xRect *r, Graph_ctx *gr)
 {
-
   if(sch_waves_loaded() >= 0) { 
     int dset, first = -1, last, dataset = gr->dataset, i, p, ofs = 0, ofs_end;
     double start, end;
     int sweepvar_wrap = 0, sweep_idx;
     double xx, cursor2; /* xx is the p-th sweep variable value, cursor2 is cursor 'b' x position */
     Raw *raw = xctx->raw;
-    sweep_idx = get_raw_index(find_nth(get_tok_value(r->prop_ptr, "sweep", 0), ", ", "\"", 0, 1));
+    int  save_datasets = -1, save_npoints = -1;
+    /* transform multiple OP points into a dc sweep */
+    if(raw && raw->sim_type && !strcmp(raw->sim_type, "op") && raw->datasets > 1 && raw->npoints[0] == 1) {
+      save_datasets = raw->datasets;
+      raw->datasets = 1;
+      save_npoints = raw->npoints[0];
+      raw->npoints[0] = raw->allpoints;
+    }
+    sweep_idx = get_raw_index(find_nth(get_tok_value(r->prop_ptr, "sweep", 0), ", ", "\"", 0, 1), NULL);
     if(sweep_idx < 0) sweep_idx = 0;
     cursor2 =  xctx->graph_cursor2_x;
     start = (gr->gx1 <= gr->gx2) ? gr->gx1 : gr->gx2;
@@ -298,6 +314,10 @@ static void backannotate_at_cursor_b_pos(xRect *r, Graph_ctx *gr)
       }
       Tcl_SetVar2(interp, "ngspice::ngspice_data", "n\\ vars", my_itoa( raw->nvars), TCL_GLOBAL_ONLY);
       Tcl_SetVar2(interp, "ngspice::ngspice_data", "n\\ points", "1", TCL_GLOBAL_ONLY);
+    }
+    if(save_npoints != -1) { /* restore multiple OP points from artificial dc sweep */
+      raw->datasets = save_datasets;
+      raw->npoints[0] = save_npoints;
     }
   }
 }
@@ -397,6 +417,37 @@ static int waves_callback(int event, int mx, int my, KeySym key, int button, int
           xctx->graph_flags |= 32; /* Start move cursor2 */
         }
       }
+      else if(event == ButtonPress && button == Button3) {
+        /* Numerically set cursor position */
+        if( (xctx->graph_flags & 2) && fabs(xctx->mousex - W_X(xctx->graph_cursor1_x)) < 10) {
+          if(gr->logx) {
+            double pos = pow(10., xctx->graph_cursor1_x); 
+            tclvareval("input_line {Pos:} {} ", dtoa_eng(pos), NULL);
+            if(tclresult()[0]) {
+              pos = mylog10(atof_eng(tclresult()));
+              tclvareval("xschem set cursor1_x ", dtoa(pos), NULL);
+            }
+          } else {
+            tclvareval("input_line {Pos:} {xschem set cursor1_x} ", dtoa_eng(xctx->graph_cursor1_x), NULL);
+          }
+          event = 0; /* avoid further processing ButtonPress that might set GRAPHPAH */
+          redraw_all_at_end = 1;
+        }
+        if( (xctx->graph_flags & 4) && fabs(xctx->mousex - W_X(xctx->graph_cursor2_x)) < 10) {
+          if(gr->logx) {
+            double pos = pow(10., xctx->graph_cursor2_x); 
+            tclvareval("input_line {Pos:} {} ", dtoa_eng(pos), NULL);
+            if(tclresult()[0]) {
+              pos = mylog10(atof_eng(tclresult()));
+              tclvareval("xschem set cursor2_x ", dtoa(pos), NULL);
+            }
+          } else {
+            tclvareval("input_line {Pos:} {xschem set cursor2_x} ", dtoa_eng(xctx->graph_cursor2_x), NULL);
+          }
+          event = 0; /* avoid further processing ButtonPress that might set GRAPHPAH */
+          redraw_all_at_end = 1;
+        }
+      }
       else if(event == -3 && button == Button1) {
         if(!edit_wave_attributes(1, i, gr)) {
           tclvareval("graph_edit_properties ", my_itoa(i), NULL);
@@ -492,7 +543,6 @@ static int waves_callback(int event, int mx, int my, KeySym key, int button, int
       !xctx->graph_top /* && !xctx->graph_bottom */
     ) {
     xctx->ui_state |= GRAPHPAN;
-    dbg(1, "save mouse\n");
     if(!xctx->graph_left) xctx->mx_double_save = xctx->mousex_snap;
     if(xctx->graph_left) xctx->my_double_save = xctx->mousey_snap;
   }
@@ -500,13 +550,28 @@ static int waves_callback(int event, int mx, int my, KeySym key, int button, int
 
   /* parameters for absolute positioning by mouse drag in bottom graph area */
   if( event == MotionNotify && (state & Button1Mask) && xctx->graph_bottom ) {
-    int idx = get_raw_index(find_nth(get_tok_value(r->prop_ptr, "sweep", 0), ", ", "\"", 0, 1));
-    int dset = dataset == -1 ? 0 : dataset;
+    int idx;
+    int dset;
     double wwx1, wwx2, pp, delta, ccx, ddx;
+
+    char *rawfile = NULL;
+    char *sim_type = NULL;
+    int switched = 0;
+
+    my_strdup2(_ALLOC_ID_, &rawfile, get_tok_value(r->prop_ptr, "rawfile", 0));
+    my_strdup2(_ALLOC_ID_, &sim_type, get_tok_value(r->prop_ptr, "sim_type", 0));
+    if(rawfile[0] && sim_type[0]) switched = extra_rawfile(2, rawfile, sim_type, -1.0, -1.0);
+    my_free(_ALLOC_ID_, &rawfile);
+    my_free(_ALLOC_ID_, &sim_type);
+
+    idx = get_raw_index(find_nth(get_tok_value(r->prop_ptr, "sweep", 0), ", ", "\"", 0, 1), NULL);
+    dset = dataset == -1 ? 0 : dataset;
+
     if(idx < 0 ) idx = 0;
     delta = gr->gw;
     wwx1 =  get_raw_value(dset, idx, 0);
     wwx2 = get_raw_value(dset, idx, xctx->raw->npoints[dset] - 1);
+    if(wwx1 == wwx2) wwx2 += 1e-6;
     if(gr->logx) {
       wwx1 = mylog10(wwx1);
       wwx2 = mylog10(wwx2);
@@ -516,6 +581,9 @@ static int waves_callback(int event, int mx, int my, KeySym key, int button, int
     pp = (xctx->mousex_snap - ddx) / ccx;
     xx1 = pp - delta / 2.0;
     xx2 = pp + delta / 2.0;
+
+    if(switched) extra_rawfile(5, NULL, NULL, -1.0, -1.0); /* switch back to previous raw file */
+
   }
   else if(button == Button3 && (xctx->ui_state & GRAPHPAN) && !xctx->graph_left && !xctx->graph_top) {
     /* parameters for zoom area by mouse drag */
@@ -535,7 +603,7 @@ static int waves_callback(int event, int mx, int my, KeySym key, int button, int
   for(i=0; i< xctx->rects[GRIDLAYER]; ++i) {
     r = &xctx->rect[GRIDLAYER][i];
     need_redraw = 0;
-    if( !(r->flags & 1) ) continue;
+    if( !(r->flags & 1) ) continue; /* 1: graph; 3: graph_unlocked */
     gr->gx1 = gr->master_gx1;
     gr->gx2 = gr->master_gx2;
     gr->gw = gr->master_gw;
@@ -913,7 +981,7 @@ static int waves_callback(int event, int mx, int my, KeySym key, int button, int
             /*
              * this calculation is done in 1st loop, only for master graph 
              * and applied to all locked graphs 
-            int idx = get_raw_index(find_nth(get_tok_value(r->prop_ptr, "sweep", 0), ", ", "\"", 0, 1));
+            int idx = get_raw_index(find_nth(get_tok_value(r->prop_ptr, "sweep", 0), ", ", "\"", 0, 1), NULL);
             int dset = dataset == -1 ? 0 : dataset;
             double wwx1, wwx2, pp, delta, ccx, ddx;
 
@@ -939,7 +1007,7 @@ static int waves_callback(int event, int mx, int my, KeySym key, int button, int
         }
       }
     } /* if( event == KeyPress || event == ButtonPress || event == MotionNotify ) */
-    else if( event == ButtonRelease) {
+    else if( event == ButtonRelease) { 
       if(button != Button3) {
         xctx->ui_state &= ~GRAPHPAN;
         xctx->graph_flags &= ~(16 | 32); /* clear move cursor flags */
@@ -964,6 +1032,8 @@ static int waves_callback(int event, int mx, int my, KeySym key, int button, int
             my_strdup(_ALLOC_ID_, &r->prop_ptr, subst_token(r->prop_ptr, "x1", dtoa(xx1)));
             my_strdup(_ALLOC_ID_, &r->prop_ptr, subst_token(r->prop_ptr, "x2", dtoa(xx2)));
             need_redraw = 1;
+          } else if(i == xctx->graph_master) {
+            clear_graphpan_at_end = 1;
           }
         }
       }
@@ -997,6 +1067,9 @@ static int waves_callback(int event, int mx, int my, KeySym key, int button, int
   return 0;
 }
 
+/* del == 0 : delete and draw
+ * del == 1 : delete
+ * del == 2 : draw */
 void draw_crosshair(int del)
 {
   int sdw, sdp;
@@ -1007,24 +1080,25 @@ void draw_crosshair(int del)
   if(!xctx->mouse_inside) return;
   xctx->draw_pixmap = 0;
   xctx->draw_window = 1;
+  if(del != 2) {
+    if(fix_broken_tiled_fill || !_unix) {
+      MyXCopyArea(display, xctx->save_pixmap, xctx->window, xctx->gc[0],
+           0, (int)Y_TO_SCREEN(xctx->prev_crossy) - 2 * INT_WIDTH(xctx->lw),
+           xctx->xrect[0].width, 4 * INT_WIDTH(xctx->lw),
+           0, (int)Y_TO_SCREEN(xctx->prev_crossy) - 2 * INT_WIDTH(xctx->lw));
   
-  if(fix_broken_tiled_fill || !_unix) {
-    MyXCopyArea(display, xctx->save_pixmap, xctx->window, xctx->gc[0],
-         0, (int)Y_TO_SCREEN(xctx->prev_crossy) - 2 * INT_WIDTH(xctx->lw),
-         xctx->xrect[0].width, 4 * INT_WIDTH(xctx->lw),
-         0, (int)Y_TO_SCREEN(xctx->prev_crossy) - 2 * INT_WIDTH(xctx->lw));
-
-    MyXCopyArea(display, xctx->save_pixmap, xctx->window, xctx->gc[0],
-         (int)X_TO_SCREEN(xctx->prev_crossx) - 2 * INT_WIDTH(xctx->lw), 0, 
-         4 * INT_WIDTH(xctx->lw), xctx->xrect[0].height,
-         (int)X_TO_SCREEN(xctx->prev_crossx) - 2 * INT_WIDTH(xctx->lw), 0);
+      MyXCopyArea(display, xctx->save_pixmap, xctx->window, xctx->gc[0],
+           (int)X_TO_SCREEN(xctx->prev_crossx) - 2 * INT_WIDTH(xctx->lw), 0, 
+           4 * INT_WIDTH(xctx->lw), xctx->xrect[0].height,
+           (int)X_TO_SCREEN(xctx->prev_crossx) - 2 * INT_WIDTH(xctx->lw), 0);
+    }  else {
+      drawtempline(xctx->gctiled, NOW, X_TO_XSCHEM(xctx->areax1),
+           xctx->prev_crossy, X_TO_XSCHEM(xctx->areax2), xctx->prev_crossy);
+      drawtempline(xctx->gctiled, NOW, xctx->prev_crossx, Y_TO_XSCHEM(xctx->areay1),
+           xctx->prev_crossx, Y_TO_XSCHEM(xctx->areay2));
+    }
   }
-  drawtempline(xctx->gctiled, NOW, X_TO_XSCHEM(xctx->areax1),
-       xctx->prev_crossy, X_TO_XSCHEM(xctx->areax2), xctx->prev_crossy);
-  drawtempline(xctx->gctiled, NOW, xctx->prev_crossx, Y_TO_XSCHEM(xctx->areay1),
-       xctx->prev_crossx, Y_TO_XSCHEM(xctx->areay2));
-
-  if(!del) {
+  if(del != 1) {
     drawline(xctx->crosshair_layer, NOW,X_TO_XSCHEM( xctx->areax1), xctx->mousey_snap,
        X_TO_XSCHEM(xctx->areax2), xctx->mousey_snap, 3, NULL);
     drawline(xctx->crosshair_layer, NOW, xctx->mousex_snap, Y_TO_XSCHEM(xctx->areay1),
@@ -1038,13 +1112,636 @@ void draw_crosshair(int del)
   xctx->draw_pixmap = sdp;
 }
 
+/* complete the STARTWIRE, STARTRECT, STARTZOOM, STARTCOPY ... operations */
+static int end_place_move_copy_zoom()
+{
+  if(xctx->ui_state & STARTZOOM) {
+    zoom_rectangle(END);
+    return 1;
+  }
+  else if(xctx->ui_state & STARTWIRE) {
+    if(tclgetboolvar("persistent_command")) {
+      if(xctx->constr_mv != 2) {
+        xctx->mx_double_save=xctx->mousex_snap;
+      }
+      if(xctx->constr_mv != 1) {
+        xctx->my_double_save=xctx->mousey_snap;
+      }
+      if(xctx->constr_mv == 1) xctx->mousey_snap = xctx->my_double_save;
+      if(xctx->constr_mv == 2) xctx->mousex_snap = xctx->mx_double_save;
+      new_wire(PLACE, xctx->mousex_snap, xctx->mousey_snap);
+
+    } else {
+      new_wire(PLACE|END, xctx->mousex_snap, xctx->mousey_snap);
+    }
+    xctx->constr_mv=0;
+    tcleval("set constr_mv 0" );
+    return 1;
+  }
+  else if(xctx->ui_state & STARTARC) {
+    new_arc(SET, 0, xctx->mousex_snap, xctx->mousey_snap);
+    return 1;
+  }
+  else if(xctx->ui_state & STARTLINE) {
+    if(tclgetboolvar("persistent_command")) {
+      if(xctx->constr_mv != 2) {
+        xctx->mx_double_save=xctx->mousex_snap;
+      }
+      if(xctx->constr_mv == 1) {
+        xctx->my_double_save=xctx->mousey_snap;
+      }
+      if(xctx->constr_mv == 1) xctx->mousey_snap = xctx->my_double_save;
+      if(xctx->constr_mv == 2) xctx->mousex_snap = xctx->mx_double_save;
+      new_line(PLACE, xctx->mousex_snap, xctx->mousey_snap);
+    } else {
+      new_line(PLACE|END, xctx->mousex_snap, xctx->mousey_snap);
+    }
+    xctx->constr_mv=0;
+    tcleval("set constr_mv 0" );
+    return 1;
+  }
+  else if(xctx->ui_state & STARTRECT) {
+    new_rect(PLACE|END,xctx->mousex_snap, xctx->mousey_snap);
+    return 1;
+  }
+  else if(xctx->ui_state & STARTPOLYGON) {
+    if(xctx->constr_mv == 1) xctx->mousey_snap = xctx->my_double_save;
+    if(xctx->constr_mv == 2) xctx->mousex_snap = xctx->mx_double_save;
+    new_polygon(ADD, xctx->mousex_snap, xctx->mousey_snap);
+    xctx->mx_double_save=xctx->mousex_snap;
+    xctx->my_double_save=xctx->mousey_snap;
+    xctx->constr_mv=0;
+    tcleval("set constr_mv 0" );
+    return 1;
+  }
+  else if(xctx->ui_state & STARTMOVE) {
+    move_objects(END,0,0,0);
+    xctx->ui_state &=~START_SYMPIN;
+    xctx->constr_mv=0;
+    tcleval("set constr_mv 0" );
+    return 1;
+  }
+  else if(xctx->ui_state & STARTCOPY) {
+    copy_objects(END);
+    xctx->constr_mv=0;
+    tcleval("set constr_mv 0" );
+    return 1;
+  }
+  return 0;
+}
+
+static int check_menu_start_commands(double c_snap)
+{
+  if((xctx->ui_state & MENUSTART) && (xctx->ui_state2 & MENUSTARTWIRECUT)) {
+    break_wires_at_point(xctx->mousex_snap, xctx->mousey_snap, 1);
+    xctx->ui_state &=~MENUSTART;
+    return 1;
+  }
+  else if((xctx->ui_state & MENUSTART) && (xctx->ui_state2 & MENUSTARTWIRECUT2)) {
+    break_wires_at_point(xctx->mousex_snap, xctx->mousey_snap, 0);
+    xctx->ui_state &=~MENUSTART;
+    return 1;
+  }
+  else if((xctx->ui_state & MENUSTART) && (xctx->ui_state2 & MENUSTARTMOVE)) {
+    xctx->mx_double_save=xctx->mousex_snap;
+    xctx->my_double_save=xctx->mousey_snap;
+    /* stretch nets that land on selected instance pins if connect_by_kissing == 2 */
+    /* select_attached_nets(); */
+    move_objects(START,0,0,0);
+    xctx->ui_state &=~MENUSTART;
+    return 1;
+  }
+  else if((xctx->ui_state & MENUSTART) && (xctx->ui_state2 & MENUSTARTWIRE)) {
+    xctx->mx_double_save=xctx->mousex_snap;
+    xctx->my_double_save=xctx->mousey_snap;
+    new_wire(PLACE, xctx->mousex_snap, xctx->mousey_snap);
+    xctx->ui_state &=~MENUSTART;
+    return 1;
+  }
+  else if((xctx->ui_state & MENUSTART) && (xctx->ui_state2 & MENUSTARTSNAPWIRE)) {
+    double x, y;
+
+    find_closest_net_or_symbol_pin(xctx->mousex, xctx->mousey, &x, &y);
+    xctx->mx_double_save = my_round(x / c_snap) * c_snap;
+    xctx->my_double_save = my_round(y / c_snap) * c_snap;
+    new_wire(PLACE, x, y);
+    xctx->ui_state &=~MENUSTART;
+    return 1;
+  }
+  else if((xctx->ui_state & MENUSTART) && (xctx->ui_state2 & MENUSTARTLINE)) {
+    xctx->mx_double_save=xctx->mousex_snap;
+    xctx->my_double_save=xctx->mousey_snap;
+    new_line(PLACE, xctx->mousex_snap, xctx->mousey_snap);
+    xctx->ui_state &=~MENUSTART;
+    return 1;
+  }
+  else if((xctx->ui_state & MENUSTART) && (xctx->ui_state2 & MENUSTARTRECT)) {
+    xctx->mx_double_save=xctx->mousex_snap;
+    xctx->my_double_save=xctx->mousey_snap;
+    new_rect(PLACE,xctx->mousex_snap, xctx->mousey_snap);
+    xctx->ui_state &=~MENUSTART;
+    return 1;
+  }
+  else if((xctx->ui_state & MENUSTART) && (xctx->ui_state2 & MENUSTARTPOLYGON)) {
+    xctx->mx_double_save=xctx->mousex_snap;
+    xctx->my_double_save=xctx->mousey_snap;
+    new_polygon(PLACE, xctx->mousex_snap, xctx->mousey_snap);
+    xctx->ui_state &=~MENUSTART;
+    return 1;
+  }
+  else if((xctx->ui_state & MENUSTART) && (xctx->ui_state2 & MENUSTARTARC)) {
+    xctx->mx_double_save=xctx->mousex_snap;
+    xctx->my_double_save=xctx->mousey_snap;
+    new_arc(PLACE, 180., xctx->mousex_snap, xctx->mousey_snap);
+    xctx->ui_state &=~MENUSTART;
+    return 1;
+  }
+  else if((xctx->ui_state & MENUSTART) && (xctx->ui_state2 & MENUSTARTCIRCLE)) {
+    xctx->mx_double_save=xctx->mousex_snap;
+    xctx->my_double_save=xctx->mousey_snap;
+    new_arc(PLACE, 360., xctx->mousex_snap, xctx->mousey_snap);
+    xctx->ui_state &=~MENUSTART;
+    return 1;
+  }
+  else if((xctx->ui_state & MENUSTART) && (xctx->ui_state2 & MENUSTARTZOOM)) {
+    zoom_rectangle(START);
+    xctx->ui_state &=~MENUSTART;
+    return 1;
+  }
+  return 0;
+}
+
+
+static int add_wire_from_inst_pin(Selected *sel, double mx, double my)
+{
+  int res = 0;
+  int i, type = sel->type;
+  double pinx0, piny0;
+  if(type == ELEMENT) {
+    int n = sel->n;
+    xSymbol *symbol = xctx->sym + xctx->inst[n].ptr;
+    int npin = symbol->rects[PINLAYER];
+    for(i = 0; i < npin; ++i) {
+      get_inst_pin_coord(n, i, &pinx0, &piny0);
+      if(pinx0 == mx && piny0 == my) {
+        break;
+      }
+    }
+    if(i < npin) {
+      int save = xctx->modified;
+      dbg(1, "pin: %g %g\n", pinx0, piny0);
+      unselect_all(1);
+      xctx->push_undo();
+      storeobject(-1, pinx0, piny0,  pinx0, piny0, WIRE, 0, SELECTED1, NULL);
+      set_modify(save);
+      xctx->shape_point_selected = 1;
+      xctx->prep_hash_wires=0;
+      xctx->need_reb_sel_arr = 1;
+      xctx->kissing = 1;
+      rebuild_selected_array();
+      move_objects(START,0,0,0);
+      res = 1;
+    }
+  } else if(type == WIRE) {
+    int n = sel->n;
+    double x1 = xctx->wire[n].x1;
+    double y1 = xctx->wire[n].y1;
+    double x2 = xctx->wire[n].x2;
+    double y2 = xctx->wire[n].y2;
+    if( (mx == x1 && my == y1) || (mx == x2 && my == y2) ) {
+      int save = xctx->modified;
+      unselect_all(1); 
+      xctx->push_undo();
+      storeobject(-1, mx, my,  mx, my, WIRE, 0, SELECTED1, NULL);
+      set_modify(save);
+      xctx->shape_point_selected = 1;
+      xctx->prep_hash_wires=0;
+      xctx->need_reb_sel_arr = 1;
+      xctx->kissing = 1;
+      rebuild_selected_array();
+      move_objects(START,0,0,0);
+      res = 1;
+    }
+  }
+  return res;
+}
+
+
+/* sets xctx->shape_point_selected */
+static int edit_line_point(int state)
+{
+   int line_n = -1, line_c = -1;
+   dbg(1, "1 Line selected\n");
+   line_n = xctx->sel_array[0].n;
+   line_c = xctx->sel_array[0].col;
+  /* lineangle point: Check is user is clicking a control point of a lineangle */
+  if(line_n >= 0) {
+    double ds = xctx->cadhalfdotsize ;
+    xLine *p = &xctx->line[line_c][line_n];
+
+    xctx->need_reb_sel_arr=1;
+    if(POINTINSIDE(xctx->mousex, xctx->mousey, p->x1 - ds, p->y1 - ds, p->x1 + ds, p->y1 + ds)) {
+      xctx->shape_point_selected = 1;
+      p->sel = SELECTED1;
+    }
+    else if(POINTINSIDE(xctx->mousex, xctx->mousey, p->x2 - ds, p->y2 - ds, p->x2 + ds, p->y2 + ds)) {
+      xctx->shape_point_selected = 1;
+      p->sel = SELECTED2;
+    }
+    if(xctx->shape_point_selected) {
+      /* move one lineangle selected point */
+      if(!(state & (ControlMask | ShiftMask))){
+        /* xctx->push_undo(); */
+        move_objects(START,0,0,0);
+        return 1;
+      }
+    } /* if(xctx->shape_point_selected) */
+  } /* if(line_n >= 0) */
+  return 0;
+}
+
+/* sets xctx->shape_point_selected */
+static int edit_wire_point(int state)
+{       
+   int wire_n = -1;
+   dbg(1, "1 Wire selected\n");
+   wire_n = xctx->sel_array[0].n;
+  /* wire point: Check is user is clicking a control point of a wire */
+  if(wire_n >= 0) {
+    double ds = xctx->cadhalfdotsize ;
+    xWire *p = &xctx->wire[wire_n];
+        
+    xctx->need_reb_sel_arr=1;
+    if(POINTINSIDE(xctx->mousex, xctx->mousey, p->x1 - ds, p->y1 - ds, p->x1 + ds, p->y1 + ds)) {
+      xctx->shape_point_selected = 1;
+      p->sel = SELECTED1;
+    }
+    else if(POINTINSIDE(xctx->mousex, xctx->mousey, p->x2 - ds, p->y2 - ds, p->x2 + ds, p->y2 + ds)) {
+      xctx->shape_point_selected = 1;
+      p->sel = SELECTED2;
+    }
+    if(xctx->shape_point_selected) {
+      /* move one wire selected point */
+      if(!(state & (ControlMask | ShiftMask))){
+        /* xctx->push_undo(); */
+        move_objects(START,0,0,0);
+        return 1;
+      }
+    } /* if(xctx->shape_point_selected) */
+  } /* if(wire_n >= 0) */
+  return 0;
+}      
+
+/* sets xctx->shape_point_selected */
+static int edit_rect_point(int state)
+{
+   int rect_n = -1, rect_c = -1;
+   dbg(1, "1 Rectangle selected\n");
+   rect_n = xctx->sel_array[0].n;
+   rect_c = xctx->sel_array[0].col;
+  /* rectangle point: Check is user is clicking a control point of a rectangle */
+  if(rect_n >= 0) {
+    double ds = xctx->cadhalfdotsize * 2;
+    xRect *p = &xctx->rect[rect_c][rect_n];
+
+    xctx->need_reb_sel_arr=1;
+    if(POINTINSIDE(xctx->mousex, xctx->mousey, p->x1, p->y1, p->x1 + ds, p->y1 + ds)) {
+      xctx->shape_point_selected = 1;
+      p->sel = SELECTED1;
+    }
+    else if(POINTINSIDE(xctx->mousex, xctx->mousey, p->x2 - ds, p->y1, p->x2, p->y1 + ds)) {
+      xctx->shape_point_selected = 1;
+      p->sel = SELECTED2;
+    }
+    else if(POINTINSIDE(xctx->mousex, xctx->mousey, p->x1, p->y2 - ds, p->x1 + ds, p->y2)) {
+      xctx->shape_point_selected = 1;
+      p->sel = SELECTED3;
+    }
+    else if(POINTINSIDE(xctx->mousex, xctx->mousey, p->x2 - ds, p->y2 - ds, p->x2, p->y2)) {
+      xctx->shape_point_selected = 1;
+      p->sel = SELECTED4;
+    }
+    if(xctx->shape_point_selected) { 
+      /* move one rectangle selected point */
+      if(!(state & (ControlMask | ShiftMask))){
+        /* xctx->push_undo(); */
+        move_objects(START,0,0,0);
+        return 1;
+      }
+    } /* if(xctx->shape_point_selected) */
+  } /* if(rect_n >= 0) */
+  return 0;
+}
+
+/* sets xctx->shape_point_selected */
+static int edit_polygon_point(int state)
+{
+   int poly_n = -1, poly_c = -1;
+   dbg(1, "1 Polygon selected\n");
+   poly_n = xctx->sel_array[0].n;
+   poly_c = xctx->sel_array[0].col;
+  /* polygon point: Check is user is clicking a control point of a polygon */
+  if(poly_n >= 0) {
+    int i;
+    double ds = xctx->cadhalfdotsize;
+    int c = poly_c;
+    int n = poly_n;
+    xPoly *p = &xctx->poly[c][n];
+
+    xctx->need_reb_sel_arr=1;
+    for(i = 0; i < p->points; i++) {
+      if(
+          POINTINSIDE(xctx->mousex, xctx->mousey, p->x[i] - ds, p->y[i] - ds, 
+                        p->x[i] + ds, p->y[i] + ds)
+        ) {
+          dbg(1, "selecting point %d\n", i);
+          p->selected_point[i] = 1;
+          xctx->shape_point_selected = 1;
+          break;
+      }
+    }
+    if(xctx->shape_point_selected) { 
+      int j;
+      int points = p->points;
+
+      /* add a new polygon/bezier point after selected one and start moving it*/
+      if(state & ShiftMask) {
+        xctx->push_undo();
+        points++;
+        my_realloc(_ALLOC_ID_, &p->x, sizeof(double) * points);
+        my_realloc(_ALLOC_ID_, &p->y, sizeof(double) * points);
+        my_realloc(_ALLOC_ID_, &p->selected_point, sizeof(unsigned short) * points);
+        p->selected_point[i] = 0;
+        for(j = points - 2; j > i; j--) {
+          p->x[j + 1] = p->x[j];
+          p->y[j + 1] = p->y[j];
+          p->selected_point[j + 1] = p->selected_point[j];
+        }
+        p->selected_point[i + 1] = 1;
+        p->x[i + 1] = p->x[i];
+        p->y[i + 1] = p->y[i];
+        p->points = points;
+        p->sel = SELECTED1;
+        move_objects(START,0,0,0);
+        return 1;
+      }
+      /* delete polygon/bezier selected point */
+      else if(points > 2 && state & ControlMask) {
+        xctx->push_undo();
+        points--;
+        for(j = i ; j < points ; j++) {
+           p->x[j] = p->x[j + 1];
+           p->y[j] = p->y[j + 1];
+           p->selected_point[j] = p->selected_point[j + 1];
+        }
+        my_realloc(_ALLOC_ID_, &p->x, sizeof(double) * points);
+        my_realloc(_ALLOC_ID_, &p->y, sizeof(double) * points);
+        my_realloc(_ALLOC_ID_, &p->selected_point, sizeof(unsigned short) * points);
+        p->points = points;
+        p->sel = SELECTED;
+        return 1;
+      /* move one polygon/bezier selected point */
+      } else if(!(state & (ControlMask | ShiftMask))){
+        /* xctx->push_undo(); */
+        p->sel = SELECTED1;
+        move_objects(START,0,0,0);
+        return 1;
+      }
+    } /* if(xctx->shape_point_selected) */
+  } /* if(poly_n >= 0) */
+  return 0;
+}
+
+static void context_menu_action(double mx, double my)
+{
+  int ret;
+  const char *status;
+  int prev_state;
+  xctx->semaphore++;
+  status = tcleval("context_menu");
+  xctx->semaphore--;
+  if(!status) return;
+  ret = atoi(status);
+  switch(ret) {
+    case 1:
+      start_place_symbol();
+      break;
+    case 2:
+      prev_state = xctx->ui_state;
+      start_wire(mx, my);
+      if(prev_state == STARTWIRE) {
+        tcleval("set constr_mv 0" );
+        xctx->constr_mv=0;
+      }
+      break;
+    case 3:
+      prev_state = xctx->ui_state;
+      start_line(mx, my);
+      if(prev_state == STARTLINE) {
+        tcleval("set constr_mv 0" );
+        xctx->constr_mv=0;
+      }
+      break;
+    case 4:
+      xctx->mx_double_save=xctx->mousex_snap;
+      xctx->my_double_save=xctx->mousey_snap;
+      xctx->last_command = 0;
+      new_rect(PLACE,mx, my);
+      break;
+    case 5:
+      xctx->mx_double_save=xctx->mousex_snap;
+      xctx->my_double_save=xctx->mousey_snap;
+      xctx->last_command = 0;
+      new_polygon(PLACE, mx, my);
+      break;
+    case 6: /* place text */
+      xctx->last_command = 0;
+      xctx->mx_double_save=xctx->mousex_snap;
+      xctx->my_double_save=xctx->mousey_snap;
+      if(place_text(0, mx, my)) { /* 1 = draw text */
+        xctx->mousey_snap = xctx->my_double_save;
+        xctx->mousex_snap = xctx->mx_double_save;
+        move_objects(START,0,0,0);
+        xctx->ui_state |= PLACE_TEXT;
+      }
+      break;
+    case 7: /* cut selection into clipboard */
+      rebuild_selected_array();
+      if(xctx->lastsel) {  /* 20071203 check if something selected */
+        save_selection(2);
+        delete(1/* to_push_undo */);
+      }
+      break;
+    case 8: /* paste from clipboard */
+      merge_file(2,".sch");
+      break;
+    case 9: /* load most recent file */
+      tclvareval("xschem load [lindex $recentfile 0] gui", NULL);
+      break;
+    case 10: /* edit attributes */
+      edit_property(0);
+      break;
+    case 11: /* edit attributes in editor */
+      edit_property(1);
+      break;
+    case 12:
+      descend_schematic(0, 1, 1);
+      break;
+    case 13:
+      descend_symbol();
+      break;
+    case 14:
+      go_back(1);
+      break;
+    case 15: /* copy selection into clipboard */
+      rebuild_selected_array();
+      if(xctx->lastsel) {
+        save_selection(2);
+      }
+      break;
+    case 16: /* move selection */
+      if(!(xctx->ui_state & (STARTMOVE | STARTCOPY))) {
+        xctx->mx_double_save=xctx->mousex_snap;
+        xctx->my_double_save=xctx->mousey_snap;
+        move_objects(START,0,0,0);
+      }
+      break;
+    case 17: /* duplicate selection */
+      if(!(xctx->ui_state & (STARTMOVE | STARTCOPY))) {
+        xctx->mx_double_save=xctx->mousex_snap;
+        xctx->my_double_save=xctx->mousey_snap;
+        copy_objects(START);
+      }
+      break;
+    case 18: /* delete selection */
+      if(xctx->ui_state & SELECTION) delete(1/* to_push_undo */);
+      break;
+    case 19: /* place arc */
+      xctx->mx_double_save=xctx->mousex_snap;
+      xctx->my_double_save=xctx->mousey_snap;
+      xctx->last_command = 0;
+      new_arc(PLACE, 180., mx, my);
+      break;
+    case 20: /* place circle */
+      xctx->mx_double_save=xctx->mousex_snap;
+      xctx->my_double_save=xctx->mousey_snap;
+      xctx->last_command = 0;
+      new_arc(PLACE, 360., mx, my);
+      break;
+    case 21: /* abort & redraw */
+      abort_operation();
+      break;
+    default:
+      break;
+  }
+}
+
+/* Mouse wheel events */
+static int handle_mouse_wheel(int event, int mx, int my, KeySym key, int button, int aux, int state)
+{
+   if(button==Button5 && state == 0 ) {
+    if(waves_selected(event, key, state, button)) {
+      waves_callback(event, mx, my, key, button, aux, state);
+      return 1;
+    }
+     view_unzoom(CADZOOMSTEP);
+   }
+   else if(button==Button4 && state == 0 ) {
+    if(waves_selected(event, key, state, button)) {
+      waves_callback(event, mx, my, key, button, aux, state);
+      return 1;
+    }
+     view_zoom(CADZOOMSTEP);
+   }
+   else if(button==Button4 && (state & ShiftMask) && !(state & Button2Mask)) {
+    if(waves_selected(event, key, state, button)) {
+      waves_callback(event, mx, my, key, button, aux, state);
+      return 1;
+    }
+    xctx->xorigin+=-CADMOVESTEP*xctx->zoom/2.;
+    draw();
+    redraw_w_a_l_r_p_rubbers();
+   }
+   else if(button==Button5 && (state & ShiftMask) && !(state & Button2Mask)) {
+    if(waves_selected(event, key, state, button)) {
+      waves_callback(event, mx, my, key, button, aux, state);
+      return 1;
+    }
+    xctx->xorigin-=-CADMOVESTEP*xctx->zoom/2.;
+    draw();
+    redraw_w_a_l_r_p_rubbers();
+   }
+   else if(button==Button4 && (state & ControlMask) && !(state & Button2Mask)) {
+    xctx->yorigin+=-CADMOVESTEP*xctx->zoom/2.;
+    draw();
+    redraw_w_a_l_r_p_rubbers();
+   }
+   else if(button==Button5 && (state & ControlMask) && !(state & Button2Mask)) {
+    xctx->yorigin-=-CADMOVESTEP*xctx->zoom/2.;
+    draw();
+   }
+   return 0;
+}
+
+static void end_shape_point_edit()
+{
+     int save = xctx->modified;
+     dbg(1, "%g %g %g %g\n",
+         xctx->mx_double_save, xctx->my_double_save, xctx->mousex_snap, xctx->mousey_snap);
+     if(xctx->lastsel == 1 && xctx->sel_array[0].type==POLYGON) {
+        int k;
+        int n = xctx->sel_array[0].n;
+        int c = xctx->sel_array[0].col;
+        move_objects(END,0,0,0);
+        xctx->constr_mv=0;
+        tcleval("set constr_mv 0" );
+        xctx->poly[c][n].sel = SELECTED;
+        xctx->shape_point_selected = 0;
+        for(k=0; k<xctx->poly[c][n].points; ++k) {
+          xctx->poly[c][n].selected_point[k] = 0;
+        }
+        xctx->need_reb_sel_arr=1;
+     }
+     else if(xctx->lastsel == 1 && xctx->sel_array[0].type==xRECT) {
+        int n = xctx->sel_array[0].n;
+        int c = xctx->sel_array[0].col;
+        move_objects(END,0,0,0);
+        xctx->constr_mv=0;
+        tcleval("set constr_mv 0" );
+        xctx->rect[c][n].sel = SELECTED;
+        xctx->shape_point_selected = 0;
+        xctx->need_reb_sel_arr=1;
+     }
+     else if(xctx->lastsel == 1 && xctx->sel_array[0].type==LINE) {
+        int n = xctx->sel_array[0].n;
+        int c = xctx->sel_array[0].col;
+        move_objects(END,0,0,0);
+        xctx->constr_mv=0;
+        tcleval("set constr_mv 0" );
+        xctx->line[c][n].sel = SELECTED;
+        xctx->shape_point_selected = 0;
+        xctx->need_reb_sel_arr=1;
+     }
+     else if(xctx->lastsel == 1 && xctx->sel_array[0].type==WIRE) {
+        int n = xctx->sel_array[0].n;
+        move_objects(END,0,0,0);
+        xctx->constr_mv=0;
+        tcleval("set constr_mv 0" );
+        xctx->wire[n].sel = SELECTED;
+        xctx->shape_point_selected = 0;
+        xctx->need_reb_sel_arr=1;
+     }
+     if(xctx->mx_double_save == xctx->mousex_snap && xctx->my_double_save == xctx->mousey_snap) {  
+       set_modify(save);
+     }
+}
+
 /* main window callback */
 /* mx and my are set to the mouse coord. relative to window  */
 /* winpath: set to .drw or sub windows .x1.drw, .x2.drw, ...  */
 int callback(const char *winpath, int event, int mx, int my, KeySym key,
                  int button, int aux, int state)
 {
- static char old_winpath[PATH_MAX] = ".drw"; /* previous focused window, used to do context switch */
  char str[PATH_MAX + 100];
  struct stat buf;
  int redraw_only;
@@ -1137,6 +1834,7 @@ int rstate; /* (reduced state, without ShiftMask) */
  state &= ~LockMask; /* filter out Caps Lock */
  rstate = state; /* rstate does not have ShiftMask bit, so easier to test for KeyPress events */
  rstate &= ~ShiftMask; /* don't use ShiftMask, identifying characters is sifficient */
+ rstate &= ~Button1Mask; /* ignore button-1 */
  if(xctx->semaphore >= 2)
  {
    if(debug_var>=2)
@@ -1158,36 +1856,38 @@ int rstate; /* (reduced state, without ShiftMask) */
  dbg(1, "key=%d EQUAL_MODMASK=%d, SET_MODMASK=%d\n", key, SET_MODMASK, EQUAL_MODMASK);
  switch(event)
  {
+
   case LeaveNotify:
     if(draw_xhair) draw_crosshair(1);
     tclvareval(xctx->top_path, ".drw configure -cursor {}" , NULL);
     xctx->mouse_inside = 0;
     break;
+
   case EnterNotify:
+    dbg(2, "callback(): Enter event, ui_state=%d\n", xctx->ui_state);
     xctx->mouse_inside = 1;
     if(draw_xhair)
       tclvareval(xctx->top_path, ".drw configure -cursor none" , NULL);
     else 
       tclvareval(xctx->top_path, ".drw configure -cursor {}" , NULL);
-    if(!xctx->sel_or_clip[0]) my_snprintf(xctx->sel_or_clip, S(xctx->sel_or_clip), "%s/%s",
-        user_conf_dir, ".selection.sch");
-
     /* xschem window *sending* selected objects
        when the pointer comes back in abort copy operation since it has been done
        in another xschem xctx->window; STARTCOPY set and selection file does not exist any more */
-    if( stat(xctx->sel_or_clip, &buf)  && (xctx->ui_state & STARTCOPY) )
+    if(stat(sel_file, &buf) && (xctx->ui_state & STARTCOPY) )
     {
-      copy_objects(ABORT); /* also unlinks sel_or_flip file */
+      copy_objects(ABORT);
       unselect_all(1);
     }
-    /* xschem window *receiving* selected objects */
-    /* no selected objects and selection file exists */
-    if(xctx->lastsel == 0  && !stat(xctx->sel_or_clip, &buf)) {
-      dbg(2, "callback(): Enter event\n");
+    /* xschem window *receiving* selected objects selection cleared --> abort */
+    else if(xctx->paste_from == 1 && stat(sel_file, &buf) && (xctx->ui_state & STARTMERGE)) {
+      abort_operation();
+    }
+    /*xschem window *receiving* selected objects 
+     * no selected objects and selection file exists --> start merge */
+    else if(xctx->lastsel == 0 && !stat(sel_file, &buf)) {
       xctx->mousex_snap = 490;
       xctx->mousey_snap = -340;
       merge_file(1, ".sch");
-      xunlink(xctx->sel_or_clip);
     }
     break;
 
@@ -1212,6 +1912,7 @@ int rstate; /* (reduced state, without ShiftMask) */
     }
     dbg(1, "callback(): Expose\n");
     break;
+
   case ConfigureNotify:
     dbg(1,"callback(): ConfigureNotify event\n");
     resetwin(1, 1, 0, 0, 0);
@@ -1219,16 +1920,21 @@ int rstate; /* (reduced state, without ShiftMask) */
     break;
 
   case MotionNotify:
-
     if( waves_selected(event, key, state, button)) {
       waves_callback(event, mx, my, key, button, aux, state);
       break;
     }
-    if(xctx->ui_state & STARTPAN) pan(RUBBER, mx, my);
     if(draw_xhair) {
-      draw_crosshair(0);
+      draw_crosshair(1);
     }
-    if(xctx->semaphore >= 2) break;
+    if(xctx->ui_state & STARTPAN) pan(RUBBER, mx, my);
+    if(xctx->semaphore >= 2) {
+      if(draw_xhair) {
+        draw_crosshair(2);
+      }
+      break;
+    }
+    dbg(1, "ui_state=%d deltax=%g\n", xctx->ui_state, xctx->deltax);
     if(xctx->ui_state) {
       if(abs(mx-xctx->mx_save) > 8 || abs(my-xctx->my_save) > 8 ) {
         my_snprintf(str, S(str), "mouse = %.16g %.16g - selected: %d w=%.16g h=%.16g",
@@ -1240,11 +1946,15 @@ int rstate; /* (reduced state, without ShiftMask) */
       }
     }
     if(xctx->ui_state & STARTZOOM)   zoom_rectangle(RUBBER);
+
+    /* determine direction of a rectangle selection  (or unselection with ALT key) */
     if(xctx->ui_state & STARTSELECT && !(xctx->ui_state & (PLACE_SYMBOL | STARTPAN | PLACE_TEXT)) ) {
-      if( (state & Button1Mask)  && SET_MODMASK) { /* 20171026 added unselect by area  */
+      /* Unselect by area : determine direction */
+      if( (state & Button1Mask)  && SET_MODMASK) { 
         if(mx >= xctx->mx_save) xctx->nl_dir = 0;
         else  xctx->nl_dir = 1;
         select_rect(RUBBER,0);
+      /* select by area : determine direction */
       } else if(state & Button1Mask) {
         if(mx >= xctx->mx_save) xctx->nl_dir = 0;
         else  xctx->nl_dir = 1;
@@ -1252,22 +1962,25 @@ int rstate; /* (reduced state, without ShiftMask) */
       }
     }
     if(xctx->ui_state & STARTMOVE) {
-      if(constrained_move == 1) xctx->mousey_snap = xctx->my_double_save;
-      if(constrained_move == 2) xctx->mousex_snap = xctx->mx_double_save;
+      if(xctx->constr_mv == 1) xctx->mousey_snap = xctx->my_double_save;
+      if(xctx->constr_mv == 2) xctx->mousex_snap = xctx->mx_double_save;
       move_objects(RUBBER,0,0,0);
     }
     if(xctx->ui_state & STARTCOPY) {
-      if(constrained_move == 1) xctx->mousey_snap = xctx->my_double_save;
-      if(constrained_move == 2) xctx->mousex_snap = xctx->mx_double_save;
+      if(xctx->constr_mv == 1) xctx->mousey_snap = xctx->my_double_save;
+      if(xctx->constr_mv == 2) xctx->mousex_snap = xctx->mx_double_save;
       copy_objects(RUBBER);
     }
 
     redraw_w_a_l_r_p_rubbers();
-    /* start of a mouse area select. No shift pressed */
+    /* start of a mouse area select. Button1 pressed. No shift pressed
+     * Do not start an area select if user is dragging a polygon/bezier point */
     if(!(xctx->ui_state & STARTPOLYGON) && (state&Button1Mask) && !(xctx->ui_state & STARTWIRE) && 
-       !(xctx->ui_state & STARTPAN) && !(SET_MODMASK) &&
+       !(xctx->ui_state & STARTPAN) && !(SET_MODMASK) && !xctx->shape_point_selected &&
+       !xctx->drag_elements &&
        !(state & ShiftMask) && !(xctx->ui_state & (PLACE_SYMBOL | PLACE_TEXT)))
     {
+
       if(mx != xctx->mx_save || my != xctx->my_save) {
         if( !(xctx->ui_state & STARTSELECT)) {
           select_rect(START,1);
@@ -1285,7 +1998,7 @@ int rstate; /* (reduced state, without ShiftMask) */
     }
     /* Unselect by area */
     if((state & Button1Mask)  && (SET_MODMASK) && !(state & ShiftMask) &&
-       !(xctx->ui_state & STARTPAN) && 
+       !(xctx->ui_state & STARTPAN) && !xctx->shape_point_selected &&
        !(xctx->ui_state & (PLACE_SYMBOL | PLACE_TEXT))) { /* unselect area */
       if( !(xctx->ui_state & STARTSELECT)) {
         select_rect(START,0);
@@ -1293,8 +2006,8 @@ int rstate; /* (reduced state, without ShiftMask) */
     }
     /* Select by area. Shift pressed */
     else if((state&Button1Mask) && (state & ShiftMask) &&
-             !(xctx->ui_state & (PLACE_SYMBOL | PLACE_TEXT)) &&
-             !(xctx->ui_state & STARTPAN) ) {
+             !(xctx->ui_state & (PLACE_SYMBOL | PLACE_TEXT)) && !xctx->shape_point_selected &&
+             !xctx->drag_elements && !(xctx->ui_state & STARTPAN) ) {
       if(mx != xctx->mx_save || my != xctx->my_save) {
         if( !(xctx->ui_state & STARTSELECT)) {
           select_rect(START,1);
@@ -1303,15 +2016,20 @@ int rstate; /* (reduced state, without ShiftMask) */
            abs(my-xctx->my_save) > 8 ) {  /* set reasonable threshold before unsel */
           if(!xctx->already_selected) {
             select_object(X_TO_XSCHEM(xctx->mx_save),
-                          Y_TO_XSCHEM(xctx->my_save), 0, 0); /* remove near obj if dragging */
+                          Y_TO_XSCHEM(xctx->my_save), 0, 0, NULL); /* remove near obj if dragging */
           }
           rebuild_selected_array();
         }
       }
     }
+    if(draw_xhair) {
+      draw_crosshair(2);
+    }
     break;
+
   case KeyRelease:
     break;
+
   case KeyPress:
    if(key==' ') {
      if(xctx->ui_state & STARTWIRE) { /*  & instead of == 20190409 */
@@ -1321,10 +2039,10 @@ int rstate; /* (reduced state, without ShiftMask) */
        new_wire(RUBBER, xctx->mousex_snap, xctx->mousey_snap);
 
      } else if(xctx->ui_state==STARTLINE) {
-       new_line(RUBBER|CLEAR);
+       new_line(RUBBER|CLEAR, xctx->mousex_snap, xctx->mousey_snap);
        xctx->manhattan_lines++;
        xctx->manhattan_lines %=3;
-       new_line(RUBBER);
+       new_line(RUBBER, xctx->mousex_snap, xctx->mousey_snap);
      } else {
        if(xctx->semaphore<2) {
          rebuild_selected_array(); /* sets or clears xctx->ui_state SELECTION flag */
@@ -1417,22 +2135,22 @@ int rstate; /* (reduced state, without ShiftMask) */
    }
    if(key == 'h' && rstate == 0) {
      /* horizontally constrained drag 20171023 */
-     if ( constrained_move == 1 ) {
-       tcleval("set constrained_move 0" );
-       constrained_move = 0;
+     if ( xctx->constr_mv == 1 ) {
+       tcleval("set constr_mv 0" );
+       xctx->constr_mv = 0;
      } else {
-       tcleval("set constrained_move 1" );
-       constrained_move = 1;
+       tcleval("set constr_mv 1" );
+       xctx->constr_mv = 1;
      }
      if(xctx->ui_state & STARTWIRE) {
-       if(constrained_move == 1) xctx->mousey_snap = xctx->my_double_save;
-       if(constrained_move == 2) xctx->mousex_snap = xctx->mx_double_save;
+       if(xctx->constr_mv == 1) xctx->mousey_snap = xctx->my_double_save;
+       if(xctx->constr_mv == 2) xctx->mousex_snap = xctx->mx_double_save;
        new_wire(RUBBER, xctx->mousex_snap, xctx->mousey_snap);
      }
      if(xctx->ui_state & STARTLINE) {
-       if(constrained_move == 1) xctx->mousey_snap = xctx->my_double_save;
-       if(constrained_move == 2) xctx->mousex_snap = xctx->mx_double_save;
-       new_line(RUBBER);
+       if(xctx->constr_mv == 1) xctx->mousey_snap = xctx->my_double_save;
+       if(xctx->constr_mv == 2) xctx->mousex_snap = xctx->mx_double_save;
+       new_line(RUBBER, xctx->mousex_snap, xctx->mousey_snap);
      }
      break;
    }
@@ -1446,22 +2164,22 @@ int rstate; /* (reduced state, without ShiftMask) */
    }
    if(key == 'v' && rstate==0) {
      /* vertically constrained drag 20171023 */
-     if ( constrained_move == 2 ) {
-       tcleval("set constrained_move 0" );
-       constrained_move = 0;
+     if ( xctx->constr_mv == 2 ) {
+       tcleval("set constr_mv 0" );
+       xctx->constr_mv = 0;
      } else {
-       tcleval("set constrained_move 2" );
-       constrained_move = 2;
+       tcleval("set constr_mv 2" );
+       xctx->constr_mv = 2;
      }
      if(xctx->ui_state & STARTWIRE) {
-       if(constrained_move == 1) xctx->mousey_snap = xctx->my_double_save;
-       if(constrained_move == 2) xctx->mousex_snap = xctx->mx_double_save;
+       if(xctx->constr_mv == 1) xctx->mousey_snap = xctx->my_double_save;
+       if(xctx->constr_mv == 2) xctx->mousex_snap = xctx->mx_double_save;
        new_wire(RUBBER, xctx->mousex_snap, xctx->mousey_snap);
      }
      if(xctx->ui_state & STARTLINE) {
-       if(constrained_move == 1) xctx->mousey_snap = xctx->my_double_save;
-       if(constrained_move == 2) xctx->mousex_snap = xctx->mx_double_save;
-       new_line(RUBBER);
+       if(xctx->constr_mv == 1) xctx->mousey_snap = xctx->my_double_save;
+       if(xctx->constr_mv == 2) xctx->mousex_snap = xctx->mx_double_save;
+       new_line(RUBBER, xctx->mousex_snap, xctx->mousey_snap);
      }
      break;
    }
@@ -1520,18 +2238,21 @@ int rstate; /* (reduced state, without ShiftMask) */
     draw();
     break;
    }
-   if(key == '+'  && state&ControlMask)         /* change line width */
+   if(key == '+'  && state & ControlMask)         /* change line width */
    {
-    xctx->lw+=0.1;
+    xctx->lw = round_to_n_digits(xctx->lw + 0.5, 2);
     change_linewidth(xctx->lw);
+    tclsetboolvar("change_lw", 0);
     draw();
     break;
    }
 
-   if(key == '-'  && state&ControlMask)         /* change line width */
+   if(key == '-'  && state & ControlMask)         /* change line width */
    {
-    xctx->lw-=0.1;if(xctx->lw<0.0) xctx->lw=0.0;
+    xctx->lw = round_to_n_digits(xctx->lw - 0.5, 2);
+    if(xctx->lw < 0.0) xctx->lw = 0.0;
     change_linewidth(xctx->lw);
+    tclsetboolvar("change_lw", 0);
     draw();
     break;
    }
@@ -1540,7 +2261,7 @@ int rstate; /* (reduced state, without ShiftMask) */
      hilight_net_pin_mismatches();
      break;
    }
-   if(key== 'W' && rstate == 0) {  /* create wire snapping to closest instance pin */
+   if(key== 'W' /* && !xctx->ui_state */ && rstate == 0) {  /* create wire snapping to closest instance pin */
      double x, y;
      if(xctx->semaphore >= 2) break;
      if(!(xctx->ui_state & STARTWIRE)){
@@ -1553,24 +2274,24 @@ int rstate; /* (reduced state, without ShiftMask) */
        find_closest_net_or_symbol_pin(xctx->mousex, xctx->mousey, &x, &y);
        new_wire(RUBBER, x, y);
        new_wire(PLACE|END, x, y);
-       constrained_move=0;
-       tcleval("set constrained_move 0" );
+       xctx->constr_mv=0;
+       tcleval("set constr_mv 0" );
      }
      break;
    }
-   if(key == 'w' && rstate==0)    /* place wire. */
+   if(key == 'w' /* && !xctx->ui_state */ && rstate==0)    /* place wire. */
    {
      int prev_state = xctx->ui_state;
      if(xctx->semaphore >= 2) break;
-     start_wire(mx, my);
+     start_wire(xctx->mousex_snap, xctx->mousey_snap);
      if(prev_state == STARTWIRE) {
-       tcleval("set constrained_move 0" );
-       constrained_move=0;
+       tcleval("set constr_mv 0" );
+       xctx->constr_mv=0;
      }
      break;
    }
    if(key == XK_Return && (state == 0 ) && xctx->ui_state & STARTPOLYGON) { /* close polygon */
-    new_polygon(ADD|END);
+    new_polygon(ADD|END, xctx->mousex_snap, xctx->mousey_snap);
     break;
    }
    if(key == XK_Escape) /* abort & redraw */
@@ -1602,14 +2323,14 @@ int rstate; /* (reduced state, without ShiftMask) */
     xctx->ui_state |= START_SYMPIN;
     break;
    }
-   if(key=='p' && !xctx->ui_state && rstate==0)              /* start polygon, 20171115 */
+   if(key=='p' && !(xctx->ui_state & STARTPOLYGON) && rstate==0)              /* start polygon */
    {
      if(xctx->semaphore >= 2) break;
      dbg(1, "callback(): start polygon\n");
      xctx->mx_double_save=xctx->mousex_snap;
      xctx->my_double_save=xctx->mousey_snap;
      xctx->last_command = 0;
-     new_polygon(PLACE);
+     new_polygon(PLACE, xctx->mousex_snap, xctx->mousey_snap);
      break;
    }
    if(key=='P' && rstate == 0)                   /* pan, other way to. */
@@ -1715,6 +2436,10 @@ int rstate; /* (reduced state, without ShiftMask) */
      xctx->semaphore = save_sem;
      break;
    }
+   /* toggle spice_ignore, verilog_ignore, ... flag on selected instances. */
+   if(key == 'T' && rstate == 0) {
+     toggle_ignore();
+   }
    if(key=='t' && rstate == 0)                        /* place text */
    {
      if(waves_selected(event, key, state, button)) {
@@ -1733,16 +2458,16 @@ int rstate; /* (reduced state, without ShiftMask) */
      }
      break;
    }
-   if(key=='r' && !xctx->ui_state && rstate==0)              /* start rect */
+   if(key=='r' /* && !xctx->ui_state */ && rstate==0)              /* start rect */
    {
     dbg(1, "callback(): start rect\n");
     xctx->mx_double_save=xctx->mousex_snap;
     xctx->my_double_save=xctx->mousey_snap;
     xctx->last_command = 0;
-    new_rect(PLACE);
+    new_rect(PLACE,xctx->mousex_snap, xctx->mousey_snap);
     break;
    }
-   if(key=='V' && rstate == 0)                           /* toggle spice/vhdl netlist  */
+   if(key=='V' && rstate == ControlMask)                     /* toggle spice/vhdl netlist  */
    {
     xctx->netlist_type++; if(xctx->netlist_type==6) xctx->netlist_type=1;
     set_tcl_netlist_type();
@@ -1789,16 +2514,27 @@ int rstate; /* (reduced state, without ShiftMask) */
    if(key=='e' && rstate == 0)           /* descend to schematic */
    {
     if(xctx->semaphore >= 2) break;
-    descend_schematic(0);break;
+    descend_schematic(0, 1, 1);break;
    }
    if(key=='e' && EQUAL_MODMASK)            /* edit schematic in new window */
    {
     int save = xctx->semaphore;
     xctx->semaphore--; /* so semaphore for current context wll be saved correctly */
-    schematic_in_new_window(0);
+    /*  schematic_in_new_window(0, 1, 0); */
+    tcleval("open_sub_schematic");
     xctx->semaphore = save;
     break;
    }
+
+   if(key=='E' && EQUAL_MODMASK)          /* edit schematic in new window - new xschem process */
+   { 
+    int save = xctx->semaphore;
+    xctx->semaphore--; /* so semaphore for current context wll be saved correctly */
+    schematic_in_new_window(1, 1, 0);
+    xctx->semaphore = save;
+    break;
+   }
+
    if(key=='i' && EQUAL_MODMASK)            /* edit symbol in new window */
    {
     int save =  xctx->semaphore;
@@ -1807,6 +2543,17 @@ int rstate; /* (reduced state, without ShiftMask) */
     xctx->semaphore = save;
     break;
    }
+
+   if(key=='I' && EQUAL_MODMASK)            /* edit symbol in new window - new xschem process */
+   {
+    int save =  xctx->semaphore;
+    xctx->semaphore--; /* so semaphore for current context wll be saved correctly */
+    symbol_in_new_window(1);
+    xctx->semaphore = save;
+    break;
+   }
+
+
    if( (key=='e' && rstate == ControlMask) || (key==XK_BackSpace))  /* back */
    {
     if(xctx->semaphore >= 2) break;
@@ -1850,26 +2597,19 @@ int rstate; /* (reduced state, without ShiftMask) */
     en_s = !en_s;
 
     if(en_s) {
-        tcleval("alert_ { enabling stretch mode } {}");
         tclsetvar("enable_stretch","1");
     }
     else {
-        tcleval("alert_ { disabling stretch mode } {}");
         tclsetvar("enable_stretch","0");
     }
     break;
    }
-   if(key=='X' && rstate == ControlMask) /* swap compare schematics */
+   if(key=='x' && EQUAL_MODMASK) /* toggle draw crosshair at mouse pos */
    {
-     tcleval("swap_compare_schematics");
-   }
-   if(key=='x' && EQUAL_MODMASK) /* compare schematics(must set first) */
-   {
-     unselect_all(0);
-     if(tclgetboolvar("compare_sch")) {
-       tclsetvar("compare_sch", "0");
+     if(tclgetboolvar("draw_crosshair")) {
+       tclsetvar("draw_crosshair", "0");
      } else {
-       tclsetvar("compare_sch", "1");
+       tclsetvar("draw_crosshair", "1");
      }
      draw();
    }
@@ -1892,22 +2632,22 @@ int rstate; /* (reduced state, without ShiftMask) */
      }
     break;
    }
-   if(key=='C' && rstate == 0) /* place arc */
+   if(key=='C' /* && !xctx->ui_state */ && rstate == 0) /* place arc */
    {
      if(xctx->semaphore >= 2) break;
      xctx->mx_double_save=xctx->mousex_snap;
      xctx->my_double_save=xctx->mousey_snap;
      xctx->last_command = 0;
-     new_arc(PLACE, 180.);
+     new_arc(PLACE, 180., xctx->mousex_snap, xctx->mousey_snap);
      break;
    }
-   if(key=='C' && rstate == ControlMask) /* place circle */
+   if(key=='C' /* && !xctx->ui_state */ && rstate == ControlMask) /* place circle */
    {
      if(xctx->semaphore >= 2) break;
      xctx->mx_double_save=xctx->mousex_snap;
      xctx->my_double_save=xctx->mousey_snap;
      xctx->last_command = 0;
-     new_arc(PLACE, 360.);
+     new_arc(PLACE, 360., xctx->mousex_snap, xctx->mousey_snap);
      break;
    }
    if(key=='O' && rstate == ControlMask )   /* load most recent tile */
@@ -1973,7 +2713,7 @@ int rstate; /* (reduced state, without ShiftMask) */
     if(xctx->semaphore >= 2) break;
     edit_property(1);break;
    }
-   if(key=='i' && rstate==0)                     /* descend to  symbol */
+   if(key=='i' && rstate==0) /* descend to  symbol */
    {
     if(xctx->semaphore >= 2) break;
     descend_symbol();break;
@@ -1986,7 +2726,7 @@ int rstate; /* (reduced state, without ShiftMask) */
    if((key==XK_Insert && state == 0) || (key == 'I' && rstate == 0) ) /* insert sym */
    {
     if(xctx->semaphore >= 2) break;
-    start_place_symbol(mx, my);
+    start_place_symbol();
 
     break;
    }
@@ -2094,6 +2834,8 @@ int rstate; /* (reduced state, without ShiftMask) */
    if(key=='g' && rstate==0)                         /* half snap factor */
    {
     set_snap(c_snap / 2.0);
+    change_linewidth(-1.);
+    draw();
     break;
    }
    if(key=='g' && rstate==ControlMask)              /* set snap factor 20161212 */
@@ -2107,6 +2849,8 @@ int rstate; /* (reduced state, without ShiftMask) */
    if(key=='G' && rstate == 0)                                    /* double snap factor */
    {
     set_snap(c_snap * 2.0);
+    change_linewidth(-1.);
+    draw();
     break;
    }
    if(key=='*' && EQUAL_MODMASK)         /* svg print , 20121108 */
@@ -2118,7 +2862,7 @@ int rstate; /* (reduced state, without ShiftMask) */
    if(key=='*' && rstate == 0 )                    /* postscript print */
    {
     if(xctx->semaphore >= 2) break;
-    ps_draw(7, 0);
+    ps_draw(7, 0, 0);
     break;
    }
    if(key=='*' && rstate == ControlMask)      /* xpm print */
@@ -2202,13 +2946,13 @@ int rstate; /* (reduced state, without ShiftMask) */
      create_sch_from_sym();
      break;
    }
-   if(key=='l' && rstate == 0) /* start line */
+   if(key=='l' /* && !xctx->ui_state */ && rstate == 0) /* start line */
    {
      int prev_state = xctx->ui_state;
-     start_line(mx, my);
+     start_line(xctx->mousex_snap, xctx->mousey_snap);
      if(prev_state == STARTLINE) {
-       tcleval("set constrained_move 0" );
-       constrained_move=0;
+       tcleval("set constr_mv 0" );
+       xctx->constr_mv=0;
      }
      break;
    }
@@ -2240,6 +2984,55 @@ int rstate; /* (reduced state, without ShiftMask) */
     }
     break;
    }
+   if(key=='V' && rstate == 0)                     /* vertical flip */
+   {
+    if(xctx->ui_state & STARTMOVE) {
+      move_objects(ROTATE,0,0,0);
+      move_objects(ROTATE,0,0,0);
+      move_objects(FLIP,0,0,0);
+    }
+    else if(xctx->ui_state & STARTCOPY) {
+      copy_objects(ROTATE);
+      copy_objects(ROTATE);
+      copy_objects(FLIP);
+    }
+    else {
+      rebuild_selected_array();
+      xctx->mx_double_save=xctx->mousex_snap;
+      xctx->my_double_save=xctx->mousey_snap;    
+      move_objects(START,0,0,0);
+      move_objects(ROTATE,0,0,0);
+      move_objects(ROTATE,0,0,0);
+      move_objects(FLIP,0,0,0);
+      move_objects(END,0,0,0);
+    } 
+    break;
+   }
+   if(key=='v' && EQUAL_MODMASK)  /* vertical flip objects around their anchor points */
+   {
+    if(xctx->ui_state & STARTMOVE) {
+      move_objects(ROTATE|ROTATELOCAL,0,0,0);
+      move_objects(ROTATE|ROTATELOCAL,0,0,0);
+      move_objects(FLIP|ROTATELOCAL,0,0,0);
+    }
+    else if(xctx->ui_state & STARTCOPY) {
+      copy_objects(ROTATE|ROTATELOCAL);
+      copy_objects(ROTATE|ROTATELOCAL);
+      copy_objects(FLIP|ROTATELOCAL);
+    }
+    else {
+      rebuild_selected_array();
+      xctx->mx_double_save=xctx->mousex_snap;
+      xctx->my_double_save=xctx->mousey_snap;
+      move_objects(START,0,0,0);
+      move_objects(ROTATE|ROTATELOCAL,0,0,0);
+      move_objects(ROTATE|ROTATELOCAL,0,0,0);
+      move_objects(FLIP|ROTATELOCAL,0,0,0);
+      move_objects(END,0,0,0);
+    }
+    break;
+   }
+
    if(key=='\\' && state==0)          /* fullscreen */
    {
     
@@ -2323,6 +3116,18 @@ int rstate; /* (reduced state, without ShiftMask) */
     move_objects(START,0,0,0);
     break;
    }    
+   if(key=='M' && state == (ControlMask | ShiftMask) &&  
+       !(xctx->ui_state & (STARTMOVE | STARTCOPY))) /* move selection */
+   {
+    xctx->mx_double_save=xctx->mousex_snap;
+    xctx->my_double_save=xctx->mousey_snap;
+    if(!tclgetboolvar("enable_stretch"))
+      select_attached_nets(); /* stretch nets that land on selected instance pins */
+    xctx->connect_by_kissing = 2; /* 2 will be used to reset var to 0 at end of move */
+    move_objects(START,0,0,0);
+    break;
+   }
+
 
    if(key=='c' && EQUAL_MODMASK &&           /* duplicate selection */
      !(xctx->ui_state & (STARTMOVE | STARTCOPY)))
@@ -2358,47 +3163,83 @@ int rstate; /* (reduced state, without ShiftMask) */
    }
    if(key=='n' && rstate==0)              /* hierarchical netlist */
    {
+    int err = 0;
     yyparse_error = 0;
     if(xctx->semaphore >= 2) break;
     unselect_all(1);
     if(set_netlist_dir(0, NULL)) {
       dbg(1, "callback(): -------------\n");
       if(xctx->netlist_type == CAD_SPICE_NETLIST)
-        global_spice_netlist(1);
+        err = global_spice_netlist(1);
       else if(xctx->netlist_type == CAD_VHDL_NETLIST)
-        global_vhdl_netlist(1);
+        err = global_vhdl_netlist(1);
       else if(xctx->netlist_type == CAD_VERILOG_NETLIST)
-        global_verilog_netlist(1);
+        err = global_verilog_netlist(1);
       else if(xctx->netlist_type == CAD_TEDAX_NETLIST)
-        global_tedax_netlist(1);
+        err = global_tedax_netlist(1);
       else
         tcleval("tk_messageBox -type ok -parent [xschem get topwindow] "
                 "-message {Please Set netlisting mode (Options menu)}");
 
       dbg(1, "callback(): -------------\n");
     }
+    else {
+       if(has_x) tcleval("alert_ {Can not write into the netlist directory. Please check} {}");
+       else dbg(0, "Can not write into the netlist directory. Please check");
+       err = 1;
+    }
+    if(err) {
+      if(has_x) {
+        tclvareval(xctx->top_path, ".menubar.netlist configure -bg red", NULL);
+        tclvareval("set tctx::", xctx->current_win_path, "_netlist red", NULL);
+      }
+
+    } else {
+      if(has_x) {
+        tclvareval(xctx->top_path, ".menubar.netlist configure -bg Green", NULL);
+        tclvareval("set tctx::", xctx->current_win_path, "_netlist Green", NULL);
+      }
+    }
     break;
    }
    if(key=='N' && rstate == 0)              /* current level only netlist */
    {
+    int err = 0;
     yyparse_error = 0;
     if(xctx->semaphore >= 2) break;
     unselect_all(1);
     if( set_netlist_dir(0, NULL) ) {
       dbg(1, "callback(): -------------\n");
       if(xctx->netlist_type == CAD_SPICE_NETLIST)
-        global_spice_netlist(0);
+        err = global_spice_netlist(0);
       else if(xctx->netlist_type == CAD_VHDL_NETLIST)
-        global_vhdl_netlist(0);
+        err = global_vhdl_netlist(0);
       else if(xctx->netlist_type == CAD_VERILOG_NETLIST)
-        global_verilog_netlist(0);
+        err = global_verilog_netlist(0);
       else if(xctx->netlist_type == CAD_TEDAX_NETLIST)
-        global_tedax_netlist(0);
+        err = global_tedax_netlist(0);
       else
         tcleval("tk_messageBox -type ok -parent [xschem get topwindow] "
                 "-message {Please Set netlisting mode (Options menu)}");
       dbg(1, "callback(): -------------\n");
     }
+    else {
+       if(has_x) tcleval("alert_ {Can not write into the netlist directory. Please check} {}");
+       else dbg(0, "Can not write into the netlist directory. Please check");
+       err = 1;
+    }
+    if(err) {
+      if(has_x) {
+        tclvareval(xctx->top_path, ".menubar.netlist configure -bg red", NULL);
+        tclvareval("set tctx::", xctx->current_win_path, "_netlist red", NULL);
+      }
+    } else {
+      if(has_x) {
+        tclvareval(xctx->top_path, ".menubar.netlist configure -bg Green", NULL);
+        tclvareval("set tctx::", xctx->current_win_path, "_netlist Green", NULL);
+      }
+    }
+
     break;
    }
    if(key=='A' && rstate == 0)                             /* toggle show netlist */
@@ -2550,212 +3391,41 @@ int rstate; /* (reduced state, without ShiftMask) */
    }
    if(xctx->ui_state & STARTPAN) {
      xctx->ui_state &=~STARTPAN;
-     /* xctx->mx_save = mx; xctx->my_save = my; */
-     /* xctx->mx_double_save=xctx->mousex_snap; */
-     /* xctx->my_double_save=xctx->mousey_snap; */
      break;
    }
 
-  /*
-   * if(button == Button3 && tclgetvar("graph_selected")[0] && xctx->semaphore >=2 )
-   * {
-        Selected sel;
-   *    sel = select_object(xctx->mousex, xctx->mousey, SELECTED, 0);
-   *    if(sel.type) send_net_to_graph(1);
-   *   
-   * }
-   * else
-   */
    if(button == Button3 &&  state == ControlMask && xctx->semaphore <2)
    {
      Selected sel;
-     sel = select_object(xctx->mousex, xctx->mousey, SELECTED, 0);
+     sel = select_object(xctx->mousex, xctx->mousey, SELECTED, 0, NULL);
      if(sel.type) select_connected_nets(1);
    }
-   else if(button == Button3 &&  EQUAL_MODMASK && xctx->semaphore <2)
+   else if(button == Button3 &&  EQUAL_MODMASK && !(state & ShiftMask) && xctx->semaphore <2)
    {
      break_wires_at_point(xctx->mousex_snap, xctx->mousey_snap, 1);
    }
-   else if(button == Button3 && SET_MODMASK && (state & ShiftMask) && xctx->semaphore <2)
+   else if(button == Button3 && EQUAL_MODMASK && (state & ShiftMask) && xctx->semaphore <2)
    {
      break_wires_at_point(xctx->mousex_snap, xctx->mousey_snap, 0);
    }
    else if(button == Button3 &&  state == ShiftMask && xctx->semaphore <2)
    {
      Selected sel;
-     sel = select_object(xctx->mousex, xctx->mousey, SELECTED, 0);
+     sel = select_object(xctx->mousex, xctx->mousey, SELECTED, 0, NULL);
      if(sel.type) select_connected_nets(0);
    }
    else if(button == Button3 &&  state == 0 && xctx->semaphore <2) {
-     int ret;
-     const char *status;
-     int prev_state;
-     xctx->semaphore++;
-     status = tcleval("context_menu");
-     xctx->semaphore--;
-     if(!status) break;
-     ret = atoi(status);
-     switch(ret) {
-       case 1:
-         start_place_symbol(mx, my);
-         break;
-       case 2:
-         prev_state = xctx->ui_state;
-         start_wire(mx, my);
-         if(prev_state == STARTWIRE) {
-           tcleval("set constrained_move 0" );
-           constrained_move=0;
-         }
-         break;
-       case 3:
-         prev_state = xctx->ui_state;
-         start_line(mx, my);
-         if(prev_state == STARTLINE) {
-           tcleval("set constrained_move 0" );
-           constrained_move=0;
-         }
-         break;
-       case 4:
-         xctx->mx_double_save=xctx->mousex_snap;
-         xctx->my_double_save=xctx->mousey_snap;
-         xctx->last_command = 0;
-         new_rect(PLACE);
-         break;
-       case 5:
-         xctx->mx_double_save=xctx->mousex_snap;
-         xctx->my_double_save=xctx->mousey_snap;
-         xctx->last_command = 0;
-         new_polygon(PLACE);
-         break;
-       case 6: /* place text */
-         xctx->last_command = 0;
-         xctx->mx_double_save=xctx->mousex_snap;
-         xctx->my_double_save=xctx->mousey_snap;
-         if(place_text(0, xctx->mousex_snap, xctx->mousey_snap)) { /* 1 = draw text */
-           xctx->mousey_snap = xctx->my_double_save;
-           xctx->mousex_snap = xctx->mx_double_save;
-           move_objects(START,0,0,0);
-           xctx->ui_state |= PLACE_TEXT;
-         }
-         break;
-       case 7: /* cut selection into clipboard */
-         rebuild_selected_array();
-         if(xctx->lastsel) {  /* 20071203 check if something selected */
-           save_selection(2);
-           delete(1/* to_push_undo */);
-         }
-         break;
-       case 8: /* paste from clipboard */
-         merge_file(2,".sch");
-         break;
-       case 9: /* load most recent file */
-         tclvareval("xschem load [lindex $recentfile 0] gui", NULL);
-         break;
-       case 10: /* edit attributes */
-         edit_property(0);
-         break;
-       case 11: /* edit attributes in editor */
-         edit_property(1);
-         break;
-       case 12:
-         descend_schematic(0);
-         break;
-       case 13:
-         descend_symbol();
-         break;
-       case 14:
-         go_back(1);
-         break;
-       case 15: /* copy selection into clipboard */
-         rebuild_selected_array();
-         if(xctx->lastsel) {
-           save_selection(2);
-         }
-         break;
-       case 16: /* move selection */
-         if(!(xctx->ui_state & (STARTMOVE | STARTCOPY))) {
-           xctx->mx_double_save=xctx->mousex_snap;
-           xctx->my_double_save=xctx->mousey_snap;
-           move_objects(START,0,0,0);
-         }
-         break;
-       case 17: /* duplicate selection */
-         if(!(xctx->ui_state & (STARTMOVE | STARTCOPY))) {
-           xctx->mx_double_save=xctx->mousex_snap;
-           xctx->my_double_save=xctx->mousey_snap;
-           copy_objects(START);
-         }
-         break;
-       case 18: /* delete selection */
-         if(xctx->ui_state & SELECTION) delete(1/* to_push_undo */);
-         break;
-       case 19: /* place arc */
-         xctx->mx_double_save=xctx->mousex_snap;
-         xctx->my_double_save=xctx->mousey_snap;
-         xctx->last_command = 0;
-         new_arc(PLACE, 180.);
-         break;
-       case 20: /* place circle */
-         xctx->mx_double_save=xctx->mousex_snap;
-         xctx->my_double_save=xctx->mousey_snap;
-         xctx->last_command = 0;
-         new_arc(PLACE, 360.);
-         break;
-       case 21: /* abort & redraw */
-         abort_operation();
-         break;
-       default:
-         break;
-     }
+     context_menu_action(xctx->mousex_snap, xctx->mousey_snap);
    }
-   else if(button==Button5 && state == 0 ) {
-    if(waves_selected(event, key, state, button)) {
-      waves_callback(event, mx, my, key, button, aux, state);
-      break;
-    }
-     view_unzoom(CADZOOMSTEP);
-   }
-   else if(button==Button4 && state == 0 ) {
-    if(waves_selected(event, key, state, button)) {
-      waves_callback(event, mx, my, key, button, aux, state);
-      break;
-    }
-     view_zoom(CADZOOMSTEP);
-   }
-   else if(button==Button4 && (state & ShiftMask) && !(state & Button2Mask)) {
-    if(waves_selected(event, key, state, button)) {
-      waves_callback(event, mx, my, key, button, aux, state);
-      break;
-    }
-    xctx->xorigin+=-CADMOVESTEP*xctx->zoom/2.;
-    draw();
-    redraw_w_a_l_r_p_rubbers();
-   }
-   else if(button==Button5 && (state & ShiftMask) && !(state & Button2Mask)) {
-    if(waves_selected(event, key, state, button)) {
-      waves_callback(event, mx, my, key, button, aux, state);
-      break;
-    }
-    xctx->xorigin-=-CADMOVESTEP*xctx->zoom/2.;
-    draw();
-    redraw_w_a_l_r_p_rubbers();
-   }
-   else if(button==Button4 && (state & ControlMask) && !(state & Button2Mask)) {
-    xctx->yorigin+=-CADMOVESTEP*xctx->zoom/2.;
-    draw();
-    redraw_w_a_l_r_p_rubbers();
-   }
-   else if(button==Button5 && (state & ControlMask) && !(state & Button2Mask)) {
-    xctx->yorigin-=-CADMOVESTEP*xctx->zoom/2.;
-    draw();
-   }
+   /* Mouse wheel events */
+   else if(handle_mouse_wheel(event, mx, my, key, button, aux, state)) break;
    /* Alt - Button1 click to unselect */
    else if(button==Button1 && (SET_MODMASK) ) {
      xctx->last_command = 0;
      xctx->mx_save = mx; xctx->my_save = my;
      xctx->mx_double_save=xctx->mousex_snap;
      xctx->my_double_save=xctx->mousey_snap;
-     select_object(xctx->mousex, xctx->mousey, 0, 0);
+     select_object(xctx->mousex, xctx->mousey, 0, 0, NULL);
      rebuild_selected_array(); /* sets or clears xctx->ui_state SELECTION flag */
    }
    else if(button==Button2 && (state == 0)) {
@@ -2772,210 +3442,151 @@ int rstate; /* (reduced state, without ShiftMask) */
      } else if(button==Button1 && state==0 && tclgetvar("edit_symbol_prop_new_sel")[0]) {
        tcleval("set edit_symbol_prop_new_sel 1; .dialog.f1.b1 invoke"); /* invoke 'OK' of edit prop dialog */
      } else if(button==Button1 && (state & ShiftMask) && tclgetvar("edit_symbol_prop_new_sel")[0]) {
-       select_object(xctx->mousex, xctx->mousey, SELECTED, 0);
+       select_object(xctx->mousex, xctx->mousey, SELECTED, 0, NULL);
        tclsetvar("preserve_unchanged_attrs", "1");
        rebuild_selected_array();
      }
    }
-   else if(button==Button1)
+   else if(button==Button1) /* MOD button is not pressed here. Processed above */
    {
+     xctx->drag_elements = 0;
      if(tclgetboolvar("persistent_command") && xctx->last_command) {
-       if(xctx->last_command == STARTLINE)  start_line(mx, my);
-       if(xctx->last_command == STARTWIRE)  start_wire(mx, my);
+       if(xctx->last_command == STARTLINE)  start_line(xctx->mousex_snap, xctx->mousey_snap);
+       if(xctx->last_command == STARTWIRE)  start_wire(xctx->mousex_snap, xctx->mousey_snap);
        break;
      }
-     if((xctx->ui_state & MENUSTART) && (xctx->ui_state2 & MENUSTARTWIRECUT)) {
-       break_wires_at_point(xctx->mousex_snap, xctx->mousey_snap, 1);
-       xctx->ui_state &=~MENUSTART;
-       break;
-     }
-     if((xctx->ui_state & MENUSTART) && (xctx->ui_state2 & MENUSTARTWIRECUT2)) {
-       break_wires_at_point(xctx->mousex_snap, xctx->mousey_snap, 0);
-       xctx->ui_state &=~MENUSTART;
-       break;
-     }
-     if((xctx->ui_state & MENUSTART) && (xctx->ui_state2 & MENUSTARTMOVE)) {
-       xctx->mx_double_save=xctx->mousex_snap;
-       xctx->my_double_save=xctx->mousey_snap;
-       /* stretch nets that land on selected instance pins if connect_by_kissing == 2 */
-       /* select_attached_nets(); */
-       move_objects(START,0,0,0);
-       xctx->ui_state &=~MENUSTART;
-       break;
-     }
-     if((xctx->ui_state & MENUSTART) && (xctx->ui_state2 & MENUSTARTWIRE)) {
-       xctx->mx_double_save=xctx->mousex_snap;
-       xctx->my_double_save=xctx->mousey_snap;
-       new_wire(PLACE, xctx->mousex_snap, xctx->mousey_snap);
-       xctx->ui_state &=~MENUSTART;
-       break;
-     }
-     if((xctx->ui_state & MENUSTART) && (xctx->ui_state2 & MENUSTARTSNAPWIRE)) {
-       double x, y;
+     /* handle all object insertions started from Tools menu */
+     if(check_menu_start_commands(c_snap)) break;
+     /* complete the STARTWIRE, STARTRECT, STARTZOOM, STARTCOPY ... operations */
+     if(end_place_move_copy_zoom()) break;
 
-       find_closest_net_or_symbol_pin(xctx->mousex, xctx->mousey, &x, &y);
-       xctx->mx_double_save = my_round(x / c_snap) * c_snap;
-       xctx->my_double_save = my_round(y / c_snap) * c_snap;
-       new_wire(PLACE, x, y);
-       xctx->ui_state &=~MENUSTART;
-       break;
-     }
-     if((xctx->ui_state & MENUSTART) && (xctx->ui_state2 & MENUSTARTLINE)) {
-       xctx->mx_double_save=xctx->mousex_snap;
-       xctx->my_double_save=xctx->mousey_snap;
-       new_line(PLACE);
-       xctx->ui_state &=~MENUSTART;
-       break;
-     }
-     if((xctx->ui_state & MENUSTART) && (xctx->ui_state2 & MENUSTARTRECT)) {
-       xctx->mx_double_save=xctx->mousex_snap;
-       xctx->my_double_save=xctx->mousey_snap;
-       new_rect(PLACE);
-       xctx->ui_state &=~MENUSTART;
-       break;
-     }
-     if((xctx->ui_state & MENUSTART) && (xctx->ui_state2 & MENUSTARTPOLYGON)) {
-       xctx->mx_double_save=xctx->mousex_snap;
-       xctx->my_double_save=xctx->mousey_snap;
-       new_polygon(PLACE);
-       xctx->ui_state &=~MENUSTART;
-       break;
-     }
-     if((xctx->ui_state & MENUSTART) && (xctx->ui_state2 & MENUSTARTARC)) {
-       xctx->mx_double_save=xctx->mousex_snap;
-       xctx->my_double_save=xctx->mousey_snap;
-       new_arc(PLACE, 180.);
-       xctx->ui_state &=~MENUSTART;
-       break;
-     }
-     if((xctx->ui_state & MENUSTART) && (xctx->ui_state2 & MENUSTARTCIRCLE)) {
-       xctx->mx_double_save=xctx->mousex_snap;
-       xctx->my_double_save=xctx->mousey_snap;
-       new_arc(PLACE, 360.);
-       xctx->ui_state &=~MENUSTART;
-       break;
-     }
-     if((xctx->ui_state & MENUSTART) && (xctx->ui_state2 & MENUSTARTZOOM)) {
-       zoom_rectangle(START);
-       xctx->ui_state &=~MENUSTART;
-       break;
-     }
-     if(xctx->ui_state & STARTZOOM) {
-       zoom_rectangle(END);
-       break;
-     }
-     if(xctx->ui_state & STARTWIRE) {
-       if(tclgetboolvar("persistent_command")) {
-         if(constrained_move != 2) {
-           xctx->mx_double_save=xctx->mousex_snap;
-         }
-         if(constrained_move != 1) {
-           xctx->my_double_save=xctx->mousey_snap;
-         }
-         if(constrained_move == 1) xctx->mousey_snap = xctx->my_double_save;
-         if(constrained_move == 2) xctx->mousex_snap = xctx->mx_double_save;
-         new_wire(PLACE, xctx->mousex_snap, xctx->mousey_snap);
-
-       } else {
-         new_wire(PLACE|END, xctx->mousex_snap, xctx->mousey_snap);
-       }
-       constrained_move=0;
-       tcleval("set constrained_move 0" );
-       break;
-     }
-     if(xctx->ui_state & STARTARC) {
-       new_arc(SET, 0);
-       break;
-     }
-     if(xctx->ui_state & STARTLINE) {
-       if(tclgetboolvar("persistent_command")) {
-         if(constrained_move != 2) {
-           xctx->mx_double_save=xctx->mousex_snap;
-         }
-         if(constrained_move == 1) {
-           xctx->my_double_save=xctx->mousey_snap;
-         }
-         if(constrained_move == 1) xctx->mousey_snap = xctx->my_double_save;
-         if(constrained_move == 2) xctx->mousex_snap = xctx->mx_double_save;
-         new_line(PLACE);
-       } else {
-         new_line(PLACE|END);
-       }
-       constrained_move=0;
-       tcleval("set constrained_move 0" );
-       break;
-     }
-     if(xctx->ui_state & STARTRECT) {
-       new_rect(PLACE|END);
-       break;
-     }
-     if(xctx->ui_state & STARTPOLYGON) {
-       if(constrained_move == 1) xctx->mousey_snap = xctx->my_double_save;
-       if(constrained_move == 2) xctx->mousex_snap = xctx->mx_double_save;
-       new_polygon(ADD);
-       xctx->mx_double_save=xctx->mousex_snap;
-       xctx->my_double_save=xctx->mousey_snap;
-       constrained_move=0;
-       tcleval("set constrained_move 0" );
-       break;
-     }
-     if(xctx->ui_state & STARTMOVE) {
-       move_objects(END,0,0,0);
-       xctx->ui_state &=~START_SYMPIN;
-       constrained_move=0;
-       tcleval("set constrained_move 0" );
-       break;
-     }
-     if(xctx->ui_state & STARTCOPY) {
-       copy_objects(END);
-       constrained_move=0;
-       tcleval("set constrained_move 0" );
-       break;
-     }
      /* Button1Press to select objects */
-     if( !(xctx->ui_state & STARTSELECT) && !(xctx->ui_state & STARTWIRE) && !(xctx->ui_state & STARTLINE)  ) {
+     if( !(xctx->ui_state & STARTSELECT) && !(xctx->ui_state & STARTWIRE) && !(xctx->ui_state & STARTLINE) ) {
        Selected sel;
+       int already_selected = 0;
        int prev_last_sel = xctx->lastsel;
+       int no_shift_no_ctrl = !(state & (ShiftMask | ControlMask));
+
+       xctx->shape_point_selected = 0;
        xctx->mx_save = mx; xctx->my_save = my;
        xctx->mx_double_save=xctx->mousex_snap;
        xctx->my_double_save=xctx->mousey_snap;
-       if( !(state & ShiftMask) && !(SET_MODMASK) ) {
-         unselect_all(1);
+
+       /* Clicking on an instance pin -> drag a new wire
+        * if an instance is already selected */
+       if(xctx->lastsel == 1 && xctx->sel_array[0].type==ELEMENT) {
+         if(add_wire_from_inst_pin(&xctx->sel_array[0], xctx->mousex_snap, xctx->mousey_snap)) break;
        }
-       sel = select_object(xctx->mousex, xctx->mousey, SELECTED, 0);
+
+       if(!xctx->intuitive_interface && no_shift_no_ctrl ) unselect_all(1);
+       sel = find_closest_obj(xctx->mousex, xctx->mousey, 0);
+
+       switch(sel.type) {
+         case WIRE:    if(xctx->wire[sel.n].sel)          already_selected = 1; break;
+         case xTEXT:   if(xctx->text[sel.n].sel)          already_selected = 1; break;
+         case LINE:    if(xctx->line[sel.col][sel.n].sel) already_selected = 1; break;
+         case POLYGON: if(xctx->poly[sel.col][sel.n].sel) already_selected = 1; break;
+         case xRECT:   if(xctx->rect[sel.col][sel.n].sel) already_selected = 1; break;
+         case ARC:     if(xctx->arc[sel.col][sel.n].sel)  already_selected = 1; break;
+         case ELEMENT: if(xctx->inst[sel.n].sel)          already_selected = 1; break;
+         default: break;
+       } /*end switch */
+
+       /* Clicking on an instance pin -> drag a new wire */
+       if(xctx->intuitive_interface && !already_selected) {
+         if(add_wire_from_inst_pin(&sel, xctx->mousex_snap, xctx->mousey_snap)) break;
+       }
+
+       if(xctx->intuitive_interface && !already_selected && no_shift_no_ctrl )  unselect_all(1);
+
+       if(!already_selected) select_object(xctx->mousex, xctx->mousey, SELECTED, 0, &sel);
        rebuild_selected_array();
+
+       if(xctx->lastsel == 1 && xctx->sel_array[0].type==POLYGON) 
+          if(edit_polygon_point(state)) break; /* sets xctx->shape_point_selected */
+
+       if(xctx->lastsel == 1 && xctx->sel_array[0].type==xRECT)
+          if(edit_rect_point(state)) break; /* sets xctx->shape_point_selected */
+
+       if(xctx->lastsel == 1 && xctx->sel_array[0].type==LINE)
+          if(edit_line_point(state)) break; /* sets xctx->shape_point_selected */
+
+       if(xctx->lastsel == 1 && xctx->sel_array[0].type==WIRE)
+          if(edit_wire_point(state)) break; /* sets xctx->shape_point_selected */
+
+       /* intuitive interface: directly drag elements */
+       if(sel.type && xctx->intuitive_interface && xctx->lastsel >= 1 &&
+          !xctx->shape_point_selected) {
+         /* xctx->push_undo(); */
+         xctx->drag_elements = 1;
+
+         if( state  & ControlMask && !tclgetboolvar("enable_stretch")) {
+           select_attached_nets(); /* stretch nets that land on selected instance pins */
+         }
+ 
+         if(state == (ShiftMask | ControlMask) ) {
+           xctx->connect_by_kissing = 2; /* 2 will be used to reset var to 0 at end of move */
+           move_objects(START,0,0,0);
+         }
+         else if(state == ShiftMask) copy_objects(START);
+         else move_objects(START,0,0,0);
+       }
+
        #ifndef __unix__
        draw_selection(xctx->gc[SELLAYER], 0);
        #endif
-       if(sel.type && state == ControlMask) {
-         int savesem = xctx->semaphore;
-         xctx->semaphore = 0;
-         launcher();
-         xctx->semaphore = savesem;
-       }
-       if( !(state & ShiftMask) )  {
-         if(tclgetboolvar("auto_hilight") && xctx->hilight_nets && sel.type == 0 ) {
+       if(tclgetboolvar("auto_hilight") && !xctx->shape_point_selected) {
+         if(!(state & ShiftMask) && xctx->hilight_nets && sel.type == 0 ) {
            if(!prev_last_sel) {
              redraw_hilights(1); /* 1: clear all hilights, then draw */
            }
          }
-       }
-       if(tclgetboolvar("auto_hilight")) {
          hilight_net(0);
          if(xctx->lastsel) {
            redraw_hilights(0);
-           /* draw_hilight_net(1); */
          }
        }
        break;
      }
    } /* button==Button1 */
    break;
+
   case ButtonRelease:
    if(waves_selected(event, key, state, button)) {
      waves_callback(event, mx, my, key, button, aux, state);
      break;
    }
+   /* launcher, only if no movement has been done */
+   if(state == (Button1Mask | ControlMask) && !xctx->shape_point_selected && (xctx->ui_state & STARTMOVE) &&
+      xctx->deltax == 0 && xctx->deltay == 0) {
+     int savesem = xctx->semaphore;
+     dbg(0, "no move\n");
+     move_objects(ABORT,0,0,0);
+     xctx->semaphore = 0;
+     launcher(); /* works only if lastsel == 1 */
+     xctx->semaphore = savesem;
+   }
+
+   /* end intuitive_interface copy or move */
+   if(xctx->ui_state & STARTCOPY && xctx->drag_elements) {
+      copy_objects(END);
+      xctx->constr_mv=0;
+      tcleval("set constr_mv 0" );
+      xctx->drag_elements = 0;
+   }
+   else if(xctx->ui_state & STARTMOVE && xctx->drag_elements) {
+      move_objects(END,0,0,0);
+      xctx->constr_mv=0;
+      tcleval("set constr_mv 0" );
+      xctx->drag_elements = 0;
+   }
+
+   /* if a polygon/bezier/rectangle control point was clicked, end point move operation
+    * and set polygon state back to SELECTED from SELECTED1 */
+   else if((xctx->ui_state & (STARTMOVE | SELECTION)) && xctx->shape_point_selected) {
+     end_shape_point_edit();
+   }
+
    if(xctx->ui_state & STARTPAN) {
      xctx->ui_state &=~STARTPAN;
      /* xctx->mx_save = mx; xctx->my_save = my; */
@@ -2992,18 +3603,18 @@ int rstate; /* (reduced state, without ShiftMask) */
        tclsetboolvar("enable_stretch", !es);
        select_rect(END,-1);
        tclsetboolvar("enable_stretch", es);
-       break;
      } else {
-       /* 20150927 filter out button4 and button5 events */
-       if(!(state&(Button4Mask|Button5Mask) ) ) select_rect(END,-1);
+       /* Button1 release: end of rectangle select */
+       if(!(state & (Button4Mask|Button5Mask) ) ) {
+         select_rect(END,-1);
+       }
      }
-     if(draw_xhair) draw_crosshair(0);
      rebuild_selected_array();
      my_snprintf(str, S(str), "mouse = %.16g %.16g - selected: %d path: %s",
        xctx->mousex_snap, xctx->mousey_snap, xctx->lastsel, xctx->sch_path[xctx->currsch] );
      statusmsg(str,1);
-
    }
+   if(draw_xhair) draw_crosshair(0);
    break;
   case -3:  /* double click  : edit prop */
     if( waves_selected(event, key, state, button)) {
@@ -3017,7 +3628,7 @@ int rstate; /* (reduced state, without ShiftMask) */
        if(!xctx->lastsel && xctx->ui_state ==  0) {
          /* Following 5 lines do again a selection overriding lock,
           * so locked instance attrs can be edited */
-         sel = select_object(xctx->mousex, xctx->mousey, SELECTED, 1);
+         sel = select_object(xctx->mousex, xctx->mousey, SELECTED, 1, NULL);
          if(sel.type) {
            xctx->ui_state = SELECTION;
            rebuild_selected_array();
@@ -3033,11 +3644,12 @@ int rstate; /* (reduced state, without ShiftMask) */
            xctx->ui_state &= ~STARTLINE;
          }
          if( (xctx->ui_state & STARTPOLYGON) && (state ==0 ) ) {
-           new_polygon(SET);
+           new_polygon(SET, xctx->mousex_snap, xctx->mousey_snap);
          }
        }
      }
    }
+
 #ifndef __unix__
   case MOUSE_WHEEL_UP:  /* windows do not use button4 and button5 like X */
   {

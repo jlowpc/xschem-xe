@@ -75,12 +75,18 @@ static int tedax_block_netlist(FILE *fd, int i)
   int tedax_stop=0;
   char filename[PATH_MAX];
   char *extra=NULL;
+  const char *default_schematic;
 
   if(!strboolcmp( get_tok_value(xctx->sym[i].prop_ptr,"tedax_stop",0),"true") )
      tedax_stop=1;
   else
      tedax_stop=0;
-  get_sch_from_sym(filename, xctx->sym + i, -1);
+  get_sch_from_sym(filename, xctx->sym + i, -1, 0);
+
+  default_schematic = get_tok_value(xctx->sym[i].prop_ptr, "default_schematic", 0);
+  if(!strcmp(default_schematic, "ignore")) {
+    return err;
+  }
 
   fprintf(fd, "\n# expanding   symbol:  %s # of pins=%d\n",
         xctx->sym[i].name,xctx->sym[i].rects[PINLAYER] );
@@ -129,6 +135,7 @@ int global_tedax_netlist(int global)  /* netlister driver */
  char *abs_path = NULL;
  Str_hashtable subckt_table = {NULL, 0};
  int lvs_ignore = tclgetboolvar("lvs_ignore");
+ int save_prev_mod = xctx->prev_set_modify;
 
  xctx->push_undo();
  statusmsg("",2);  /* clear infowindow */
@@ -192,7 +199,8 @@ int global_tedax_netlist(int global)  /* netlister driver */
    char *current_dirname_save = NULL; 
 
    unselect_all(1);
-   remove_symbols(); /* 20161205 ensure all unused symbols purged before descending hierarchy */
+   /* ensure all unused symbols purged before descending hierarchy */
+   if(!tclgetboolvar("keep_symbols")) remove_symbols();
    /* reload data without popping undo stack, this populates embedded symbols if any */
    xctx->pop_undo(2, 0);
    /* link_symbols_to_instances(-1); */ /* done in xctx->pop_undo() */
@@ -219,7 +227,10 @@ int global_tedax_netlist(int global)  /* netlister driver */
       my_strdup(_ALLOC_ID_, &subckt_name, get_cell(xctx->sym[i].name, 0));
       if (str_hash_lookup(&subckt_table, subckt_name, "", XLOOKUP)==NULL)
       {
-        str_hash_lookup(&subckt_table, subckt_name, "", XINSERT);
+        /* do not insert symbols with default_schematic attribute set to ignore in hash since these symbols
+         * will not be processed by *_block_netlist() */
+        if(strcmp(get_tok_value(xctx->sym[i].prop_ptr, "default_schematic", 0), "ignore"))
+          str_hash_lookup(&subckt_table, subckt_name, "", XINSERT);
         err |= tedax_block_netlist(fd, i);
       }
     }
@@ -233,7 +244,9 @@ int global_tedax_netlist(int global)  /* netlister driver */
    my_free(_ALLOC_ID_, &xctx->sch[xctx->currsch]);
    xctx->currsch--;
    unselect_all(1);
+   if(!tclgetboolvar("keep_symbols")) remove_symbols();
    xctx->pop_undo(4, 0);
+   xctx->prev_set_modify = save_prev_mod;
    if(web_url) {
      my_strncpy(xctx->current_dirname, current_dirname_save, S(xctx->current_dirname));
    } else {
@@ -257,6 +270,7 @@ int global_tedax_netlist(int global)  /* netlister driver */
 
  /* print globals nodes found in netlist 28032003 */
  record_global_node(0,fd,NULL);
+ /* record_global_node(2, NULL, NULL); */ /* delete list --> do it in xwin_exit() */
  fprintf(fd, "__HIERSEP__ %s\n", xctx->hiersep);
 
  dbg(1, "global_tedax_netlist(): starting awk on netlist!\n");

@@ -76,8 +76,8 @@ int filter_data(const char *din,  const size_t ilen,
   }
 
   dbg(1, "filter_data(): ilen=%ld, cmd=%s\n", ilen, cmd);
-  pipe(p1);
-  pipe(p2);
+  if(pipe(p1) == -1) dbg(0, "filter_data(): pipe creation failed\n");
+  if(pipe(p2) == -1) dbg(0, "filter_data(): pipe creation failed\n");
 
   dbg(1, "p1[0] = %d\n", p1[0]);
   dbg(1, "p1[1] = %d\n", p1[1]);
@@ -104,10 +104,10 @@ int filter_data(const char *din,  const size_t ilen,
     close(p1[1]); /* only read from p1 */
     close(p2[0]); /* only write to p2 */
     close(0); /* dup2(p1[0],0); */  /* connect read side of read pipe to stdin */
-    dup(p1[0]);
+    if(dup(p1[0]) == -1) dbg(0, "filter_data(): dup() call failed\n");
     close(p1[0]);
     close(1); /* dup2(p2[1],1); */ /* connect write side of write pipe to stdout */
-    dup(p2[1]);
+    if(dup(p2[1]) == -1) dbg(0, "filter_data(): dup() call failed\n");
     close(p2[1]);
 
     #if 1
@@ -391,32 +391,62 @@ void transpose_matrix(double *a, int r, int c)
  */
 static void read_binary_block(FILE *fd, Raw *raw, int ac)
 {
-  int p, v;
+  int i, p, v;
   double *tmp;
   int offset = 0;
+  #ifdef __unix__
+    long filepos;
+  #else
+    __int3264 filepos;
+  #endif 
+  int npoints;
+
 
   if(!raw) {
     dbg(0, "read_binary_block() no raw struct allocated\n");
     return;
   }
 
+  /* read buffer */
+  tmp = my_calloc(_ALLOC_ID_, raw->nvars, (sizeof(double *) ));
+
+  /* if sweep1 and sweep2 are given calculate actual npoints that will be loaded */
+  npoints = raw->npoints[raw->datasets];
+  if(!(raw->sweep1 == raw->sweep2 && raw->sweep1 == -1.0)) {
+    double sweepvar;
+    npoints = 0;
+    filepos = xftell(fd); /* store file pointer position */
+    for(p = 0; p < raw->npoints[raw->datasets]; p++) {
+      if(fread(tmp, sizeof(double), raw->nvars, fd) != raw->nvars) {
+         dbg(0, "Warning: binary block is not of correct size\n");
+      }
+      sweepvar = tmp[0];
+      if(sweepvar < raw->sweep1 || sweepvar >= raw->sweep2) continue;
+      else npoints++;
+    }
+    xfseek(fd, filepos, SEEK_SET); /* rewind file pointer */
+  }
   for(p = 0 ; p < raw->datasets; p++) {
     offset += raw->npoints[p];
   }
-
-  /* read buffer */
-  tmp = my_calloc(_ALLOC_ID_, raw->nvars, (sizeof(double *) ));
   /* allocate storage for binary block, add one data column for custom data plots */
   if(!raw->values) raw->values = my_calloc(_ALLOC_ID_, raw->nvars + 1, sizeof(SPICE_DATA *));
   for(p = 0 ; p <= raw->nvars; p++) {
     my_realloc(_ALLOC_ID_,
-       &raw->values[p], (offset + raw->npoints[raw->datasets]) * sizeof(SPICE_DATA));
+       &raw->values[p], (offset + npoints) * sizeof(SPICE_DATA));
   }
   /* read binary block */
-  for(p = 0; p < raw->npoints[raw->datasets]; p++) {
-    if(fread(tmp, sizeof(double) , raw->nvars, fd) != raw->nvars) {
+  p = 0;
+  for(i = 0; i < raw->npoints[raw->datasets]; i++) {
+    if(fread(tmp, sizeof(double), raw->nvars, fd) != raw->nvars) {
        dbg(0, "Warning: binary block is not of correct size\n");
     }
+
+    if(!(raw->sweep1 == raw->sweep2 && raw->sweep1 == -1.0)) {
+      double sweepvar = tmp[0];
+      if(sweepvar < raw->sweep1 || sweepvar >= raw->sweep2) continue;
+    }
+
     /* assign to xschem struct, memory aligned per variable, for cache locality */
     if(ac) {
       for(v = 0; v < raw->nvars; v += 2) { /*AC analysis: calculate magnitude */
@@ -436,7 +466,9 @@ static void read_binary_block(FILE *fd, Raw *raw, int ac)
     else for(v = 0; v < raw->nvars; v++) {
       raw->values[v][offset + p] = (SPICE_DATA)tmp[v];
     }
+    p++;
   }
+  raw->npoints[raw->datasets] = npoints; /* if sweeep1 and sweep2 are given less points are read */
   my_free(_ALLOC_ID_, &tmp);
 }
 
@@ -483,6 +515,10 @@ static int read_dataset(FILE *fd, Raw **rawptr, const char *type)
     return 0;
   }
   dbg(1, "read_dataset(): type=%s\n", type ? type : "<NULL>");
+  if(type) {
+    if(!my_strcasecmp(type, "spectrum")) type = "ac";
+    if(!my_strcasecmp(type, "sp")) type = "ac";
+  }
   while((line = my_fgets(fd, NULL))) {
     my_strdup2(_ALLOC_ID_, &lowerline, line);
     strtolower(lowerline);
@@ -492,7 +528,7 @@ static int read_dataset(FILE *fd, Raw **rawptr, const char *type)
              "Use binary format in ngspice (set filetype=binary)\n");
       tcleval("alert_ {read_dataset(): ASCII raw files can not be read. "
              "Use binary format in ngspice (set filetype=binary)}");
-      extra_rawfile(3, NULL, NULL);
+      extra_rawfile(3, NULL, NULL, -1.0, -1.0);
       free_rawfile(rawptr, 0);
       exit_status = 0;
       goto read_dataset_done;
@@ -514,6 +550,9 @@ static int read_dataset(FILE *fd, Raw **rawptr, const char *type)
       done_points = 0;
       ac = 0;
     }
+    else if(!strncmp(line, "Flags:", 6) && strstr(lowerline, "complex")) {
+      ac = 1;
+    }
     /* if type is given (not NULL) choose the simulation that matches type, else take the first one */
     /* if sim_type is set skip all datasets that do not match */
     else if(!strncmp(line, "Plotname:", 9) && strstr(lowerline, "transient analysis")) {
@@ -532,13 +571,22 @@ static int read_dataset(FILE *fd, Raw **rawptr, const char *type)
       dbg(dbglev, "read_dataset(): noise sim_type=%s\n", sim_type ? sim_type : "<NULL>");
     }
     else if(!strncmp(line, "Plotname:", 9) && strstr(lowerline, "operating point")) {
-
       if(!type) type = "op";
+      if(!strcmp(type, "op")) sim_type = "op";
+      dbg(dbglev, "read_dataset(): op sim_type=%s\n", sim_type ? sim_type : "<NULL>");
+    } 
+    else if(!strncmp(line, "Plotname:", 9) && strstr(lowerline, "integrated noise")) {
+      if(!type) type = "op";
+      else if(!strcmp(type, "noise")) {
+        sim_type = "noise";
+      }
       if(!strcmp(type, "op")) sim_type = "op";
       dbg(dbglev, "read_dataset(): op sim_type=%s\n", sim_type ? sim_type : "<NULL>");
     }
     else if(!strncmp(line, "Plotname:", 9) &&
-            ( strstr(lowerline, "ac analysis") || strstr(lowerline, "sp analysis")) ) {
+            ( strstr(lowerline, "ac analysis") ||
+              strstr(lowerline, "spectrum") ||
+              strstr(lowerline, "sp analysis")) ) {
       ac = 1;
       if(!type) type = "ac";
       if(!strcmp(type, "ac")) sim_type = "ac";
@@ -546,8 +594,11 @@ static int read_dataset(FILE *fd, Raw **rawptr, const char *type)
     }
     else if(!strncmp(line, "Plotname:", 9)) {
       char name[PATH_MAX];
-      n = sscanf(line, "Plotname: %s", name);
-      if(n==1) {
+      char *ptr;
+      my_strncpy(name, line + 10, S(name));
+      ptr = strchr(name ,'\n');
+      if(ptr) *ptr = '\0';
+      if(name[0]) {
         if(!type) type = name;
         if(!strcmp(type, name)) sim_type = name;
         dbg(dbglev, "read_dataset(): ac sim_type=%s\n", sim_type ? sim_type : "<NULL>");
@@ -560,7 +611,7 @@ static int read_dataset(FILE *fd, Raw **rawptr, const char *type)
       n = sscanf(line, "No. of Data Rows : %d", &npoints);
       if(n < 1) {
         dbg(0, "read_dataset(): WAARNING: malformed raw file, aborting\n");
-        extra_rawfile(3, NULL, NULL);
+        extra_rawfile(3, NULL, NULL, -1.0, -1.0);
         free_rawfile(rawptr, 0);
         exit_status = 0;
         goto read_dataset_done;
@@ -589,7 +640,7 @@ static int read_dataset(FILE *fd, Raw **rawptr, const char *type)
 
       if(n < 1) {
         dbg(0, "read_dataset(): WAARNING: malformed raw file, aborting\n");
-        extra_rawfile(3, NULL, NULL);
+        extra_rawfile(3, NULL, NULL, -1.0, -1.0);
         free_rawfile(rawptr, 0);
         exit_status = 0;
         goto read_dataset_done;
@@ -602,7 +653,7 @@ static int read_dataset(FILE *fd, Raw **rawptr, const char *type)
       n = sscanf(line, "No. Points: %d", &npoints);
       if(n < 1) {
         dbg(0, "read_dataset(): WAARNING: malformed raw file, aborting\n");
-        extra_rawfile(3, NULL, NULL);
+        extra_rawfile(3, NULL, NULL, -1.0, -1.0);
         free_rawfile(rawptr, 0);
         exit_status = 0;
         goto read_dataset_done;
@@ -625,7 +676,7 @@ static int read_dataset(FILE *fd, Raw **rawptr, const char *type)
       n = sscanf(line, "%d %s", &i, varname); /* read index and name of saved waveform */
       if(n < 2) {
         dbg(0, "read_dataset(): WAARNING: malformed raw file, aborting\n");
-        extra_rawfile(3, NULL, NULL);
+        extra_rawfile(3, NULL, NULL, -1.0, -1.0);
         free_rawfile(rawptr, 0);
         exit_status = 0;
         goto read_dataset_done;
@@ -637,7 +688,7 @@ static int read_dataset(FILE *fd, Raw **rawptr, const char *type)
         if(*ptr == ':') *ptr = '.';
         ++ptr;
       }
-      if(sim_type && !strcmp(sim_type, "ac")) { /* AC */
+      if(ac || (sim_type && !strcmp(sim_type, "ac")) ) { /* AC */
         my_strcat(_ALLOC_ID_, &raw->names[i << 1], varname);
         int_hash_lookup(&raw->table, raw->names[i << 1], (i << 1), XINSERT_NOREPLACE);
         if(strstr(varname, "v(") == varname || strstr(varname, "i(") == varname)
@@ -700,6 +751,12 @@ void free_rawfile(Raw **rawptr, int dr)
   if(raw->schname) my_free(_ALLOC_ID_, &raw->schname);
   if(raw->table.table) int_hash_free(&raw->table);
   my_free(_ALLOC_ID_, rawptr);
+
+  if(has_x) {
+    tclvareval("set tctx::", xctx->current_win_path, "_waves $simulate_bg", NULL);
+    tclvareval(xctx->top_path, ".menubar.waves configure -bg $simulate_bg", NULL);
+  }   
+
   if(dr) draw();
 }
 
@@ -711,13 +768,18 @@ char *base64_from_file(const char *f, size_t *length)
   unsigned char *s = NULL;
   char *b64s = NULL;
   size_t len;
+  int stat_res;
 
-  if (stat(f, &st) == 0 && ( (st.st_mode & S_IFMT) == S_IFREG) ) {
+  stat_res = stat(f, &st);
+  if (stat_res == 0 && ( (st.st_mode & S_IFMT) == S_IFREG) ) {
     len = st.st_size;
     fd = fopen(f, fopen_read_mode);
     if(fd) {
+      size_t bytes_read;
       s = my_malloc(_ALLOC_ID_, len);
-      fread(s, len, 1, fd);
+      if((bytes_read = fread(s, 1, len, fd)) < len) {
+        dbg(0, "base64_from_file(): less bytes FROM %S, got %ld bytes\n", f, bytes_read);
+      }
       fclose(fd);
       b64s = base64_encode(s, len, length, 1);
       my_free(_ALLOC_ID_, &s);
@@ -729,7 +791,9 @@ char *base64_from_file(const char *f, size_t *length)
   return b64s;
 }
 
-int raw_read_from_attr(Raw **rawptr, const char *type)
+/* "spice_data" attribute is set on instance by executing 'xschem embed_rawfile'
+ * after seletcing the component */
+int raw_read_from_attr(Raw **rawptr, const char *type, double sweep1, double sweep2)
 {
   int res = 0;
   unsigned char *s;
@@ -758,7 +822,7 @@ int raw_read_from_attr(Raw **rawptr, const char *type)
         fwrite(s, decoded_length, 1, fd);
         fclose(fd);
         my_free(_ALLOC_ID_, &s);
-        res = raw_read(tmp_filename, rawptr, type);
+        res = raw_read(tmp_filename, rawptr, type, sweep1, sweep2);
         unlink(tmp_filename);
       } else {
         dbg(0, "read_rawfile_from_attr(): failed to open file %s for reading\n", tmp_filename);
@@ -768,8 +832,38 @@ int raw_read_from_attr(Raw **rawptr, const char *type)
   return res;
 }
 
+int raw_add_vector(const char *varname, const char *expr)
+{
+  int f;
+  int res = 0;
+  Raw *raw = xctx->raw;
+  if(!raw || !raw->values) return 0;
+
+  if(!int_hash_lookup(&raw->table, varname, 0, XLOOKUP)) {
+    raw->nvars++;
+    my_realloc(_ALLOC_ID_, &raw->names, raw->nvars * sizeof(char *));
+    my_realloc(_ALLOC_ID_, &raw->cursor_b_val, raw->nvars * sizeof(double));
+    raw->cursor_b_val[raw->nvars - 1] = 0.0;
+    raw->names[raw->nvars - 1] = NULL;
+    my_strdup2(_ALLOC_ID_, &raw->names[raw->nvars - 1], varname);
+    int_hash_lookup(&raw->table, raw->names[raw->nvars - 1], raw->nvars - 1, XINSERT_NOREPLACE);
+    my_realloc(_ALLOC_ID_, &raw->values, (raw->nvars + 1) * sizeof(SPICE_DATA *));
+    raw->values[raw->nvars] = NULL;
+    my_realloc(_ALLOC_ID_, &raw->values[raw->nvars], raw->allpoints * sizeof(SPICE_DATA));
+    res = 1;
+  }
+  if(expr) {
+    plot_raw_custom_data(0, 0, raw->allpoints -1, expr, varname);
+  } else if(res == 1) {
+    for(f = 0; f < raw->allpoints; f++) {
+      raw->values[raw->nvars - 1][f] = 0.0;
+    }
+  }
+  return res;
+}
+
 /* read a ngspice raw file (with data portion in binary format) */
-int raw_read(const char *f, Raw **rawptr, const char *type)
+int raw_read(const char *f, Raw **rawptr, const char *type, double sweep1, double sweep2)
 {
   int res = 0;
   FILE *fd;
@@ -788,6 +882,8 @@ int raw_read(const char *f, Raw **rawptr, const char *type)
   raw = *rawptr;
   raw->level = -1; 
   raw->annot_p = -1;
+  raw->sweep1 = sweep1;
+  raw->sweep2 = sweep2;
   raw->annot_sweep_idx = -1;
 
   int_hash_init(&raw->table, HASHSIZE);
@@ -795,6 +891,7 @@ int raw_read(const char *f, Raw **rawptr, const char *type)
   if(fd) {
     if((res = read_dataset(fd, rawptr, type)) == 1) {
       int i;
+      set_modify(-2); /* clear text floater caches */
       my_strdup2(_ALLOC_ID_, &raw->rawfile, f);
       my_strdup2(_ALLOC_ID_, &raw->schname, xctx->sch[xctx->currsch]);
       raw->level = xctx->currsch;
@@ -810,20 +907,137 @@ int raw_read(const char *f, Raw **rawptr, const char *type)
       dbg(0, "raw_read(): no useful data found\n");
     }
     fclose(fd);
+    if(has_x) {
+      if(sch_waves_loaded() >= 0) {
+        tclvareval("set tctx::", xctx->current_win_path, "_waves Green", NULL);
+        tclvareval(xctx->top_path, ".menubar.waves configure -bg Green", NULL);
+      } else {
+        tclvareval("set tctx::", xctx->current_win_path, "_waves $simulate_bg", NULL);
+        tclvareval(xctx->top_path, ".menubar.waves configure -bg $simulate_bg", NULL);
+      }
+    }
     return res;
   }
   dbg(0, "raw_read(): failed to open file %s for reading\n", f);
   return 0;
 }
 
+int raw_deletevar(const char *name)
+{
+  int ret = 0;
+  int i, n;
+  Raw *raw = xctx->raw; 
+  Int_hashentry *entry;
+
+  n = get_raw_index(name, &entry);
+  if(n < 0) return ret;
+  dbg(1, "n=%d, %s \n", n, entry->token);
+  int_hash_lookup(&raw->table, entry->token, 0, XDELETE);
+  my_free(_ALLOC_ID_, &raw->names[n]);
+  for(i = n + 1; i < raw->nvars; i++) {
+    int_hash_lookup(&raw->table, raw->names[i], i - 1, XINSERT); /* update hash table */
+    raw->names[i - 1] = raw->names[i];
+  }
+  my_free(_ALLOC_ID_, &raw->values[n]);
+  for(i = n + 1; i <= raw->nvars; i++) {
+    raw->values[i - 1] = raw->values[i];
+  }
+  raw->nvars--;
+  my_realloc(_ALLOC_ID_, &raw->names, sizeof(char *) * raw->nvars);
+  my_realloc(_ALLOC_ID_, &raw->values, sizeof(SPICE_DATA *) * raw->nvars + 1);
+  ret = 1;
+  return ret;
+}
+
+/* create a new raw file with '(max - min) / step' points with only a sweep variable in it. */
+int new_rawfile(const char *name, const char *type, const char *sweepvar,
+                       double start, double end, double step)
+{
+  int i;
+  int ret = 1;
+  Raw *raw;
+  int number = (int)floor((end - start) / step) + 1;
+
+  /* if not already done insert base raw file (if there is one) into xctx->extra_raw_arr[0] */
+  if(xctx->raw && xctx->extra_raw_n == 0) {
+    xctx->extra_raw_arr[xctx->extra_raw_n] = xctx->raw;
+    xctx->extra_raw_n++;
+  }
+
+  if(xctx->extra_raw_n < MAX_RAW_N && name && type) {
+    for(i = 0; i < xctx->extra_raw_n; i++) {
+      if(xctx->extra_raw_arr[i]->sim_type &&
+         !strcmp(xctx->extra_raw_arr[i]->rawfile, name) &&
+         !strcmp(xctx->extra_raw_arr[i]->sim_type, type)
+        ) break;
+    }
+
+    for(i = 0; i < xctx->extra_raw_n; i++) {
+      if( !strcmp(xctx->extra_raw_arr[i]->rawfile, name) &&
+          !strcmp(xctx->extra_raw_arr[i]->sim_type, type)
+        ) break;
+    } 
+    if(i >= xctx->extra_raw_n) { /* file not already loaded: read it and switch to it */
+      double t;
+
+      xctx->raw = my_calloc(_ALLOC_ID_, 1, sizeof(Raw));
+      raw = xctx->raw;
+      raw->level = -1; 
+      raw->sweep1 = -1.0;
+      raw->sweep2 = -1.0;
+      raw->annot_p = -1;
+      raw->annot_sweep_idx = -1;
+  
+      int_hash_init(&raw->table, HASHSIZE);
+      my_strdup2(_ALLOC_ID_, &raw->rawfile, name);
+      my_strdup2(_ALLOC_ID_, &raw->schname, xctx->sch[xctx->currsch]);
+      my_strdup(_ALLOC_ID_, &raw->sim_type, type);
+      raw->level = xctx->currsch;
+      my_realloc(_ALLOC_ID_, &raw->npoints, 1 * sizeof(int)); /* for now assume only one dataset */
+      raw->datasets = 1;
+      raw->allpoints = number;
+      raw->npoints[0] = number;
+      raw->nvars = 1;
+      raw->values = my_calloc(_ALLOC_ID_, raw->nvars + 1, sizeof(SPICE_DATA *));
+      raw->values[0] = my_calloc(_ALLOC_ID_, number,  sizeof(SPICE_DATA));
+      raw->values[1] = my_calloc(_ALLOC_ID_, number,  sizeof(SPICE_DATA));
+      raw->names = my_calloc(_ALLOC_ID_, raw->nvars, sizeof(char *));
+      raw->cursor_b_val = my_calloc(_ALLOC_ID_, raw->nvars, sizeof(double));
+      my_strdup2(_ALLOC_ID_, &raw->names[0], sweepvar);
+      int_hash_lookup(&raw->table, raw->names[0], 0, XINSERT_NOREPLACE);
+
+      for(i = 0; i < number; i++) {
+        t = start + i * step;
+        raw->values[0][i] = t;
+      }
+
+      xctx->extra_raw_arr[xctx->extra_raw_n] = xctx->raw;
+      xctx->extra_prev_idx = xctx->extra_idx;
+      xctx->extra_idx = xctx->extra_raw_n;
+      xctx->extra_raw_n++;
+    } else { /* file found: switch to it */
+      dbg(1, "new_rawfile() %d read: found: switch to it\n", i);
+      xctx->extra_prev_idx = xctx->extra_idx;
+      xctx->extra_idx = i; 
+      xctx->raw = xctx->extra_raw_arr[xctx->extra_idx];
+    }
+  } else {
+    ret = 0;
+  }
+  return ret;
+}
+
 /* what == 1: read another raw file and switch to it (make it the current one)
- * what == 2: switch raw file. If filename given switch to that one, else switch to next
+ *            if type == table use table_read() to read an ascii table
+ * what == 2: switch raw file. If filename given switch to that one, 
+ * else if filename is an integer switch to that raw file index,
+ * else switch to next
  * what == 3: remove a raw file. If no filename given remove all
  * what == 4: print info
  * what == 5: switch back to previous
  * return 1 if sucessfull, 0 otherwise
  */
-int extra_rawfile(int what, const char *file, const char *type)
+int extra_rawfile(int what, const char *file, const char *type, double sweep1, double sweep2)
 {
   int i;
   int ret = 1;
@@ -836,22 +1050,21 @@ int extra_rawfile(int what, const char *file, const char *type)
     xctx->extra_raw_arr[xctx->extra_raw_n] = xctx->raw;
     xctx->extra_raw_n++;
   }
-  /* **************** read ************* */
-  if(what == 1 && xctx->extra_raw_n < MAX_RAW_N && file && type) {
+  /* **************** table_read ************* */
+  if(what == 1 && xctx->extra_raw_n < MAX_RAW_N && file && (type && !strcmp(type, "table"))) {
     tclvareval("subst {", file, "}", NULL);
     my_strncpy(f, tclresult(), S(f));
+    dbg(1, "extra_rawfile: table_read: f=%s\n", f);
     for(i = 0; i < xctx->extra_raw_n; i++) {
-      if(xctx->extra_raw_arr[i]->sim_type && 
-         !strcmp(xctx->extra_raw_arr[i]->rawfile, f) &&
-         !strcmp(xctx->extra_raw_arr[i]->sim_type, type)
-        ) break;
-    }
+      if( !strcmp(xctx->extra_raw_arr[i]->rawfile, f)) break;
+    } 
     if(i >= xctx->extra_raw_n) { /* file not already loaded: read it and switch to it */
       int read_ret = 0;
       Raw *save;
-      save = xctx->raw;
+      save = xctx->raw; 
       xctx->raw = NULL;
-      read_ret = raw_read(f, &xctx->raw, type);
+      read_ret = table_read(f);
+      my_strdup(_ALLOC_ID_, &xctx->raw->sim_type, type);
       if(read_ret) {
         xctx->extra_raw_arr[xctx->extra_raw_n] = xctx->raw;
         xctx->extra_prev_idx = xctx->extra_idx;
@@ -864,7 +1077,44 @@ int extra_rawfile(int what, const char *file, const char *type)
         xctx->extra_prev_idx = xctx->extra_idx;
       }
     } else { /* file found: switch to it */
-      dbg(1, "extra_rawfile() read: found: switch to it\n");
+      dbg(1, "extra_rawfile() %d read: found: switch to it\n", i);
+      xctx->extra_prev_idx = xctx->extra_idx;
+      xctx->extra_idx = i; 
+      xctx->raw = xctx->extra_raw_arr[xctx->extra_idx];
+    }
+  /* **************** read ************* */
+  } else if(what == 1 && xctx->extra_raw_n < MAX_RAW_N && file /* && type*/) {
+    tclvareval("subst {", file, "}", NULL);
+    my_strncpy(f, tclresult(), S(f));
+    if(type) {
+      if(!my_strcasecmp(type, "spectrum")) type = "ac";
+      if(!my_strcasecmp(type, "sp")) type = "ac";
+    }
+    for(i = 0; i < xctx->extra_raw_n; i++) {
+      if(xctx->extra_raw_arr[i]->sim_type && 
+         !strcmp(xctx->extra_raw_arr[i]->rawfile, f) &&
+         (!type || !strcmp(xctx->extra_raw_arr[i]->sim_type, type) )
+        ) break;
+    }
+    if(i >= xctx->extra_raw_n) { /* file not already loaded: read it and switch to it */
+      int read_ret = 0;
+      Raw *save;
+      save = xctx->raw;
+      xctx->raw = NULL;
+      read_ret = raw_read(f, &xctx->raw, type, sweep1, sweep2);
+      if(read_ret) {
+        xctx->extra_raw_arr[xctx->extra_raw_n] = xctx->raw;
+        xctx->extra_prev_idx = xctx->extra_idx;
+        xctx->extra_idx = xctx->extra_raw_n;
+        xctx->extra_raw_n++;
+      } else {
+        ret = 0; /* not found so did not switch */
+        dbg(0, "extra_rawfile() read: %s not found or no %s analysis\n", f, type ? type : "<unspecified>");
+        xctx->raw = save; /* restore */
+        xctx->extra_prev_idx = xctx->extra_idx;
+      }
+    } else { /* file found: switch to it */
+      dbg(1, "extra_rawfile() %d read: found: switch to it\n", i);
       xctx->extra_prev_idx = xctx->extra_idx;
       xctx->extra_idx = i;
       xctx->raw = xctx->extra_raw_arr[xctx->extra_idx];
@@ -886,6 +1136,18 @@ int extra_rawfile(int what, const char *file, const char *type)
         xctx->extra_prev_idx = xctx->extra_idx;
         xctx->extra_idx = i;
       } else {
+        dbg(1, "extra_rawfile() switch: %s not found or no %s analysis\n", f, type);
+        ret = 0;
+      }
+    } else if(file && isonlydigit(file) ) {
+      tclvareval("subst {", file, "}", NULL);
+      my_strncpy(f, tclresult(), S(f));
+      i = atoi(file);
+      if(i >= 0 && i < xctx->extra_raw_n) { /* if file found switch to it ... */
+        dbg(1, "extra_rawfile() switch %d: found: switch %d to it\n", xctx->extra_idx, i);
+        xctx->extra_prev_idx = xctx->extra_idx; 
+        xctx->extra_idx = i;
+      } else {
         dbg(0, "extra_rawfile() switch: %s not found or no %s analysis\n", f, type);
         ret = 0;
       }
@@ -897,8 +1159,6 @@ int extra_rawfile(int what, const char *file, const char *type)
   /* **************** switch back ************* */
   } else if(what == 5 && xctx->extra_raw_n > 0) {
     int tmp;
-    dbg(1, "extra_rawfile() switch back: extra_idx=%d, extra_prev_idx=%d\n",
-            xctx->extra_idx,  xctx->extra_prev_idx);
     tmp = xctx->extra_idx;
     xctx->extra_idx = xctx->extra_prev_idx;
     xctx->extra_prev_idx = tmp;
@@ -916,22 +1176,29 @@ int extra_rawfile(int what, const char *file, const char *type)
       xctx->extra_idx = 0;
       xctx->extra_raw_n = 0;
     } else { /* clear provided file if found, switch to first in remaining if any */
-      int found = -1;
+      int found = 0;
       tclvareval("subst {", file, "}", NULL);
       my_strncpy(f, tclresult(), S(f));
       if(xctx->extra_raw_n > 0 ) {
         for(i = 0; i < xctx->extra_raw_n; i++) {
-          if(!strcmp(xctx->extra_raw_arr[i]->rawfile, f)) {
+          if(type && type[0] &&
+              !strcmp(xctx->extra_raw_arr[i]->rawfile, f) &&
+              !strcmp(xctx->extra_raw_arr[i]->sim_type, type)
+              ) {
             free_rawfile(&xctx->extra_raw_arr[i], 0);
-            found = i;
+            found++;
+            continue;
+          } else if( !(type && type[0]) && !strcmp(xctx->extra_raw_arr[i]->rawfile, f)) {
+            free_rawfile(&xctx->extra_raw_arr[i], 0);
+            found++;
             continue;
           }
-          if(found != -1 && i > 0) {
-            xctx->extra_raw_arr[i - 1] = xctx->extra_raw_arr[i];
+          if(found) {
+            xctx->extra_raw_arr[i - found] = xctx->extra_raw_arr[i];
           }
         }
-        if(found != -1) {
-          xctx->extra_raw_n--;
+        if(found != 0) {
+          xctx->extra_raw_n -= found;
           xctx->extra_idx = 0;
           xctx->extra_prev_idx = 0;
           if(xctx->extra_raw_n) {
@@ -964,8 +1231,8 @@ int update_op()
   int res = 0, p = 0, i;
   tcleval("array unset ngspice::ngspice_data");
   if(xctx->raw && xctx->raw->values) {
-    tclsetvar("rawfile_loaded", "1");
     xctx->raw->annot_p = 0;
+    dbg(1, "update_op(): nvars=%d\n", xctx->raw->nvars);
     for(i = 0; i < xctx->raw->nvars; ++i) {
       char s[100];
       res = 1;
@@ -1012,7 +1279,6 @@ int table_read(const char *f)
   char *line = NULL, *line_ptr, *line_save;
   const char *line_tok;
   Raw *raw;
-  
   if(xctx->raw) {
     dbg(0, "table_read(): must clear current data file before loading new\n");
     return 0;
@@ -1046,7 +1312,10 @@ int table_read(const char *f)
       }
       line_ptr = line;
       while(*line_ptr) { /* non empty line ? */
-        if(*line_ptr != ' ' && *line_ptr != '\t' && *line_ptr != '\n') empty = 0;
+        if(*line_ptr != ',' && *line_ptr != ' ' && *line_ptr != '\t' && *line_ptr != '\n') {
+          empty = 0;
+          break;
+        }
         line_ptr++;
       }
       if(empty) {
@@ -1063,9 +1332,9 @@ int table_read(const char *f)
       line_ptr = line;
       field = 0;
       #ifdef __unix__
-      while( (line_tok = strtok_r(line_ptr, " \t\n", &line_save)) ) {
+      while( (line_tok = strtok_r(line_ptr, ", \t\n", &line_save)) ) {
       #else
-      while( (line_tok = my_strtok_r(line_ptr, " \t\n", "", 0, &line_save)) ) {
+      while( (line_tok = my_strtok_r(line_ptr, ", \t\n", "", 0, &line_save)) ) {
       #endif
         line_ptr = NULL;
         /* dbg(1,"%s ", line_tok); */
@@ -1128,7 +1397,7 @@ int table_read(const char *f)
 }
 
 /* given a node XXyy try XXyy , xxyy, XXYY, v(XXyy), v(xxyy), V(XXYY) */
-int get_raw_index(const char *node)
+int get_raw_index(const char *node, Int_hashentry **entry_ret)
 {
   char inode[512];
   char vnode[512];
@@ -1151,6 +1420,8 @@ int get_raw_index(const char *node)
       ptr += 2;
       entry = int_hash_lookup(&xctx->raw->table, ptr, 0, XLOOKUP);
     }
+
+    if(entry_ret) *entry_ret = entry;
     if(entry) return entry->value;
   }
   return -1;
@@ -1222,6 +1493,20 @@ static double ravg_store(int what , int i, int p, int last, double value)
 #define DERIV0 25 /* derivative to first sweep variable, regardless of specified sweep_idx */
 #define PREV 26 /* previous point */
 #define DEL 27 /* delay by an anount of sweep axis distance */
+#define MAX 28 /* clip data above given argument */
+#define MIN 29 /* clip data below given argument */
+#define ATAN 30
+#define ASIN 31
+#define ACOS 32
+#define COSH 33
+#define SINH 34
+#define ATANH 35
+#define ACOSH 36
+#define ASINH 37
+#define IDX 38 /* index of point in raw file (0, 1, 2, ...) */
+#define REAL 39
+#define IMAG 40
+
 
 #define ORDER_DERIV 1 /* 1 or 2: 1st order or 2nd order differentiation. 1st order is faster */
 
@@ -1235,7 +1520,7 @@ typedef struct {
   int prevp;
 } Stack1;
 
-int plot_raw_custom_data(int sweep_idx, int first, int last, const char *expr)
+int plot_raw_custom_data(int sweep_idx, int first, int last, const char *expr, const char *yname)
 {
   int i, p, idx;
   const char *n;
@@ -1243,13 +1528,20 @@ int plot_raw_custom_data(int sweep_idx, int first, int last, const char *expr)
   Stack1 stack1[STACKMAX];
   double stack2[STACKMAX]={0}, tmp, result, avg;
   int stackptr1 = 0, stackptr2 = 0;
-  SPICE_DATA *y = xctx->raw->values[xctx->raw->nvars]; /* custom plot data column */
+  SPICE_DATA *y;
   SPICE_DATA *x = xctx->raw->values[sweep_idx];
   SPICE_DATA *sweepx = xctx->raw->values[0];
 
+  y = xctx->raw->values[xctx->raw->nvars]; /* custom plot data column */
+  if(yname != NULL) {
+    int yidx = get_raw_index(yname, NULL);
+    if(yidx >= 0) {
+      y = xctx->raw->values[yidx]; /* provided index */
+    }
+  }
   my_strdup2(_ALLOC_ID_, &ntok_copy, expr);
   ntok_ptr = ntok_copy;
-  dbg(1, "plot_raw_custom_data(): expr=%s\n", expr);
+  dbg(1, "plot_raw_custom_data(): expr=%s, first=%d, last=%d\n", expr, first, last);
   while( (n = my_strtok_r(ntok_ptr, " \t\n", "", 0, &ntok_save)) ) {
     if(stackptr1 >= STACKMAX -2) {
       dbg(0, "stack overflow in graph expression parsing. Interrupted\n");
@@ -1263,13 +1555,21 @@ int plot_raw_custom_data(int sweep_idx, int first, int last, const char *expr)
     else if(!strcmp(n, "*")) stack1[stackptr1++].i = MULT;
     else if(!strcmp(n, "/")) stack1[stackptr1++].i = DIVIS;
     else if(!strcmp(n, "**")) stack1[stackptr1++].i = POW;
+    else if(!strcmp(n, "atan()")) stack1[stackptr1++].i = ATAN;
+    else if(!strcmp(n, "asin()")) stack1[stackptr1++].i = ASIN;
+    else if(!strcmp(n, "acos()")) stack1[stackptr1++].i = ACOS;
+    else if(!strcmp(n, "tan()")) stack1[stackptr1++].i = TAN;
     else if(!strcmp(n, "sin()")) stack1[stackptr1++].i = SIN;
     else if(!strcmp(n, "cos()")) stack1[stackptr1++].i = COS;
     else if(!strcmp(n, "abs()")) stack1[stackptr1++].i = ABS;
     else if(!strcmp(n, "sgn()")) stack1[stackptr1++].i = SGN;
     else if(!strcmp(n, "sqrt()")) stack1[stackptr1++].i = SQRT;
-    else if(!strcmp(n, "tan()")) stack1[stackptr1++].i = TAN;
     else if(!strcmp(n, "tanh()")) stack1[stackptr1++].i = TANH;
+    else if(!strcmp(n, "cosh()")) stack1[stackptr1++].i = COSH;
+    else if(!strcmp(n, "sinh()")) stack1[stackptr1++].i = SINH;
+    else if(!strcmp(n, "atanh()")) stack1[stackptr1++].i = ATANH;
+    else if(!strcmp(n, "acosh()")) stack1[stackptr1++].i = ACOSH;
+    else if(!strcmp(n, "asinh()")) stack1[stackptr1++].i = ASINH;
     else if(!strcmp(n, "exp()")) stack1[stackptr1++].i = EXP;
     else if(!strcmp(n, "ln()")) stack1[stackptr1++].i = LN;
     else if(!strcmp(n, "log10()")) stack1[stackptr1++].i = LOG10;
@@ -1279,9 +1579,20 @@ int plot_raw_custom_data(int sweep_idx, int first, int last, const char *expr)
     }
     else if(!strcmp(n, "avg()")) stack1[stackptr1++].i = AVG;
     else if(!strcmp(n, "ravg()")) stack1[stackptr1++].i = RAVG;
+    else if(!strcmp(n, "max()")) stack1[stackptr1++].i = MAX;
+    else if(!strcmp(n, "min()")) stack1[stackptr1++].i = MIN;
+    else if(!strcmp(n, "im()")) stack1[stackptr1++].i = IMAG;
+    else if(!strcmp(n, "re()")) stack1[stackptr1++].i = REAL;
     else if(!strcmp(n, "del()")) {
+      int d, t = 0, p = 0;
+      /* set 'first' to beginning of dataset containing 'first' */
+      for(d = 0; d < xctx->raw->datasets; d++) {
+        t += xctx->raw->npoints[d];
+        if(t > first) break;
+        p = t;
+      }
+      first = p;
       stack1[stackptr1++].i = DEL;
-      first = 0;
     }
     else if(!strcmp(n, "db20()")) stack1[stackptr1++].i = DB20;
     else if(!strcmp(n, "deriv()")) {
@@ -1300,12 +1611,15 @@ int plot_raw_custom_data(int sweep_idx, int first, int last, const char *expr)
     }
     else if(!strcmp(n, "exch()")) stack1[stackptr1++].i = EXCH;
     else if(!strcmp(n, "dup()")) stack1[stackptr1++].i = DUP;
+    else if(!strcmp(n, "idx()")) {
+      stack1[stackptr1++].i = IDX;
+    }
     else if( (strtod(n, &endptr)), endptr > n) { /* NUMBER */
       stack1[stackptr1].i = NUMBER;
       stack1[stackptr1++].d = atof_spice(n);
     }
     else { /* SPICE_NODE */
-      idx = get_raw_index(n);
+      idx = get_raw_index(n, NULL);
       if(idx == -1) {
         dbg(1, "plot_raw_custom_data(): no data found: %s\n", n);
         my_free(_ALLOC_ID_, &ntok_copy);
@@ -1315,7 +1629,6 @@ int plot_raw_custom_data(int sweep_idx, int first, int last, const char *expr)
       stack1[stackptr1].idx = idx;
       stackptr1++;
     }
-    dbg(1, "  plot_raw_custom_data(): stack1= %d\n", stack1[stackptr1 - 1].i);
   } /* while(n = my_strtok_r(...) */
   my_free(_ALLOC_ID_, &ntok_copy);
   for(p = first ; p <= last; p++) {
@@ -1324,10 +1637,12 @@ int plot_raw_custom_data(int sweep_idx, int first, int last, const char *expr)
       if(stack1[i].i == NUMBER) { /* number */
         stack2[stackptr2++] = stack1[i].d;
       }
+      else if(stack1[i].i == IDX) {
+        stack2[stackptr2++] = (double)p;
+      }
       else if(stack1[i].i == SPICE_NODE && stack1[i].idx < xctx->raw->nvars) { /* spice node */
         stack2[stackptr2++] =  xctx->raw->values[stack1[i].idx][p];
       }
-
       if(stackptr2 > 1) { /* 2 argument operators */
         switch(stack1[i].i) {
           case PLUS:
@@ -1353,7 +1668,6 @@ int plot_raw_custom_data(int sweep_idx, int first, int last, const char *expr)
             stackptr2--;
             break;
           case DEL:
-            /* dbg(0, "p=%d, x[p]=%g\n", p, x[p]);  */
             tmp = stack2[stackptr2 - 1];
             ravg_store(1, i, p, last, stack2[stackptr2 - 2]);
             if(fabs(x[p] - x[first]) <= tmp) {
@@ -1396,8 +1710,26 @@ int plot_raw_custom_data(int sweep_idx, int first, int last, const char *expr)
             /* dbg(1, "result=%g ravg_store=%g\n", result,  ravg_store(2, i, stack1[i].prevp, 0, 0)); */
             stackptr2--;
             break;
+          case MAX:
+            stack2[stackptr2 - 2] = stack2[stackptr2 - 2] < stack2[stackptr2 - 1] ?
+                                    stack2[stackptr2 - 1] :  stack2[stackptr2 - 2];
+            stackptr2--;
+            break;
+          case MIN:
+            stack2[stackptr2 - 2] = stack2[stackptr2 - 2] > stack2[stackptr2 - 1] ?
+                                    stack2[stackptr2 - 1] :  stack2[stackptr2 - 2];
+            stackptr2--;
+            break;
           case POW:
             stack2[stackptr2 - 2] =  pow(stack2[stackptr2 - 2], stack2[stackptr2 - 1]);
+            stackptr2--;
+            break;
+          case REAL:
+            stack2[stackptr2 - 2] = stack2[stackptr2 - 2] * cos(stack2[stackptr2 - 1] * XSCH_PI / 180.);
+            stackptr2--;
+            break;
+          case IMAG:
+            stack2[stackptr2 - 2] = stack2[stackptr2 - 2] * sin(stack2[stackptr2 - 1] * XSCH_PI / 180.);
             stackptr2--;
             break;
           case EXCH:
@@ -1554,17 +1886,47 @@ int plot_raw_custom_data(int sweep_idx, int first, int last, const char *expr)
           case SQRT:
             stack2[stackptr2 - 1] =  sqrt(stack2[stackptr2 - 1]);
             break;
-          case TAN:
-            stack2[stackptr2 - 1] =  tan(stack2[stackptr2 - 1]);
-            break;
           case TANH:
             stack2[stackptr2 - 1] =  tanh(stack2[stackptr2 - 1]);
+            break;
+          case COSH:
+            stack2[stackptr2 - 1] =  cosh(stack2[stackptr2 - 1]);
+            break;
+          case SINH:
+            stack2[stackptr2 - 1] =  sinh(stack2[stackptr2 - 1]);
+            break;
+          case ATANH:
+            tmp = stack2[stackptr2 - 1];
+            tmp = 0.5 * log( (1 + tmp) / (1 - tmp) );
+            stack2[stackptr2 - 1] =  tmp;
+            break;
+          case ACOSH:
+            tmp = stack2[stackptr2 - 1];
+            tmp = log(tmp + sqrt(tmp * tmp - 1));
+            stack2[stackptr2 - 1] =  tmp;
+            break;
+          case ASINH:
+            tmp = stack2[stackptr2 - 1];
+            tmp = log(tmp + sqrt(tmp * tmp + 1));
+            stack2[stackptr2 - 1] =  tmp;
+            break;
+          case TAN:
+            stack2[stackptr2 - 1] =  tan(stack2[stackptr2 - 1]);
             break;
           case SIN:
             stack2[stackptr2 - 1] =  sin(stack2[stackptr2 - 1]);
             break;
           case COS:
             stack2[stackptr2 - 1] =  cos(stack2[stackptr2 - 1]);
+            break;
+          case ATAN:
+            stack2[stackptr2 - 1] =  atan(stack2[stackptr2 - 1]);
+            break;
+          case ASIN:
+            stack2[stackptr2 - 1] =  asin(stack2[stackptr2 - 1]);
+            break;
+          case ACOS:
+            stack2[stackptr2 - 1] =  acos(stack2[stackptr2 - 1]);
             break;
           case ABS:
             stack2[stackptr2 - 1] =  fabs(stack2[stackptr2 - 1]);
@@ -2170,6 +2532,7 @@ static void load_inst(int k, FILE *fd)
 
 static void load_polygon(FILE *fd)
 {
+    const char *fill_ptr;
     int i,c, j, points;
     xPoly *ptr;
     const char *dash;
@@ -2208,7 +2571,10 @@ static void load_polygon(FILE *fd)
       }
     }
     load_ascii_string( &ptr[i].prop_ptr, fd);
-    if( !strboolcmp(get_tok_value(ptr[i].prop_ptr,"fill",0),"true") )
+    fill_ptr = get_tok_value(ptr[i].prop_ptr,"fill",0);
+    if( !strcmp(fill_ptr, "full") )
+      ptr[i].fill =3; /* bit 1: solid fill (not stippled) */
+    else if( !strboolcmp(fill_ptr, "true") )
       ptr[i].fill =1;
     else
       ptr[i].fill =0;
@@ -2227,7 +2593,7 @@ static void load_arc(FILE *fd)
 {
     int n,i,c;
     xArc *ptr;
-    const char *dash;
+    const char *dash, *fill_ptr;
 
     dbg(3, "load_arc(): start\n");
     n = fscanf(fd, "%d",&c);
@@ -2248,7 +2614,11 @@ static void load_arc(FILE *fd)
     ptr[i].prop_ptr=NULL;
     ptr[i].sel=0;
     load_ascii_string(&ptr[i].prop_ptr, fd);
-    if( !strboolcmp(get_tok_value(ptr[i].prop_ptr,"fill",0),"true") )
+
+    fill_ptr = get_tok_value(ptr[i].prop_ptr,"fill",0);
+    if( !strcmp(fill_ptr, "full") )
+      ptr[i].fill =3; /* bit 1: solid fill (not stippled) */
+    else if( !strboolcmp(fill_ptr, "true") )
       ptr[i].fill =1;
     else
       ptr[i].fill =0;
@@ -2266,7 +2636,7 @@ static void load_box(FILE *fd)
 {
     int i,n,c;
     xRect *ptr;
-    const char *dash;
+    const char *dash, *fill_ptr;
 
     dbg(3, "load_box(): start\n");
     n = fscanf(fd, "%d",&c);
@@ -2289,7 +2659,10 @@ static void load_box(FILE *fd)
     ptr[i].prop_ptr=NULL;
     ptr[i].sel=0;
     load_ascii_string( &ptr[i].prop_ptr, fd);
-    if( !strboolcmp(get_tok_value(ptr[i].prop_ptr,"fill",0),"false") )
+    fill_ptr = get_tok_value(ptr[i].prop_ptr,"fill",0);
+    if( !strcmp(fill_ptr, "full") )
+      ptr[i].fill =3;
+    else if( !strboolcmp(fill_ptr, "false") )
       ptr[i].fill =0;
     else
       ptr[i].fill =1;
@@ -2590,6 +2963,7 @@ int save_schematic(const char *schname) /* 20171020 added return value */
   struct stat buf;
   xRect *rect;
   int rects;
+  char msg[PATH_MAX + 100];
 
   if(!schname || !strcmp(schname, "")) return 0;
 
@@ -2630,6 +3004,8 @@ int save_schematic(const char *schname) /* 20171020 added return value */
     xctx->time_last_modify =  buf.st_mtime;
   }
   my_strncpy(xctx->current_name, rel_sym_path(schname), S(xctx->current_name));
+  my_snprintf(msg, S(msg), "get_directory {%s}", schname);
+  my_strncpy(xctx->current_dirname,  tcleval(msg), S(xctx->current_dirname));
   /* why clear all these? */
   /* 
    * xctx->prep_hi_structs=0;
@@ -2640,6 +3016,11 @@ int save_schematic(const char *schname) /* 20171020 added return value */
   if(!strstr(xctx->sch[xctx->currsch], ".xschem_embedded_")) {
      set_modify(0);
   }
+  tclvareval(xctx->top_path, ".menubar.simulate configure -bg $simulate_bg", NULL);
+  tclvareval("set tctx::", xctx->current_win_path, "_simulate $simulate_bg", NULL);
+  tclvareval("catch {unset tctx::", xctx->current_win_path, "_simulate_id}", NULL);
+  /* set local simulation directory if local_netlist_dir is set*/
+  set_netlist_dir(2, NULL);
   return 1;
 }
 
@@ -2682,13 +3063,13 @@ void link_symbols_to_instances(int from)
 
 /* ALWAYS use absolute pathname for fname!!!
  * alert = 0 --> do not show alert if file not existing */
-void load_schematic(int load_symbols, const char *fname, int reset_undo, int alert)
+int load_schematic(int load_symbols, const char *fname, int reset_undo, int alert)
 {
   FILE *fd;
   char name[PATH_MAX];
   char msg[PATH_MAX+100];
   struct stat buf;
-  int i;
+  int i, ret = 1; /* success */
   
   xctx->prep_hi_structs=0;
   xctx->prep_net_structs=0;
@@ -2744,7 +3125,7 @@ void load_schematic(int load_symbols, const char *fname, int reset_undo, int ale
 
     dbg(1, "load_schematic(): opening file for loading:%s, fname=%s\n", name, fname);
     dbg(1, "load_schematic(): sch[currsch]=%s\n", xctx->sch[xctx->currsch]);
-    if(!name[0]) return; /* empty filename */
+    if(!name[0]) return 0; /* empty filename */
     if(reset_undo) {
       if(!stat(name, &buf)) { /* file exists */
         xctx->time_last_modify =  buf.st_mtime;
@@ -2763,10 +3144,13 @@ void load_schematic(int load_symbols, const char *fname, int reset_undo, int ale
     }
     else fd=fopen(name,fopen_read_mode);
     if( fd == NULL) {
+      ret = 0;
       if(alert) {
         fprintf(errfp, "load_schematic(): unable to open file: %s, fname=%s\n", name, fname );
-        my_snprintf(msg, S(msg), "update; alert_ {Unable to open file: %s}", fname);
-        tcleval(msg);
+        if(has_x) {
+          my_snprintf(msg, S(msg), "update; alert_ {Unable to open file: %s}", fname);
+          tcleval(msg);
+        }
       }
       clear_drawing();
       if(reset_undo) set_modify(0);
@@ -2826,8 +3210,9 @@ void load_schematic(int load_symbols, const char *fname, int reset_undo, int ale
   if(xctx->hilight_nets && load_symbols) {
     propagate_hilights(1, 1, XINSERT_NOREPLACE);
   }
-  /* warning if two symbols perfectly overlapped */
-  /* warning_overlapped_symbols(0); */ /* do this when netlisting */
+  /* set local simulation directory if local_netlist_dir is set*/
+  if(reset_undo) set_netlist_dir(2, NULL);
+  return ret;
 }
 
 void clear_undo(void)
@@ -2978,6 +3363,8 @@ void pop_undo(int redo, int set_modify_status)
       xctx->head_undo_ptr--;
       xctx->cur_undo_ptr--;
     }
+    /* was incremented by a previous push_undo() in netlisting code, so restore */
+    if(redo == 4 && xctx->head_undo_ptr == xctx->cur_undo_ptr) xctx->head_undo_ptr--;
     if(xctx->cur_undo_ptr<=0) return; /* check undo tail */
     xctx->cur_undo_ptr--;
   } else { /* redo == 2, get data without changing undo stack */
@@ -3434,7 +3821,7 @@ int load_sym_def(const char *name, FILE *embed_fd)
   xText tmptext, *tt;
   int endfile;
   char *skip_line;
-  const char *dash;
+  const char *dash, *fill_ptr;
   xSymbol * symbol;
   int symbols, sym_n_pins=0, generator;
   char *cmd = NULL;
@@ -3513,6 +3900,7 @@ int load_sym_def(const char *name, FILE *embed_fd)
   symbol[symbols].prop_ptr = NULL;
   symbol[symbols].type = NULL;
   symbol[symbols].templ = NULL;
+  symbol[symbols].parent_prop_ptr = NULL;
   symbol[symbols].base_name=NULL;
   symbol[symbols].name=NULL;
 
@@ -3688,7 +4076,10 @@ int load_sym_def(const char *name, FILE *embed_fd)
      pp[c][i].prop_ptr = tmppoly.prop_ptr;
      pp[c][i].points = poly_points;
 
-     if( !strboolcmp(get_tok_value(pp[c][i].prop_ptr,"fill",0),"true") )
+     fill_ptr = get_tok_value(pp[c][i].prop_ptr,"fill",0);
+     if( !strcmp(fill_ptr, "full") )
+       pp[c][i].fill =3; /* bit 1: solid fill (not stippled) */
+     else if( !strboolcmp(fill_ptr, "true") )
        pp[c][i].fill =1;
      else
        pp[c][i].fill =0;
@@ -3750,7 +4141,10 @@ int load_sym_def(const char *name, FILE *embed_fd)
        aa[c][i].x = lcc[level].x0 + rx1;  aa[c][i].y = lcc[level].y0 + ry1;
        aa[c][i].a = angle;
      }
-     if( !strboolcmp(get_tok_value(aa[c][i].prop_ptr,"fill",0),"true") )
+     fill_ptr = get_tok_value(aa[c][i].prop_ptr,"fill",0);
+     if( !strcmp(fill_ptr, "full") )
+       aa[c][i].fill =3; /* bit 1: solid fill (not stiaaled) */
+     else if( !strboolcmp(fill_ptr, "true") )
        aa[c][i].fill =1;
      else
        aa[c][i].fill =0;
@@ -3810,7 +4204,10 @@ int load_sym_def(const char *name, FILE *embed_fd)
        continue;
      }
      dbg(2, "l_s_d(): loaded rect: ptr=%lx\n", (unsigned long)bb[c]);
-     if( !strboolcmp(get_tok_value(bb[c][i].prop_ptr,"fill",0),"false") )
+     fill_ptr = get_tok_value(bb[c][i].prop_ptr,"fill",0);
+     if( !strcmp(fill_ptr, "full") )
+       bb[c][i].fill =3;
+     else if( !strboolcmp(fill_ptr, "false") )
        bb[c][i].fill =0;
      else
        bb[c][i].fill =1;
@@ -4168,7 +4565,7 @@ void make_schematic_symbol_from_sel(void)
   char filename[PATH_MAX] = "";
   char name[1024]; 
 
-  my_snprintf(name, S(name), "save_file_dialog {Save file} *.\\{sch,sym\\} INITIALLOADDIR");
+  my_snprintf(name, S(name), "save_file_dialog {Save file} * INITIALLOADDIR");
   tcleval(name);
   my_strncpy(filename, tclresult(), S(filename));
   if (!strcmp(filename, xctx->sch[xctx->currsch])) {
@@ -4380,8 +4777,6 @@ void descend_symbol(void)
   xctx->zoom_array[xctx->currsch].y=xctx->yorigin;
   xctx->zoom_array[xctx->currsch].zoom=xctx->zoom;
 
-  ++xctx->currsch; /* increment level counter */
-
   if((xctx->inst[n].ptr+ xctx->sym)->flags & EMBEDDED || xctx->inst[n].embed) {
     /* save embedded symbol into a temporary file */
     my_snprintf(name_embedded, S(name_embedded),
@@ -4395,6 +4790,7 @@ void descend_symbol(void)
     unselect_all(1);
     remove_symbols(); /* must follow save (if) embedded */
     /* load_symbol(name_embedded); */
+    ++xctx->currsch; /* increment level counter */
     load_schematic(1, name_embedded, 1, 1);
   } else {
     char *sympath = NULL;
@@ -4417,6 +4813,7 @@ void descend_symbol(void)
       my_strdup2(_ALLOC_ID_, &sympath, abs_sym_path(tcl_hook2(name), ""));
     }
     dbg(1, "descend_symbol(): name=%s, sympath=%s, dirname=%s\n", name, sympath, xctx->current_dirname);
+    ++xctx->currsch; /* increment level counter */
     load_schematic(1, sympath, 1, 1);
     if(web_url) {
       /* restore web url current_dirname that is reset by load_schematic with local path */
@@ -4512,13 +4909,13 @@ void save_selection(int what)
 {
  FILE *fd;
  int i, c, n, k;
- char name[PATH_MAX];
+ char *name;
 
  dbg(3, "save_selection():\n");
  if(what==1)
-   my_snprintf(name, S(name), "%s/%s.sch",user_conf_dir , ".selection");
+   name = sel_file;
  else /* what=2 */
-   my_snprintf(name, S(name), "%s/%s.sch",user_conf_dir , ".clipboard");
+   name = clip_file;
 
  if(!(fd=fopen(name,"w")))
  {

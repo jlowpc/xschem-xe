@@ -26,10 +26,12 @@
 #endif
 #include <locale.h>
 
+/* can not install a child handler as the tcl-tk toolkit probably already uses it */
+/* #define HANDLE_SIGCHLD */
+
 static void sig_handler(int s){
   char emergency_prefix[PATH_MAX];
   const char *emergency_dir;
-
 
   if(s==SIGINT) {
     fprintf(errfp, "Use 'exit' to close the program\n");
@@ -41,7 +43,7 @@ static void sig_handler(int s){
              get_cell(xctx->sch[xctx->currsch], 0));
     if( !(emergency_dir = create_tmpdir(emergency_prefix)) ) {
       fprintf(errfp, "xinit(): problems creating emergency save dir\n");
-      tcleval("exit");
+      tcleval("exit 1");
     }
   
     if(rename(xctx->undo_dirname, emergency_dir)) {
@@ -58,26 +60,34 @@ static void sig_handler(int s){
   exit(EXIT_FAILURE);
 }
 
-#if 0
+#ifdef HANDLE_SIGCHLD
 static void child_handler(int signum)
 {
-    /* fprintf(errfp, "SIGCHLD received\n"); */
-#ifdef __unix__
-    wait(NULL);
-#endif
+  fprintf(errfp, "SIGCHLD received\n");
+  #ifdef __unix__
+  wait(NULL);
+  #endif
 }
 #endif
 
 int main(int argc, char **argv)
 {
   int i;
+  FILE *retval = 0;
+  #ifdef __unix__
+  int stdin_is_a_fifo = 0;
+  struct stat statbuf;
+  #endif
   Display *display;
   signal(SIGINT, sig_handler);
   signal(SIGSEGV, sig_handler);
   signal(SIGILL, sig_handler);
   signal(SIGTERM, sig_handler);
   signal(SIGFPE, sig_handler);
-  /* signal(SIGCHLD, child_handler); */  /* avoid zombies 20180925 --> conflicts with tcl exec */
+
+  #ifdef HANDLE_SIGCHLD
+  signal(SIGCHLD, child_handler); /* avoid zombies 20180925 --> conflicts with tcl exec */
+  #endif
 
   errfp=stderr;
   /* 20181013 check for empty or non existing DISPLAY *before* calling Tk_Main or Tcl_Main */
@@ -97,8 +107,13 @@ int main(int argc, char **argv)
   argc = process_options(argc, argv);
 
   #ifdef __unix__
-  /* if invoked in background detach from console */
-  if(getpgrp() != tcgetpgrp(STDOUT_FILENO) && !cli_opt_no_readline) {
+  /* if invoked in background (and not invoked from a command pipeline) detach from console */
+  if(!fstat(0, &statbuf)) {
+     setvbuf(stdout, NULL, _IOLBF, 0); /* set to line buffer mode */
+     if(statbuf.st_mode & S_IFIFO) stdin_is_a_fifo = 1; /* input coming from a command pipe */
+  }
+  
+  if(!stdin_is_a_fifo && getpgrp() != tcgetpgrp(STDOUT_FILENO) && !cli_opt_no_readline) {
     cli_opt_detach = 1;
   }
   #endif
@@ -123,8 +138,10 @@ int main(int argc, char **argv)
   if(cli_opt_detach) {
     fclose(stdin);
     #ifdef __unix__
-    freopen("/dev/null", "w", stdout);
-    freopen("/dev/null", "w", stderr);
+    retval = freopen("/dev/null", "w", stdout);
+    if(!retval) fprintf(stderr, "main(): freopen stdout to /dev/null failed\n");
+    retval = freopen("/dev/null", "w", stderr);
+    if(!retval) fprintf(stderr, "main(): freopen stderr to /dev/null failed\n");
     #else
     freopen("nul", "w", stdout);
     freopen("nul", "w", stderr);
@@ -139,6 +156,6 @@ int main(int argc, char **argv)
     if(has_x) Tk_Main(1, argv, Tcl_AppInit);
     else     Tcl_Main(1, argv, Tcl_AppInit);
   }
-  return 0;
+  return(0);
 }
 

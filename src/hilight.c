@@ -624,7 +624,7 @@ static int bus_search(const char*s)
 }
 
 #ifndef __unix__
-static int win_regexec(const char *options, const char *pattern, char *name) 
+static int win_regexec(const char *options, const char *pattern, const char *name) 
 {
   if (options!=NULL)
     tclvareval("regexp {", options,"} {", pattern, "} {", name, "}", NULL);
@@ -840,6 +840,95 @@ int search(const char *tok, const char *val, int sub, int sel, int match_case)
      }
    }
  }
+
+ if(sel) for(c = 0; c < cadlayers; ++c) for(i=0;i<xctx->arcs[c]; ++i) {
+   str = get_tok_value(xctx->arc[c][i].prop_ptr, tok,0);
+   if(xctx->tok_size) {
+     #ifdef __unix__
+     if( (!regexec(&re, str,0 , NULL, 0) && !sub ) ||
+         ( !comparefn(str, val) &&  sub ))
+     #else
+     if( (win_regexec(regexp_options, val, str) && !sub ) ||
+         ( !comparefn(str, val) &&  sub ))
+     #endif
+     {
+         if(sel==1) {
+           xctx->arc[c][i].sel = SELECTED;
+           set_first_sel(ARC, i, c);
+           xctx->need_reb_sel_arr=1;
+         }
+         if(sel==-1) {
+           xctx->arc[c][i].sel = 0;
+           xctx->need_reb_sel_arr=1;
+         }
+         found = 1;
+     }
+     else {
+       dbg(2, "search(): not found arc=%d col=%d, tok=%s, val=%s search=%s\n",
+                           i, c, tok, str, val);
+     }
+   }
+ }
+
+ if(sel) for(c = 0; c < cadlayers; ++c) for(i=0;i<xctx->polygons[c]; ++i) {
+   str = get_tok_value(xctx->poly[c][i].prop_ptr, tok,0);
+   if(xctx->tok_size) {
+     #ifdef __unix__
+     if( (!regexec(&re, str,0 , NULL, 0) && !sub ) ||
+         ( !comparefn(str, val) &&  sub ))
+     #else
+     if( (win_regexec(regexp_options, val, str) && !sub ) ||
+         ( !comparefn(str, val) &&  sub ))
+     #endif
+     {
+         if(sel==1) {
+           xctx->poly[c][i].sel = SELECTED;
+           set_first_sel(POLYGON, i, c);
+           xctx->need_reb_sel_arr=1;
+         }
+         if(sel==-1) {
+           xctx->poly[c][i].sel = 0;
+           xctx->need_reb_sel_arr=1;
+         }
+         found = 1;
+     }
+     else {
+       dbg(2, "search(): not found arc=%d col=%d, tok=%s, val=%s search=%s\n",
+                           i, c, tok, str, val);
+     }
+   }
+ }
+
+
+ if(sel) for(i=0;i<xctx->texts; ++i) {
+   str = get_tok_value(xctx->text[i].prop_ptr, tok,0);
+   if(xctx->tok_size) {
+     #ifdef __unix__
+     if( (!regexec(&re, str,0 , NULL, 0) && !sub ) ||
+         ( !comparefn(str, val) &&  sub ))
+     #else
+     if( (win_regexec(regexp_options, val, str) && !sub ) ||
+         ( !comparefn(str, val) &&  sub ))
+     #endif
+     {
+         if(sel==1) {
+           xctx->text[i].sel = SELECTED;
+           set_first_sel(xTEXT, i, 0);
+           xctx->need_reb_sel_arr=1;
+         }
+         if(sel==-1) {
+           xctx->text[i].sel = 0;
+           xctx->need_reb_sel_arr=1;
+         }
+         found = 1;
+     }
+     else {
+       dbg(2, "search(): not found text=%d, tok=%s, val=%s search=%s\n",
+                           i, tok, str, val);
+     }
+   }
+ }
+
  if(found) {
   if(tclgetboolvar("incr_hilight")) incr_hilight_color();
    if(sel == -1) {
@@ -1900,6 +1989,13 @@ char *resolved_net(const char *net)
 {
   char *rnet = NULL;
   Str_hashentry *entry;
+
+  /* global node ? return as is */
+  if(net && record_global_node(3, NULL, net)) {
+    my_strdup(_ALLOC_ID_, &rnet, net);
+    return rnet;
+  }
+ 
   if(net) {
     char *n_s1, *n_s2;
     int k, mult;
@@ -2008,12 +2104,14 @@ void draw_hilight_net(int on_window)
      else
        drawline(get_color(entry->value), NOW,
           xctx->wire[i].x1, xctx->wire[i].y1, xctx->wire[i].x2, xctx->wire[i].y2, 0, NULL);
-     if(cadhalfdotsize*xctx->mooz>=0.7) {
+     if(xctx->cadhalfdotsize*xctx->mooz>=0.7) {
        if( xctx->wire[i].end1 >1 ) {
-         filledarc(get_color(entry->value), NOW, xctx->wire[i].x1, xctx->wire[i].y1, cadhalfdotsize, 0, 360);
+         filledarc(get_color(entry->value), NOW, xctx->wire[i].x1, xctx->wire[i].y1,
+            xctx->cadhalfdotsize, 0, 360);
        }
        if( xctx->wire[i].end2 >1 ) {
-         filledarc(get_color(entry->value), NOW, xctx->wire[i].x2, xctx->wire[i].y2, cadhalfdotsize, 0, 360);
+         filledarc(get_color(entry->value), NOW, xctx->wire[i].x2, xctx->wire[i].y2,
+            xctx->cadhalfdotsize, 0, 360);
        }
      }
    }
@@ -2040,7 +2138,7 @@ void draw_hilight_net(int on_window)
           ((c==TEXTWIRELAYER || c==TEXTLAYER) && symptr->texts)) {
         draw_symbol(ADD, col, i,c,0,0,0.0,0.0);
       }
-      filledrect(col, END, 0.0, 0.0, 0.0, 0.0);
+      filledrect(col, END, 0.0, 0.0, 0.0, 0.0, 3); /* last parameter must be 3! */
       drawarc(col, END, 0.0, 0.0, 0.0, 0.0, 0.0, 0, 0);
       drawrect(col, END, 0.0, 0.0, 0.0, 0.0, 0);
       drawline(col, END, 0.0, 0.0, 0.0, 0.0, 0, NULL);

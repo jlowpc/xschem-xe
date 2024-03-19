@@ -1,34 +1,40 @@
-#!/bin/sh
-gawk '
+#!/usr/bin/awk -f
+#
+#  File: make_sch_from_spice.awk
+#  
+#  This file is part of XSCHEM,
+#  a schematic capture and Spice/Vhdl/Verilog netlisting tool for circuit 
+#  simulation.
+#  Copyright (C) 1998-2023 Stefan Frederik Schippers
+# 
+#  This program is free software; you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation; either version 2 of the License, or
+#  (at your option) any later version.
+# 
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+# 
+#  You should have received a copy of the GNU General Public License
+#  along with this program; if not, write to the Free Software
+#  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+#
+#
+# create xschem symbols  and schematics from a spice netlist.
+# Spice netlist should contain *.PININFO lines that specify the direction
+# of ports otherwise inout is assumed for all symbol ports.
+# Usage:
+#   make_sch_from_spice.awk netlist.spice
+# Generated symbols  and schematics should be in current directory
 
 BEGIN{
-#  ar["a", 1] = "A[3]"
-#  ar["a", 2] = "A[3]"
-#  ar["a", 3] = "A[3]"
-#  ar["a", 4] = "A[4]"
-#  ar["a", 5] = "A[5]"
-#  ar["a", 6] = "A[6]"
-#  ar["a", 7] = "A[6]"
-#  ar["a", 8] = "A[6]"
-#  ar["a", 9] = "A[6]"
-#  ar["a",10] = "A[8]"
-#  ar["a",11] = "A[7]"
-#  ar["a",12] = "A[7]"
-#  ar["a",13] = "A[9]"
-#  ar["a",14] = "A[11]"
-#  ar["a",15] = "A[13]"
-#
-#  print compact_label("a",ar, 1,15)
-#  exit
-
-  ## 20161225
   avoid_brakets=0 ## set to 1 if you want to avoid [] in inst names: x12[3] --> x12_3_
                   ## this is needed for VHDl since [] are not allowed in inst names
 
   error_missing=0 ## flag to terminate or continue in case of missing subckt definitions in netlist
                   ## 20161118
-
- # list of cmos_t9 symbol pin coordinates, generated with build_cmoslib.awk
 
  while ( "ls $HOME/.xschem/xschem_library/xschem_sky130/sky130_stdcells/*.sym"|getline sym )
  {
@@ -36,55 +42,56 @@ BEGIN{
  } 
  
 
-#  while ( "ls $HOME/xschem/library/devices/*.sym"|getline sym )
-#  {
-#    insert_symbol(sym, "devices")
-#  }
+ # while ( "ls $HOME/share/xschem/xschem_library/devices/*.sym"|getline sym )
+ # {
+ #   insert_symbol(sym, "devices")
+ # }
 
 
-   inherited_pin["VGND"]=1
-   inherited_pin["VPWR"]=1
-   inherited_pin["VNB"]=1
-   inherited_pin["VPB"]=1
+  devices_prefix = "devices/" #for sky130
+  # devices_prefix = ""
+
+  inherited_pin["VGND"]=1
+  inherited_pin["VPWR"]=1
+  inherited_pin["VNB"]=1
+  inherited_pin["VPB"]=1
  
-   skip_symbol_prefix= "sky130_fd_sc_hd__"
-   # sym_type = "subcircuit"
-   sym_type = "primitive" # do not use schematics although they will be generated
+  skip_symbol_prefix= "sky130_fd_sc_hd__"
+  # sym_type = "subcircuit"
+  sym_type = "primitive" # do not use schematics although they will be generated
 
-   all_signals=""
-   $0=""
+  all_signals=""
 
 ##########################   JOIN   ##########################
-   netlist_lines=0
-   first=1
-   while(err= (getline l) >0) {
-     gsub(/</,"[",l)
-     gsub(/>/,"]",l)
-     if(first) {
-       $0=l
-       first=0
-     }
-     else if(l !~/^\+/) {
-       netlist[netlist_lines++]=$0
-       $0=l
-     }
-     else $0 = $0 " " substr(l,2)
-   }
-   netlist[netlist_lines++]=$0
+  netlist_lines=0
+  first=1
+  while(err= (getline l) >0) {
+   gsub(/</,"[",l)
+    gsub(/>/,"]",l)
+    if(first) {
+      $0=l
+      first=0
+    }
+    else if(l !~/^\+/) {
+      netlist[netlist_lines++]=$0
+      $0=l
+    }
+    else $0 = $0 " " substr(l,2)
+  }
+  netlist[netlist_lines++]=$0
 ########################## END JOIN ##########################
 
-   skip=0
-   for(i=0;i<netlist_lines; i++) { 
-     $0=netlist[i]
-     process_subckts()
-   }
+  skip=0
+  for(i=0;i<netlist_lines; i++) { 
+    $0=netlist[i]
+    process_subckts()
+  }
 
-   skip=0
-   for(i=0;i<netlist_lines; i++) { 
-     $0=netlist[i]
-     process()
-   }
-
+  skip=0
+  for(i=0;i<netlist_lines; i++) { 
+    $0=netlist[i]
+    process()
+  }
 }
 
 function translate(cellname) 
@@ -158,9 +165,11 @@ function process_subckts(         j, i,name)
    }
 
    pin_ar[curr_subckt,"n"]=j-1
-   if(skip_symbol_prefix) pin_ar[curr_subckt,"template"] = pin_ar[curr_subckt,"template"] " prefix=" skip_symbol_prefix
+   if(skip_symbol_prefix)
+     pin_ar[curr_subckt,"template"] = pin_ar[curr_subckt,"template"] " prefix=" skip_symbol_prefix
    get_template(template) 
-   if(skip_symbol_prefix) pin_ar[curr_subckt,"extra"] = pin_ar[curr_subckt,"extra"] " prefix"
+   if(skip_symbol_prefix)
+     pin_ar[curr_subckt,"extra"] = pin_ar[curr_subckt,"extra"] " prefix"
    print "\n\n\n process_subckt() : " curr_subckt "--> " 
    for(i=1; i<= pin_ar[curr_subckt,"n"]; i++) printf "%s ", pin_ar[curr_subckt,i]; printf "\n"
  }
@@ -259,19 +268,28 @@ function process(         i,name,param)
      if(i<NF && $(i+1) ~ /=/) {
        if(!param) param = i+1
        inst_sub=$i
-       if(error_missing && !(inst_sub in cell ) && !(inst_sub in subckt)) {print "ERROR: " inst_sub " NOT DECLARED, curr_subckt=", curr_subckt ; exit}
+       if(error_missing && !(inst_sub in cell ) && !(inst_sub in subckt)) {
+         print "ERROR: " inst_sub " NOT DECLARED, curr_subckt=", curr_subckt
+         exit
+       }
        break
      }
      else if($i =="/" ) {
        if(i==NF) {print "ERROR: garbled netlist line : " $0; exit}
        inst_sub=$(i+1)
        if(!param) param = i+2
-       if(error_missing && !(inst_sub in cell ) && !(inst_sub in subckt)) {print "ERROR: " inst_sub " NOT DECLARED, curr_subckt=", curr_subckt ; exit}
+       if(error_missing && !(inst_sub in cell ) && !(inst_sub in subckt)) {
+         print "ERROR: " inst_sub " NOT DECLARED, curr_subckt=", curr_subckt
+         exit
+       }
        break
      }
      else if(i==NF) {
        inst_sub=$i
-       if(error_missing && !(inst_sub in cell ) && !(inst_sub in subckt)) {print "ERROR: " inst_sub " NOT DECLARED, curr_subckt=", curr_subckt ; exit}
+       if(error_missing && !(inst_sub in cell ) && !(inst_sub in subckt)) {
+         print "ERROR: " inst_sub " NOT DECLARED, curr_subckt=", curr_subckt
+         exit
+       }
        break
      }
      net_ar[inst,i-1] = $i
@@ -442,7 +460,7 @@ function compact_label(name, ar,a,b,        ret,start,i)
           else {ret = ret ar[name,i-1] ","; start=i }
         }
       }
-      else if(lab_name(ar[name,i])!=lab_name(ar[name,i-1])) { 			# lab basename changed
+      else if(lab_name(ar[name,i])!=lab_name(ar[name,i-1])) {
         if(start<i-1 && lab_index(ar[name,start]) == lab_index(ar[name,i-1]) )
           ret = ret (i-start) "*" ar[name,i-1] ",";
         else if(start<i-1) 
@@ -451,7 +469,7 @@ function compact_label(name, ar,a,b,        ret,start,i)
           ret = ret lab_name(ar[name,start]) "[" lab_index(ar[name,start]) "],"
         start=i
       }
-      else if(lab_index(ar[name,i]) != lab_index(ar[name,i-1])-1 &&               # index not equal, +1,-1 previous
+      else if(lab_index(ar[name,i]) != lab_index(ar[name,i-1])-1 &&
               lab_index(ar[name,i]) != lab_index(ar[name,i-1])+1  ) {             
         if(start<i-1 && lab_index(ar[name,start]) == lab_index(ar[name,i-1]) )
           ret = ret (i-start) "*" ar[name,i-1] ",";
@@ -461,7 +479,7 @@ function compact_label(name, ar,a,b,        ret,start,i)
           ret = ret lab_name(ar[name,start]) "[" lab_index(ar[name,start]) "],"
         start=i
       }
-      else if( lab_index(ar[name,start])!=lab_index(ar[name,i]) &&                 # range count != element count
+      else if( lab_index(ar[name,start])!=lab_index(ar[name,i]) &&
                abs(start-i)!=abs(lab_index(ar[name,start])-lab_index(ar[name,i])) ) {
         if(start<i-1 && lab_index(ar[name,start]) == lab_index(ar[name,i-1]) )
           ret = ret (i-start) "*" ar[name,i-1] ",";
@@ -471,18 +489,6 @@ function compact_label(name, ar,a,b,        ret,start,i)
           ret = ret lab_name(ar[name,start]) "[" lab_index(ar[name,start]) "],"
         start=i
       }
-
-#      else if( lab_index(ar[name,i]) != lab_index(ar[name,start])  ) {
-#        if(start<i-1 && lab_index(ar[name,start]) == lab_index(ar[name,i-1]) )
-#          ret = ret (i-start) "*" ar[name,i-1] ",";
-#        else if(start<i-1)
-#          ret = ret lab_name(ar[name,start]) "[" lab_index(ar[name,start]) ":" lab_index(ar[name,i-1]) "],"
-#        else
-#          ret = ret lab_name(ar[name,start]) "[" lab_index(ar[name,start]) "],"
-#        start=i
-#      }
-
-
     }
   }
   if(ar[name,b] !~ /\[/)  {
@@ -522,7 +528,7 @@ function print_sch(schname, dir, pin,
  iii=0
  ooo=0
  print " --> print_sch called for: " schname
- print "V {}\nG {}\nS {" subckt_netlist "}" > schname # 20111009 added subckt_components
+ print "V {}\nG {}\nS {" escape_brackets(subckt_netlist) "}" > schname # 20111009 added subckt_components
  n_pin = dir["n"]
 
  ip=op=0
@@ -543,21 +549,21 @@ function print_sch(schname, dir, pin,
   if(pin_dir=="I")
   {
    iii++
-   printf "C {devices/ipin} " (x+sch_x_offset) " " (y+iii*space) " 0 0 " \
+   printf "C {" devices_prefix "ipin.sym} " (x+sch_x_offset) " " (y+iii*space) " 0 0 " \
          " {name=p" p_pin++ " lab=" pin[i] " " >schname
    printf "}\n" >schname
   }
   if(pin_dir=="O")
   {
    ooo++
-   printf "C {devices/opin} " (-x+sch_x_offset) " " (y+ooo*space) " 0 0 " \
+   printf "C {" devices_prefix "opin.sym} " (-x+sch_x_offset) " " (y+ooo*space) " 0 0 " \
          " {name=p" p_pin++ " lab=" pin[i] " " >schname
    printf "}\n" >schname
   }
   if(pin_dir=="B")
   {
    ooo++
-   printf "C {devices/iopin} " (-x+sch_x_offset) " " (y+ooo*space) " 0 0 " \
+   printf "C {" devices_prefix "iopin.sym} " (-x+sch_x_offset) " " (y+ooo*space) " 0 0 " \
          " {name=p" p_pin++ " lab=" pin[i] " " >schname
    printf "}\n" >schname
   }
@@ -629,21 +635,21 @@ function print_signals( inst_name, component_name, param, pin,dir,net,
   
    if(curr_dir=="I")
    {
-     all_signals = all_signals   "C {devices/lab_pin} " xpin " " ypin " 0 0 " \
+     all_signals = all_signals   "C {" devices_prefix "lab_pin.sym} " xpin " " ypin " 0 0 " \
            " {name=p" p_pin++ " lab=" net[i] " " 
      all_signals = all_signals   "}\n" 
    }
   
    if(curr_dir=="O")
    {
-     all_signals = all_signals   "C {devices/lab_pin} " xpin " " ypin " 0 1 " \
+     all_signals = all_signals   "C {" devices_prefix "lab_pin.sym} " xpin " " ypin " 0 1 " \
            " {name=p" p_pin++ " lab=" net[i] " " 
      all_signals = all_signals   "}\n" 
    }
   
    if(curr_dir=="B")
    {
-     all_signals = all_signals   "C {devices/lab_pin} " xpin " " ypin " 0 1 " \
+     all_signals = all_signals   "C {" devices_prefix "lab_pin.sym} " xpin " " ypin " 0 1 " \
            " {name=p" p_pin++ " lab=" net[i] " " 
      all_signals = all_signals   "}\n" 
    }
@@ -694,7 +700,7 @@ function print_sym(sym, template, format, subckt_name, sym_type, extra, dir, pin
 
 
  print "start print symbol: " sym
- print "v {xschem version=3.4.5 file_version=1.2}"
+ print "v {xschem version=3.4.5 file_version=1.2}" > sym
  print "K {type=" sym_type > sym
  # print "format=\"@name @pinlist @symname " format_translate(template)  "\"" > sym
  iii = format_translate(template, extra)
@@ -774,6 +780,13 @@ function print_sym(sym, template, format, subckt_name, sym_type, extra, dir, pin
 
 #------------------------------
 
+function escape_brackets(s       , ss)
+{
+  ss = s
+  gsub(/[{}]/, "\\\\&", ss)
+  return ss
+}
+
 function abs(a) 
 {
  return a>0 ? a: -a
@@ -815,5 +828,3 @@ function format_translate(s, extra,            n_extra, extra_arr, extra_hash, c
  return str
 }
 
-
-' $@

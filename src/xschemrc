@@ -100,7 +100,10 @@
 # set netlist_dir $env(HOME)/.xschem/simulations
 
 #### if this is set to '1' netlists and simulations will go into a simulation/ folder
-#### inside the directory containing the top level schematic. Default: not set (0)
+#### inside the directory containing the top level schematic.
+#### if this is set to '2' netlists and simulations will go into a simulation/[schname]/ folder
+#### inside the directory containing the top level schematic.
+#### Default: not set (0).
 # set local_netlist_dir 1
 
 ###########################################################################
@@ -150,6 +153,9 @@
 #### allow color postscript and svg exports. Default: 1, enable color
 # set color_ps 1
 
+#### add a page title in the top left corner of the ps/pdf page. Default: enabled (1)
+# set ps_page_title 1
+
 #### set paper size: name, height, width. Sizes in 1/72 of an inch (typographical points)
 #### default: {a4 842 595}
 # set ps_paper_size {a4 842 595}
@@ -158,6 +164,12 @@
 #### initial size of xschem window you can specify also position with (wxh+x+y)
 #### this is the default:
 # set initial_geometry {900x600}
+
+#### initial geometry of load /save / insert component file selector
+# set file_dialog_default_geometry 800x600
+
+#### display full path (1) or only name (0) for component directories. Default: 1
+# set load_file_dialog_fullpath 1
 
 #### if set to 0, when zooming out allow the viewport do drift toward the mouse position,
 #### allowing to move away by zooming / unzooming with mouse wheel
@@ -177,10 +189,21 @@
 #### default: 0
 # set persistent_command 1
 
+#### if set to 1 allow click & drag objects in the schematic 
+#### to move them without keyboard commands ('m')
+#### default: enabled (1)
+# set intuitive_interface 0
+
+
 #### if set to 1 at end of a move operation that stretches wires attached to
 #### moved objects these wires will be unselected.
 #### default: not enabled (0)
 # set unselect_partial_sel_wires 0
+
+#### if set show selected elements while dragging the selection rectangle.
+#### once selected these can not be unselected by retracting the selection rectangle
+#### if not set show selected items at end of drag. Default: enabled (1)
+# set incremental_select 0
 
 #### if set to 1 automatically join/trim wires while editing
 #### this may slow down on rally big designs. Can be disabled via menu 
@@ -197,6 +220,13 @@
 
 #### use the tclreadline package if available , Default: 1 (enabled).
 # set use_tclreadline 1
+
+#### use the dark color scheme (default: 1)
+# set dark_colorscheme 1
+
+#### use the dark color scheme for GUI widgets (default: 0)
+#### *** This can not be changed after xschem startup ***
+# set dark_gui_colorscheme 0
 
 #### disable some symbol layers. Default: none, all layers are visible.
 # set enable_layer(5) 0 ;# example to disable pin red boxes
@@ -229,6 +259,10 @@
 #### allow searching the full search path for schematics associated to symbols
 #### instead of looking only in symbol directory. Default: disabled (0).
 # set search_schematic 0
+
+#### keep symbols encountered while netlisting / descending the hierarchy.
+#### Default: not enabled (0)
+# set keep_symbols 0
 
 #### focus the schematic window if mouse goes over it, even if a dialog box
 #### is displayed, without needing to click.
@@ -306,6 +340,25 @@
 #   "#ff00ff" "#00ff00" "#0000cc" "#aaaa00" "#aaccaa"
 #   "#ff7777" "#bfff81" "#00ffcc" "#ce0097" "#d2d46b"
 #   "#ef6158" "#fdb200" }
+
+###########################################################################
+#### CUSTOM FILL PATTERNS  MAY BE DEFINED HERE
+###########################################################################
+#### every 0x#### hex data represents one 16 bit row of the 16x16 bit fill bitmap
+#### of the specified layer number.
+#### following examples set a checkerboard fill pattern
+#### for symbol shape drawing layer (layer 4)
+#### and for pin layer (layer 5)
+#
+# set pixdata(4) {
+#   0x8888 0x0000 0x0000 0x0000 0x2222 0x0000 0x0000 0x0000
+#   0x8888 0x0000 0x0000 0x0000 0x2222 0x0000 0x0000 0x0000
+# }
+
+# set pixdata(5) {
+#   0x5555 0xaaaa 0x5555 0xaaaa 0x5555 0xaaaa 0x5555 0xaaaa
+#   0x5555 0xaaaa 0x5555 0xaaaa 0x5555 0xaaaa 0x5555 0xaaaa
+# }
 
 ###########################################################################
 #### CAIRO STUFF
@@ -394,7 +447,9 @@
 #### BESPICE WAVE SOCKET CONNECTION
 ###########################################################################
 #### set bespice wave listening port; default: not enabled
-# set bespice_listen_port 2022
+#### set port number to 0 so TCL will automatically and reliably find
+#### a free port
+# set bespice_listen_port 0
 
 ###########################################################################
 #### TCL FILES TO LOAD AT STARTUP
@@ -408,7 +463,32 @@
 ###########################################################################
 #### TCL COMMANDS TO BE EXECUTED AFTER COMPLETING STARTUP
 ###########################################################################
+#### some examples:
 # set postinit_commands {puts [xschem get version]}
+# set postinit_commands {
+#   .menubar.netlist configure -command {xschem netlist -erc; edit_netlist [xschem get netlist_name fallback]}
+#   .menubar.simulate configure -command {xschem netlist -erc; simulate_from_button}
+# }
+#
+#
+#### example: if a raw file already exists re-run a tran simulation.
+#### and schedule a waveform load at the end.
+# set postinit_commands {
+#   set rawfile $netlist_dir/[file rootname [xschem get current_name]].raw
+#   if {[file exists $rawfile]} {
+#     xschem netlist
+#     set sim(spice,default) 1 ;# ngspice control mode (no xterminal)
+#     set sim(spice,1,st) 0 ;# no status report
+#     set sim(spice,1,fg) 0 ;# background
+#     simulate_from_button {
+#        viewdata $execute(data,last)
+#        xschem raw read $rawfile tran
+#        xschem redraw
+#     }
+#   }
+# }
+
+
 
 ###########################################################################
 #### WEB URL DOWNLOAD HELPER APPLICATION

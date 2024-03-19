@@ -73,7 +73,7 @@ static void merge_box(FILE *fd)
 {
     int i,c,n;
     xRect *ptr;
-    const char *dash;
+    const char *dash, *fill_ptr;
 
     n = fscanf(fd, "%d",&c);
     if(n != 1 || c < 0 || c >= cadlayers) {
@@ -102,7 +102,10 @@ static void merge_box(FILE *fd)
     } else {
       ptr[i].dash = 0;
     }
-    if( !strboolcmp(get_tok_value(ptr[i].prop_ptr,"fill",0),"false") )
+    fill_ptr = get_tok_value(ptr[i].prop_ptr,"fill",0);
+    if( !strcmp(fill_ptr, "full") )
+      ptr[i].fill =3;
+    else if( !strboolcmp(fill_ptr, "false") )
       ptr[i].fill =0;
     else
       ptr[i].fill =1;
@@ -115,7 +118,7 @@ static void merge_arc(FILE *fd)
 {
     int i,c,n;
     xArc *ptr;
-    const char *dash;
+    const char *dash, *fill_ptr;
 
     n = fscanf(fd, "%d",&c);
     if(n != 1 || c < 0 || c >= cadlayers) {
@@ -136,7 +139,12 @@ static void merge_arc(FILE *fd)
     ptr[i].prop_ptr=NULL;
     ptr[i].sel=0;
     load_ascii_string(&ptr[i].prop_ptr, fd);
-    if( !strboolcmp(get_tok_value(ptr[i].prop_ptr,"fill",0),"true") )
+
+
+    fill_ptr = get_tok_value(ptr[i].prop_ptr,"fill",0);
+    if( !strcmp(fill_ptr, "full") )
+      ptr[i].fill =3; /* bit 1: solid fill (not stippled) */
+    else if( !strboolcmp(fill_ptr, "true") )
       ptr[i].fill =1;
     else
       ptr[i].fill =0;
@@ -155,6 +163,7 @@ static void merge_arc(FILE *fd)
 
 static void merge_polygon(FILE *fd)
 {
+    const char *fill_ptr;
     int i,c, j, points;
     xPoly *ptr;
     const char *dash;
@@ -192,7 +201,10 @@ static void merge_polygon(FILE *fd)
       }
     }
     load_ascii_string( &ptr[i].prop_ptr, fd);
-    if( !strboolcmp(get_tok_value(ptr[i].prop_ptr,"fill",0),"true") )
+    fill_ptr = get_tok_value(ptr[i].prop_ptr,"fill",0);
+    if( !strcmp(fill_ptr, "full") )
+      ptr[i].fill =3; /* bit 1: solid fill (not stippled) */
+    else if( !strboolcmp(fill_ptr, "true") )
       ptr[i].fill =1;
     else
       ptr[i].fill =0;
@@ -239,6 +251,10 @@ static void merge_line(FILE *fd)
     } else {
       ptr[i].dash = 0;
     }
+    if(!strboolcmp(get_tok_value(ptr[i].prop_ptr, "bus", 0), "true") )
+      ptr[i].bus = 1;
+    else
+      ptr[i].bus = 0;
     select_line(c,i, SELECTED, 1);
     xctx->lines[c]++;
 }
@@ -276,7 +292,7 @@ static void merge_inst(int k,FILE *fd)
     my_strdup(_ALLOC_ID_, &xctx->inst[i].prop_ptr, prop_ptr);
     set_inst_flags(&xctx->inst[i]);
     if(!k) hash_names(-1, XINSERT);
-    new_prop_string(i, prop_ptr, k, tclgetboolvar("disable_unique_names")); /* will also assign .instname */
+    new_prop_string(i, prop_ptr, tclgetboolvar("disable_unique_names")); /* will also assign .instname */
     /* the final tmp argument is zero for the 1st call and used in */
     /* new_prop_string() for cleaning some internal caches. */
     hash_names(i, XINSERT);
@@ -299,7 +315,8 @@ void merge_file(int selection_load, const char ext[])
     FILE *fd;
     int k=0, old;
     int endfile=0;
-    char name[PATH_MAX];
+    char *name;
+    char filename[PATH_MAX];
     char tag[1]; /* overflow safe */
     char tmp[256]; /* 20161122 overflow safe */
     char *aux_ptr=NULL;
@@ -308,27 +325,32 @@ void merge_file(int selection_load, const char ext[])
 
     rubber = !(selection_load & 8);
     selection_load &= 7;
+    xctx->paste_from = 0;
     if(selection_load==0)
     {
      if(!strcmp(ext,"")) {
-       /* my_snprintf(tmp, S(tmp), "load_file_dialog {Merge file} *.\\{sch,sym\\} INITIALLOADDIR"); */
        my_snprintf(tmp, S(tmp), "load_file_dialog {Merge file} {} INITIALLOADDIR");
        tcleval(tmp);
        if(!strcmp(tclresult(),"")) return;
-       my_strncpy(name, (char *)tclresult(), S(name));
+       my_strncpy(filename, (char *)tclresult(), S(filename));
+       name = filename;
+       xctx->paste_from = 3;
      }
      else {
-       my_strncpy(name, ext, S(name));
+       my_strncpy(filename, ext, S(filename));
+       name = filename;
      }
      dbg(1, "merge_file(): sch=%d name=%s\n",xctx->currsch,name);
     }
     else if(selection_load==1)
     {
-      my_snprintf(name, S(name), "%s/.selection.sch", user_conf_dir);
+      name = sel_file;
+      xctx->paste_from = 1;
     }
-    else    /* clipboard load */
+    else    /* selection_load==2, clipboard load */
     {
-      my_snprintf(name, S(name), "%s/.clipboard.sch", user_conf_dir);
+      name = clip_file;
+      xctx->paste_from = 2;
     }
 
     if(is_generator(name)) generator = 1;
@@ -428,14 +450,15 @@ void merge_file(int selection_load, const char ext[])
      else fclose(fd);
 
      xctx->ui_state |= STARTMERGE;
-     dbg(1, "merge_file(): loaded file:wire=%d inst=%d ui_state=%ld\n",
-             xctx->wires , xctx->instances, xctx->ui_state);
+     dbg(1, "End merge_file(): loaded file %s: wire=%d inst=%d ui_state=%ld\n",
+             name, xctx->wires , xctx->instances, xctx->ui_state);
      move_objects(START,0,0,0);
      xctx->mousex_snap = xctx->mx_double_save;
      xctx->mousey_snap = xctx->my_double_save;
      if(rubber) move_objects(RUBBER,0,0,0);
     } else {
       dbg(0, "merge_file(): can not open %s\n", name);
+      xctx->paste_from = 0;
     }
     set_modify(1);
 }

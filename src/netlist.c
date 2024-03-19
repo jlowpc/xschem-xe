@@ -26,13 +26,20 @@ static int for_netlist = 0;
 static int netlist_lvs_ignore = 0;
 static void instdelete(int n, int x, int y)
 {
-  Instentry *saveptr, **prevptr;
+  Instentry *saveptr, **prevptr, *ptr;
 
   prevptr = &xctx->inst_spatial_table[x][y];
-  while( (*prevptr)->n != n) prevptr = &(*prevptr)->next;
-  saveptr = (*prevptr)->next;
-  my_free(_ALLOC_ID_, prevptr);
-  *prevptr = saveptr;
+  ptr = *prevptr;
+  while(ptr) {
+    if(ptr->n == n) {
+      saveptr = ptr->next;
+      my_free(_ALLOC_ID_, &ptr);
+      *prevptr = saveptr;
+      return;
+    }
+    prevptr = &ptr->next;
+    ptr = *prevptr;
+  }
 }
 
 static void instinsert(int n, int x, int y)
@@ -112,6 +119,7 @@ void hash_inst(int what, int n) /* 20171203 insert object bbox in spatial hash t
    }
   }
 }
+
 void hash_instances(void) /* 20171203 insert object bbox in spatial hash table */
 {
  int n;
@@ -123,6 +131,192 @@ void hash_instances(void) /* 20171203 insert object bbox in spatial hash table *
  }
  xctx->prep_hash_inst=1;
 }
+
+
+/* START HASH ALL OBJECTS */
+
+static Objectentry *delobjectentry(Objectentry *t)
+{
+  Objectentry *tmp;
+  while( t ) {
+    tmp = t->next;
+    my_free(_ALLOC_ID_, &t);
+    t = tmp;
+  }
+  return NULL;
+}
+
+void del_object_table(void)
+{
+  int i,j;
+
+  for(i=0;i<NBOXES; ++i)
+    for(j=0;j<NBOXES; ++j)
+      xctx->object_spatial_table[i][j] = delobjectentry(xctx->object_spatial_table[i][j]);
+  xctx->prep_hash_object=0;
+  xctx->n_hash_objects = 0;
+  dbg(1, "del_object_table(): cleared object hash table\n");
+}
+
+
+
+static void objectdelete(int type, int n, int c, int x, int y)
+{
+  Objectentry *saveptr, **prevptr, *ptr;
+  
+  prevptr = &xctx->object_spatial_table[x][y];
+  ptr = *prevptr;
+  while(ptr) {
+    if(ptr->n == n && ptr->type == type && ptr->c == c ) {
+      saveptr = ptr->next;
+      my_free(_ALLOC_ID_, &ptr);
+      *prevptr = saveptr;
+      return;
+    }
+    prevptr = &ptr->next;
+    ptr = *prevptr;
+  }
+} 
+  
+static void objectinsert(int type, int n, int c, int x, int y)
+{
+  Objectentry *ptr, *newptr;
+  ptr=xctx->object_spatial_table[x][y];
+  newptr=my_malloc(_ALLOC_ID_, sizeof(Instentry));
+  newptr->next=ptr;
+  newptr->type=type;
+  newptr->n=n;
+  newptr->c=c;
+  xctx->object_spatial_table[x][y]=newptr;
+  dbg(2, "objectnsert(): inserting object %d %d %d at %d,%d\n",type, n, c, x, y);
+}
+
+/* what:
+ * 0, XINSERT : add to hash
+ * 1, XDELETE : remove from hash
+ */
+void hash_object(int what, int type, int n, int c)
+{
+  int tmpi,tmpj, counti,countj,i,j;
+  double tmpd;
+  double x1, y1, x2, y2;
+  int x1a, x2a, y1a, y2a;
+  int skip = 0;
+
+  switch(type) {
+    case ELEMENT:
+      x1=xctx->inst[n].x1;
+      x2=xctx->inst[n].x2;
+      y1=xctx->inst[n].y1;
+      y2=xctx->inst[n].y2;
+      break;
+    case xRECT:
+      x1 = xctx->rect[c][n].x1;
+      y1 = xctx->rect[c][n].y1;
+      x2 = xctx->rect[c][n].x2;
+      y2 = xctx->rect[c][n].y2;
+      break;
+    case WIRE:
+      x1 = xctx->wire[n].x1;
+      y1 = xctx->wire[n].y1;
+      x2 = xctx->wire[n].x2;
+      y2 = xctx->wire[n].y2;
+      break;
+    case LINE:
+      x1 = xctx->line[c][n].x1;
+      y1 = xctx->line[c][n].y1;
+      x2 = xctx->line[c][n].x2;
+      y2 = xctx->line[c][n].y2;
+      break;
+    case POLYGON:
+      polygon_bbox(xctx->poly[c][n].x, xctx->poly[c][n].y, xctx->poly[c][n].points, &x1, &y1, &x2, &y2);
+      break;
+    case ARC:
+      arc_bbox(xctx->arc[c][n].x, xctx->arc[c][n].y, xctx->arc[c][n].r,
+              xctx->arc[c][n].a, xctx->arc[c][n].b, &x1, &y1, &x2, &y2);
+      break;
+    case xTEXT:
+      text_bbox(get_text_floater(n),
+           xctx->text[n].xscale, xctx->text[n].yscale, xctx->text[n].rot, xctx->text[n].flip,
+           xctx->text[n].hcenter, xctx->text[n].vcenter,
+           xctx->text[n].x0, xctx->text[n].y0,
+           &x1,&y1, &x2,&y2, &tmpi, &tmpd);
+      break;
+    default:
+      skip = 1;
+      x1 = 0.0;
+      y1 = 0.0;
+      x2 = 0.0;
+      y2 = 0.0;
+      break;
+  }
+  if(skip) return;
+  xctx->n_hash_objects++; /* total number of objects in spatial hash table */
+  /* ordered bbox */
+  if( x2 < x1) { tmpd=x2;x2=x1;x1=tmpd;}
+  if( y2 < y1) { tmpd=y2;y2=y1;y1=tmpd;}
+
+  /* calculate square 4 1st bbox point of object[k] */
+  x1a=(int)floor(x1/BOXSIZE);
+  y1a=(int)floor(y1/BOXSIZE);
+
+  /* calculate square 4 2nd bbox point of object[k] */
+  x2a=(int)floor(x2/BOXSIZE);
+  y2a=(int)floor(y2/BOXSIZE);
+
+  /*loop thru all squares that intersect bbox of object[k] */
+  counti=0;
+  for(i=x1a; i<=x2a && counti < NBOXES; ++i)
+  {
+   ++counti;
+   tmpi=i%NBOXES; if(tmpi<0) tmpi+=NBOXES;
+   countj=0;
+   for(j=y1a; j<=y2a && countj < NBOXES; ++j)
+   {
+    ++countj;
+    tmpj=j%NBOXES; if(tmpj<0) tmpj+=NBOXES;
+    /* insert object_ptr[n] in region [tmpi, tmpj] */
+    if(what == XINSERT) objectinsert(type, n, c, tmpi, tmpj);
+    else objectdelete(type, n, c, tmpi, tmpj);
+   }
+  }
+}
+
+void hash_objects(void) /* 20171203 insert object bbox in spatial hash table */
+{
+  int n, c;
+
+  if(xctx->prep_hash_object) return;
+  del_object_table();
+  for(n=0; n<xctx->instances; ++n) {
+    hash_object(XINSERT, ELEMENT, n, 0);
+  }
+  for(n=0; n<xctx->wires; ++n) {
+    hash_object(XINSERT, WIRE, n, 0);
+  }
+  for(n=0; n<xctx->texts; ++n) {
+    hash_object(XINSERT, xTEXT, n, 0);
+  }
+  for(c=0;c<cadlayers; ++c)
+  {   
+    for(n=0; n<xctx->rects[c]; n++) {
+      hash_object(XINSERT, xRECT, n, c);
+    }
+    for(n=0; n<xctx->lines[c]; n++) {
+      hash_object(XINSERT, LINE, n, c);
+    }
+    for(n=0; n<xctx->arcs[c]; n++) {
+      hash_object(XINSERT, ARC, n, c);
+    }
+    for(n=0; n<xctx->polygons[c]; n++) {
+      hash_object(XINSERT, POLYGON, n, c);
+    }
+
+  }
+  xctx->prep_hash_object=1;
+}
+
+/* END HASH ALL OBJECTS */
 
 static void instpindelete(int n,int pin, int x, int y)
 {
@@ -183,14 +377,20 @@ static void del_inst_pin_table(void)
 
 static void wiredelete(int n, int x, int y)
 {
-  Wireentry *saveptr, **prevptr;
+  Wireentry *saveptr, **prevptr, *ptr;
 
   prevptr = &xctx->wire_spatial_table[x][y];
-  if(*prevptr == NULL) return;
-  while( (*prevptr)->n != n) prevptr = &(*prevptr)->next;
-  saveptr = (*prevptr)->next;
-  my_free(_ALLOC_ID_, prevptr);
-  *prevptr = saveptr;
+  ptr = *prevptr;
+  while(ptr) {
+    if(ptr->n == n) {
+      saveptr = ptr->next;
+      my_free(_ALLOC_ID_, &ptr);
+      *prevptr = saveptr;
+      return;
+    }
+    prevptr = &ptr->next;
+    ptr = *prevptr;
+  }
 }
 
 static void wireinsert(int n, int x, int y)
@@ -308,6 +508,7 @@ void hash_wire(int what, int n, int incremental)
   Wireentry *wptr;
   xWire * const wire = xctx->wire;
 
+  dbg(1, "hash_wire(): what=%d n=%d incremental=%d\n",  what, n, incremental);
   wire[n].end1 = wire[n].end2=-1;
   x1=wire[n].x1;
   x2=wire[n].x2;
@@ -406,7 +607,7 @@ void netlist_options(int i)
   if(str[0]) {
     /* fprintf(errfp, "netlist_options(): prop_ptr=%s\n", xctx->inst[i].prop_ptr); */
     if(!strboolcmp(str, "true")) tclsetintvar("lvs_ignore", 1);
-    else tclsetintvar("lvs_.netlist", 0);
+    else tclsetintvar("lvs_ignore", 0);
   }
   str = get_tok_value(xctx->inst[i].prop_ptr, "lvs_netlist", 0);
   if(str[0]) {
@@ -480,35 +681,36 @@ static void print_wires(void)
 /*      1: add entry */
 /*      2: delete list only, no print */
 /*      3: look if node is a global */
-int record_global_node(int what, FILE *fp, char *node)
+int record_global_node(int what, FILE *fp, const char *node)
 {
- static int max_globals=0; /* safe to keep even with multiple schematics, netlist code always resets data */
- static int size_globals=0; /* safe to keep even with multiple schematics, netlist code always resets data */
- static char **globals=NULL; /* safe to keep even with multiple schematics, netlist code always resets data */
  int i;
 
- if( what==1 || what==3) {
+ if( what == 1 || what == 3) {
     if(!node) return 0;
     if(!strcmp(node, "0")) return 1;
-    for(i=0;i<max_globals; ++i) {
-      if( !strcmp(node, globals[i] )) return 1; /* node is a global */
+    for(i = 0;i < xctx->max_globals; ++i) {
+      if( !strcmp(node, xctx->globals[i] )) return 1; /* node is a global */
     }
     if(what == 3) return 0; /* node is not a global */
-    if(max_globals>=size_globals) {
-       size_globals+=CADCHUNKALLOC;
-       my_realloc(_ALLOC_ID_, &globals, size_globals*sizeof(char *) );
+    if(xctx->max_globals >= xctx->size_globals) {
+       xctx->size_globals+=CADCHUNKALLOC;
+       my_realloc(_ALLOC_ID_, &xctx->globals, xctx->size_globals*sizeof(char *) );
     }
-    globals[max_globals]=NULL;
-    my_strdup(_ALLOC_ID_, &globals[max_globals], node);
-    max_globals++;
- } else if(what == 0 || what == 2) {
-    for(i=0;i<max_globals; ++i) {
-       if(what == 0 && xctx->netlist_type == CAD_SPICE_NETLIST) fprintf(fp, ".GLOBAL %s\n", globals[i]);
-       if(what == 0 && xctx->netlist_type == CAD_TEDAX_NETLIST) fprintf(fp, "__GLOBAL__ %s\n", globals[i]);
-       my_free(_ALLOC_ID_, &globals[i]);
+    xctx->globals[xctx->max_globals]=NULL;
+    my_strdup(_ALLOC_ID_, &xctx->globals[xctx->max_globals], node);
+    xctx->max_globals++;
+ } else if(what == 0) {
+    for(i = 0;i < xctx->max_globals; ++i) {
+       if(xctx->netlist_type == CAD_SPICE_NETLIST) fprintf(fp, ".GLOBAL %s\n", xctx->globals[i]);
+       if(xctx->netlist_type == CAD_TEDAX_NETLIST) fprintf(fp, "__GLOBAL__ %s\n", xctx->globals[i]);
     }
-    my_free(_ALLOC_ID_, &globals);
-    size_globals=max_globals=0;
+ } else if(what == 2) {
+    for(i=0;i<xctx->max_globals; ++i) {
+       my_free(_ALLOC_ID_, &xctx->globals[i]);
+    }
+    my_free(_ALLOC_ID_, &xctx->globals);
+    xctx->size_globals = xctx->max_globals=0;
+
  }
  return 0;
 }
@@ -1263,7 +1465,9 @@ int prepare_netlist_structs(int for_netl)
   else if(!for_netlist && xctx->prep_hi_structs) return 0;
   
   dbg(1, "prepare_netlist_structs(): extraction: %s\n", xctx->sch[xctx->currsch]);
-  reset_flags(); /* update cached flags: necessary if some tcleval() is used for cached attrs */
+
+  reset_caches(); /* update cached flags: necessary if some tcleval() is used for cached attrs */
+
   set_modify(-2); /* to reset floater cached values */
   /* delete instance pins spatial hash, wires spatial hash, node_hash, wires and inst nodes.*/
   if(for_netlist) {
@@ -1408,7 +1612,7 @@ int sym_vs_sch_pins()
       int_hash_free(&pin_table);
       /* pass through symbols, duplicated pins: do not check with schematic */
       if(rects > unique_pins) continue;
-      get_sch_from_sym(filename, xctx->sym + i, -1);
+      get_sch_from_sym(filename, xctx->sym + i, -1, 0);
       if(!stat(filename, &buf)) {
         fd = fopen(filename, "r");
         pin_cnt = 0;

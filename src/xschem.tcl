@@ -27,7 +27,7 @@ proc inutile_line {txtlabel} {
    set X [expr [winfo pointerx .inutile_line] - 60]
    set Y [expr [winfo pointery .inutile_line] - 35]
    wm geometry .inutile_line "+$X+$Y"
-   wm transient .inutile_line .
+   wm transient .inutile_line [xschem get topwindow]
    label .inutile_line.l1  -text $txtlabel
    entry .inutile_line.e1   -width 60
    .inutile_line.e1 delete 0 end
@@ -51,14 +51,14 @@ proc inutile_line {txtlabel} {
 }
 
 proc inutile_write_data {w f} {
- set fid [open $f "w"]
+ set fid [open $f w]
  set t [$w get  0.0 {end - 1 chars}]
  puts  -nonewline $fid $t 
  close $fid
 }
   
 proc inutile_read_data {w f} {
- set fid [open $f "r"]
+ set fid [open $f r]
  set t [read $fid]
  $w delete 0.0 end
  $w insert 0.0 $t
@@ -66,7 +66,7 @@ proc inutile_read_data {w f} {
 }
 
 proc inutile_template {w f} {
- set fid [open $f "r"]
+ set fid [open $f r]
  set t [read $fid]
  $w insert 0.0 $t
  close $fid
@@ -74,6 +74,7 @@ proc inutile_template {w f} {
 
 proc inutile_get_time {} {
  global netlist_dir
+ regsub {/$} $netlist_dir {} netlist_dir
  set fileid [open "$netlist_dir/inutile.simulationtime"  "RDONLY"]
  .inutile.buttons.time delete 0 end
  .inutile.buttons.time insert 0 [read -nonewline $fileid]
@@ -86,7 +87,7 @@ proc inutile_alias_window {w filename} {
  toplevel $w -class Dialog
  wm title $w "(IN)UTILE ALIAS FILE: $filename"
  wm iconname $w "ALIAS"
- wm transient $w .
+ # wm transient $w [xschem get topwindow]
 
  set fileid [open $filename "RDONLY CREAT"]
  set testo [read $fileid]
@@ -111,7 +112,7 @@ proc inutile_help_window {w filename} {
  toplevel $w -class Dialog
  wm title $w "(IN)UTILE ALIAS FILE"
  wm iconname $w "ALIAS"
- wm transient $w .
+ # wm transient $w [xschem get topwindow]
  
  frame $w.buttons
  pack $w.buttons -side bottom -fill x -pady 2m
@@ -131,6 +132,7 @@ proc inutile_help_window {w filename} {
 
 proc inutile_translate {f} {
   global XSCHEM_SHAREDIR netlist_dir
+  regsub {/$} $netlist_dir {} netlist_dir
   set p $XSCHEM_SHAREDIR/utile
   set savedir [pwd]
   cd $netlist_dir
@@ -148,7 +150,7 @@ proc inutile { {filename {}}} {
   toplevel .inutile -class Dialog
   wm title .inutile "(IN)UTILE (Stefan Schippers, sschippe)"
   wm iconname .inutile "(IN)UTILE"
-  wm transient .inutile .
+  # wm transient .inutile [xschem get topwindow]
   set utile_path $XSCHEM_SHAREDIR/utile
   set retval {}
   frame .inutile.buttons
@@ -215,10 +217,13 @@ proc set_ne { var val } {
 # $execute(pipe,$id) contains the channel descriptor to read or write as specified in status
 # $execute(data,$id) contains the stdout of the pipeline (output data)
 # $execute(cmd,$id) contains the pipeline command
-# when subprocess ends all execute(...,$id) data is cleared
+# $execute(win_path,$id) contains the xctx->current_win_path that started the command
+# $execute(exitcode,id) contains the exit code. This variable will not be deleted at the end
+# when subprocess ends all execute(...,$id) data is cleared (except execute(exitcode,id)
 #
 # The following post-mortem data is available for last finished process:
 #   execute(cmd,last)     : the command
+#   execute(win_path,last): the xctx->current_win_path that started the last command
 #   execute(data,last)    : the data
 #   execute(error,last)   : the errors (stderr) 
 #   execute(status,last)  : the status argument as was given when calling proc execute
@@ -226,7 +231,7 @@ proc set_ne { var val } {
 #
 # execute service function
 proc execute_fileevent {id} {
-  global execute OS
+  global execute OS has_x errorCode
 
   append execute(data,$id) [read $execute(pipe,$id) 1024]
   if { $OS != {Windows} } {
@@ -240,6 +245,12 @@ proc execute_fileevent {id} {
     set lastproc [lindex [pid $execute(pipe,$id)] end]
     set ps_status [exec ps -o state= -p $lastproc]
     set finished [regexp Z $ps_status] ;# if zombie consider process to be finished.
+    if { $eof && !$finished} {
+      after 2000 "execute_fileevent $id"
+      fileevent $execute(pipe,$id) readable ""
+      # puts "rescheduling $id"
+      return
+    }
   } else {
     set eof [eof $execute(pipe,$id)]
     set finished 1
@@ -253,10 +264,16 @@ proc execute_fileevent {id} {
       if {$finished} {fconfigure $execute(pipe,$id) -blocking 1}
       set exit_status 0
       set catch_return [eval catch [list {close $execute(pipe,$id)} err] ]
+      # puts "catch_return=$catch_return"
       if {$catch_return} {
-        global errorCode
-        if {"CHILDSTATUS" == [lindex $errorCode 0]} {
+        # puts "errorCode=$errorCode"
+        if {"NONE" == [lindex $errorCode 0]} {
+          set exit_status 0
+        } elseif {"CHILDSTATUS" == [lindex $errorCode 0]} {
           set exit_status [lindex $errorCode 2]
+          # puts "exit_status=$exit_status"
+        } else {
+          set exit_status  $catch_return
         }
         if {$exit_status != 0} {
           if {$report} {viewdata "Failed: $execute(cmd,$id)\nstderr:\n$err\ndata:\n$execute(data,$id)"}
@@ -266,23 +283,36 @@ proc execute_fileevent {id} {
       } else {
         if {$report} {viewdata "Completed: $execute(cmd,$id)\ndata:\n$execute(data,$id)"}
       }
-      if {[info exists execute(callback,$id)] && $execute(callback,$id) ne {}} {
-        uplevel #0 "eval $execute(callback,$id)"
-      } 
-      catch {unset execute(callback,$id)} 
+      set execute(exitcode,last) $exit_status
+      set execute(exitcode,$id) $exit_status
       set execute(cmd,last) $execute(cmd,$id)
+      set execute(win_path,last) $execute(win_path,$id)
       set execute(data,last) $execute(data,$id)
       if { ![info exists err] } { set err {} }
       set execute(error,last) $err
       set execute(status,last) $execute(status,$id)
+
+      if { [info exists tctx::$execute(win_path,$id)_simulate_id] } {
+        if { [set tctx::$execute(win_path,$id)_simulate_id] eq $id } {
+          unset tctx::$execute(win_path,$id)_simulate_id
+        }
+      }
+
+      if {[info exists execute(callback,$id)] && $execute(callback,$id) ne {}} {
+        # puts  $execute(callback,$id)
+        # puts $execute(win_path,$id)
+        eval uplevel #0 [list $execute(callback,$id)]
+      }
+      catch {unset execute(callback,$id)} 
+
       if { ![info exists exit_status] } { set exit_status 0 }
-      set execute(exitcode,last) $exit_status
       unset execute(pipe,$id)
       unset execute(data,$id)
       unset execute(status,$id)
       unset execute(cmd,$id)
+      unset execute(win_path,$id)
       # apply a delay, process does not disappear immediately.
-      if {[winfo exists .processlist]} { after 250 {insert_running_cmds .processlist.f2.lb}}
+      if {[info exists has_x] && [winfo exists .processlist]} { after 250 {insert_running_cmds .processlist.f2.lb}}
   }
 }
 
@@ -340,10 +370,11 @@ proc execute {status args} {
   set execute(status,$id) $status
   set execute(pipe,$id) $pipe
   set execute(cmd,$id) $args
+  set execute(win_path,$id) [xschem get current_win_path]
   set execute(data,$id) ""
 
   # Apply a delay to catch the new process.
-  if {[winfo exists .processlist]} { after 250 {insert_running_cmds .processlist.f2.lb}} 
+  if {[info exists has_x] && [winfo exists .processlist]} { after 250 {insert_running_cmds .processlist.f2.lb}} 
   fconfigure $pipe -blocking 0
   if {[regexp {line} $status]} {
     fconfigure $pipe -buffering line
@@ -358,22 +389,33 @@ proc execute {status args} {
 # kill selected sub-processes by looking up their command strings
 # into all running sub-processes, killing the matching ones
 # with the supplied 'sig'.
-proc kill_running_cmds {lb sig} {
+proc kill_running_cmds {{lb {}} sig} {
   global execute
-  set selected [$lb curselection]
-  foreach idx $selected {
-    set cmd1 [$lb get $idx]
-    foreach  {id pid cmd2} [get_running_cmds] {
-      # puts "$cmd1\n$cmd2 \n$pid"
-      if { $cmd1 eq $cmd2 } {
-        exec kill $sig $pid
-        break
+  if { [regexp {^[0-9]+$} $lb] && $lb >= 0 } {
+    set id $lb
+    if { [info exists execute(pipe,$id)] } {
+      set pid [pid $execute(pipe,$id)]
+      exec kill $sig $pid
+    } else {
+      return 0
+    }
+  } else {
+    set selected [$lb curselection]
+    foreach idx $selected {
+      set cmd1 [$lb get $idx]
+      foreach  {id pid cmd2} [get_running_cmds] {
+        # puts "$cmd1\n$cmd2 \n$pid"
+        if { $cmd1 eq $cmd2 } {
+          exec kill $sig $pid
+          break
+        }
       }
     }
+    after 250 insert_running_cmds $lb
   }
   # apply a delay, after a kill command process does not disappear
   # immediately.
-  after 250 insert_running_cmds $lb
+  return 1
 }
 
 # refresh list of running commands in dialog box
@@ -387,9 +429,10 @@ proc insert_running_cmds {lb} {
 
 # periodically update status
 proc update_process_status {lb} {
-  global execute
+  global execute has_x
   set exists 0
   set selected [$lb curselection]
+  if { ![info exists has_x]} {return}
   if { [winfo exists .pstat] } {
     set pos [lindex [.pstat.text yview] 1]
     if {$pos == 1} {
@@ -418,9 +461,10 @@ proc update_process_status {lb} {
 
 # display stdout of selected sub-process
 proc view_process_status {lb} {
-  global execute
+  global execute has_x
   set exists 0
-  if { [winfo exists .pstat] } {
+  if {![info exists has_x]} {return}
+  if {[winfo exists .pstat] } {
     .pstat.text delete 1.0 end
     set exists 1
   }
@@ -448,10 +492,12 @@ proc view_process_status {lb} {
 
 # top level dialog displaying running sub-processes
 proc list_running_cmds {} {
+  global has_x
   set top .processlist
+  if {![info exists has_x]} {return}
   if {[winfo exists $top]} {return}
   toplevel $top -class Dialog
-  wm transient $top .
+  # wm transient $top [xschem get topwindow]
   set frame1 $top.f1
   set frame2 $top.f2
   set frame3 $top.f3
@@ -469,10 +515,14 @@ proc list_running_cmds {} {
   pack  $lb -side bottom  -fill both -expand true
 
   bind $lb <Double-Button-1> [list $frame3.b3 invoke]
-  button $frame3.b1 -width 16 -text {Terminate selected} -command "kill_running_cmds $lb -15" -bg yellow
-  button $frame3.b2 -width 16 -text {Kill selected} -command "kill_running_cmds $lb -9" -bg red
-  button $frame3.b3 -width 16 -text {View status} -command "view_process_status $lb" -bg PaleGreen
-  button $frame3.b4 -width 16 -text {Dismiss} -bg PaleGreen -command "
+  button $frame3.b1 -width 16 -text {Terminate selected} -command "kill_running_cmds $lb -15" \
+    -fg black -background yellow
+  button $frame3.b2 -width 16 -text {Kill selected} -command "kill_running_cmds $lb -9" \
+    -fg black -background red
+  button $frame3.b3 -width 16 -text {View status} -command "view_process_status $lb" \
+    -fg black -background PaleGreen
+  button $frame3.b4 -width 16 -text {Dismiss} \
+    -fg black -background PaleGreen -command "
     if {\[winfo exists .pstat\]} {
       after cancel [list update_process_status $lb]
       destroy .pstat
@@ -567,8 +617,9 @@ proc from_eng {i} {
 }
 
 ## convert number to engineering form
-proc to_eng {i} {
+proc to_eng {args} {
   set suffix {}
+  set i [expr [join $args]]
   set absi [expr {abs($i)}]
 
   if       {$absi == 0.0}  { set mult 1    ; set suffix {}
@@ -593,18 +644,217 @@ proc to_eng {i} {
 }
 
 ## evaluate expression. if expression has errors or does not evaluate return expression as is
-proc ev {s} {
-  if {![catch {expr $s} res]} {
+proc ev {args} {
+  set i [join $args]
+  if {![catch {expr $i} res]} {
     return [format %.4g $res]
   } else {
-    return $s
+    return $args
   }
 }
+
+## evaluate expression. if expression has errors or does not evaluate return 0
+proc ev0 {args} {
+  set i [join $args]
+  if {![catch {expr $i} res]} {
+    return [format %.4g $res]
+  } else {
+    return 0
+  }
+} 
+
+# wraps provided table formatted text into a nice looking bordered table 
+# sep is the list of characters used as separators, default are { }, {,}, {\t}
+# if you want to tabulate data with spaces use only {,} as separator or any other character.
+proc tabulate {text {sep ",\t "}} {
+  # define table characters
+  set top  {┌  ─  ┬ ┐}
+  set row  {│ { } │ │}
+  set mid  {├  ─  ┼ ┤}
+  set head {╞  ═  ╪ ╡}
+  set bot  {└  ─  ┴ ┘}
+
+  # used_sep (first character of sep) will be used as separator after text cleanup
+  set used_sep [string range $sep 0 0]
+  set sep "\[$sep\]"
+  set maxcols 0 ;# max number of columns
+  set nlines 0  ;# number of data lines
+  set chopped_text {}
+  set found_data 0
+  foreach line [split $text \n] {
+
+    # skip completely empty lines
+    if {[regexp {^$} $line]} { continue}
+    # skip leading lines with no data (only separators) 
+    if {!$found_data && [regexp ^${sep}*\$ $line]} {
+      continue
+    }
+    set found_data 1
+
+    # change separators to { }
+    regsub -all $sep $line $used_sep line
+
+    # transform resulting line into a proper list 
+    set line [split $line $used_sep]
+    incr nlines
+    set ncols 0
+    # calculate max field width and number of columns
+    foreach field $line { 
+      incr ncols
+      if {![info exists maxlen($ncols)]} {set maxlen($ncols) 0}
+      if {$ncols > $maxcols} {set maxcols $ncols} 
+      set len [string length $field] 
+      if {$len > $maxlen($ncols)} { set maxlen($ncols) $len}
+    }
+    if { $chopped_text ne {}} {append chopped_text \n}
+    append chopped_text $line
+  }
+
+  set table {}
+  set l 0
+  foreach line [split $chopped_text \n] {
+    incr l
+
+    # top table border
+    set rowsep {}
+    if {$l == 1} {
+      append rowsep [lindex $top 0] 
+      set c 0
+      for {set i 0} {$i < $maxcols} { incr i} {
+        set field [lindex $line $i]
+        incr c
+        append rowsep [string repeat [lindex $top 1] $maxlen($c)]
+        if { $c == $ncols} {
+          append rowsep [lindex $top 3]
+        } else {
+          append rowsep [lindex $top 2]
+        }
+      }
+      append table $rowsep \n
+    } else {
+      append table \n
+    }
+    set rowsep {}
+    append table [lindex $row 0]
+    if { $l == $nlines} {
+      append rowsep [lindex $bot 0]
+    } elseif {$l == 1} {
+      append rowsep [lindex $head 0]
+    } else {
+      append rowsep [lindex $mid 0]
+    }
+    set c 0
+    for {set i 0} {$i < $maxcols} { incr i} {
+      set field [lindex $line $i]
+      incr c
+      set pad [expr {$maxlen($c) - [string length $field]}]
+      append table $field [string repeat { } $pad]
+      if { $l == $nlines} {
+        append rowsep [string repeat [lindex $bot 1] $maxlen($c)]
+      } elseif {$l == 1}  {
+        append rowsep [string repeat [lindex $head 1] $maxlen($c)]
+      } else {
+        append rowsep [string repeat [lindex $mid 1] $maxlen($c)]
+      }
+      if { $c == $ncols} {
+        append table [lindex $row 3]
+        if { $l == $nlines} {
+          append rowsep [lindex $bot 3]
+        } elseif {$l == 1} {
+          append rowsep [lindex $head 3]
+        } else {
+          append rowsep [lindex $mid 3]
+        }
+      } else {
+        append table [lindex $row 2]
+        if { $l == $nlines} {
+          append rowsep [lindex $bot 2]
+        } elseif { $l == 1}  {
+          append rowsep [lindex $head 2]
+        } else {
+          append rowsep [lindex $mid 2]
+        }
+      }
+    }
+    append table \n $rowsep 
+  }
+  return $table
+}
+
+# get pin ordering from included subcircuit
+# return empty string if not found.
+proc has_included_subcircuit {symname spice_sym_def} {
+  global has_x
+  set include_found 0
+  regsub -all {\n\+} $spice_sym_def { } spice_sym_def
+  # puts "has_included_subcircuit: spice_sym_def=$spice_sym_def"
+  set pinlist {}
+  # .include? get the file ...
+  if {[regexp -nocase {^[ \t\n]*\.include +} $spice_sym_def]} {
+    regsub -nocase {^[ \t\n]*\.include +} $spice_sym_def {} filename 
+    regsub -all {^"|"$} $filename {} filename ;# remove double quotes at beginning and end
+    regsub -all {^\n*|\n*$} $filename {} filename ;# remove newlines at beginning and end
+    set filename [abs_sym_path $filename]
+    # puts "filename=$filename"
+    set res [catch {open $filename r} fd]
+    if { $res } {
+      puts "has_included_subcircuit: error opening file $filename: $fd"
+      if { [info exists has_x] } {alert_ "has_included_subcircuit: error opening file $filename: $fd"}
+      return $pinlist
+    }  
+    set spice_sym_def [read -nonewline $fd]
+    close $fd
+    regsub -all {\n\+} $spice_sym_def { } spice_sym_def
+  }
+  # ... or use the attribute value as *the* subcircuit
+
+  # split lines
+  set spice_sym_def [split $spice_sym_def \n]
+  foreach line $spice_sym_def {
+    # get 1st line with a matching .subckt. This is our subcircuit definition, get the pin order
+    if {[string tolower [lindex $line 0]] eq {.subckt}  && 
+        [string tolower [lindex $line 1]] eq $symname} {
+     set include_found 1
+     regsub -all { *= *} $line {=} line
+     # pin list ends where parameter assignment begins (param=value)
+     set last [lsearch -regexp [string tolower $line] {=|param:}]
+     if {$last == -1} {
+       set last [expr {[llength $line] -1}]
+     } else {
+       set last [expr {$last -1}]
+     }
+     set pinlist [lrange $line 2 $last]
+     break
+    }
+  }
+  # return pinlist as found in the .subckt line or empty string if not found
+  if {!$include_found} {
+    puts "has_included_subcircuit: $symname: no matching .subckt found in spice_sym_def. Ignore"
+    if { [info exists has_x] } {
+      alert_ "has_included_subcircuit: $symname: no matching .subckt found in spice_sym_def. Ignore"
+    }
+  }  
+  # puts $pinlist
+  return [join $pinlist]
+} 
+
+# should not be called directly by user 
+# does netlist post processing, called from global_(spice|vhdl|verilog)_netlist()
 proc netlist {source_file show netlist_file} {
- global XSCHEM_SHAREDIR flat_netlist netlist_dir
- global verilog_2001 debug_var OS verilog_bitblast
+ global XSCHEM_SHAREDIR flat_netlist netlist_dir simulate_bg
+ global verilog_2001 debug_var OS has_x verilog_bitblast
+
+ regsub {/$} $netlist_dir {} netlist_dir
+ # if waves are loaded turn Waves button to orange to indicate old waves are shown
+ set win_path [xschem get current_win_path]
+ set top_path [xschem get top_path]
+ set waves_var tctx::${win_path}_waves
+ set waves_button $top_path.menubar.waves
+ if {[info exists has_x] && $waves_var ne $simulate_bg} {
+   set $waves_var orange
+   $waves_button configure -background orange
+ }
  
- simuldir
  set netlist_type [xschem get netlist_type]
  if {$debug_var <= -1} { puts "netlist: source_file=$source_file, netlist_type=$netlist_type" }
  set dest $netlist_dir/$netlist_file
@@ -665,22 +915,29 @@ proc netlist {source_file show netlist_file} {
 
 # 20161121
 proc convert_to_pdf {filename dest} {
-  global to_pdf OS
+  global to_pdf OS execute
   if { [regexp -nocase {\.pdf$} $dest] } {
     set pdffile [file rootname $filename].pdf
-    # puts "---> $to_pdf $filename $pdffile"
-    set cmd "exec $to_pdf \$filename \$pdffile"
+    # puts "--->  cmd=$to_pdf  filename=$filename  pdffile=$pdffile  dest=$dest"
     if {$OS == "Windows"} {
       set cmd "exec $to_pdf \$pdffile \$filename"
-    } 
-    if { ![catch {eval $cmd} msg] } {
-      file rename -force $pdffile $dest
-      # ps2pdf succeeded, so remove original .ps file
-      if { ![xschem get debug_var] } {
-        file delete $filename
+      if { ![catch {eval $cmd} msg] } {
+        file rename -force $pdffile $dest
+        # ps2pdf succeeded, so remove original .ps file
+        if { ![xschem get debug_var] } {
+          file delete $filename
+        }
+      } else {
+        puts stderr "problems converting postscript to pdf: $msg"
       }
-    } else {
-      puts stderr "problems converting postscript to pdf: $msg"
+    } else { ;# OS == unix
+      eval execute_wait 0 $to_pdf [list $filename $pdffile]
+      if {$execute(status,last) == 0} {
+        file rename -force $pdffile $dest
+        if { ![xschem get debug_var] } {
+          file delete $filename
+        }
+      }
     }
   } else {
     file rename -force $filename $dest
@@ -787,6 +1044,7 @@ proc edit_file {filename} {
 proc save_sim_defaults {f} {
   global sim netlist_dir terminal
   
+  regsub {/$} $netlist_dir {} netlist_dir
   set a [catch {open $f w} fd]
   if { $a } {
     puts "save_sim_defaults: error opening file $f: $fd"
@@ -1015,10 +1273,10 @@ proc ngspice::get_voltage {n} {
 }
 
 proc update_schematic_header {} {
-  global retval rcode
+  global retval
   set retval [xschem get header_text]
   text_line {Header/License text:} 0
-  if { $rcode ne {}} {
+  if { $tctx::rcode ne {}} {
     xschem set header_text $retval
   }
 }
@@ -1220,7 +1478,7 @@ proc set_sim_defaults {{reset {}}} {
     set_ne sim(spicewave,0,st) 0
    
     set_ne sim(spicewave,1,cmd) {$terminal -e ngspice}
-    set sim(spicewave,1,name) {Ngpice Viewer}
+    set sim(spicewave,1,name) {Ngspice Viewer}
     set_ne sim(spicewave,1,fg) 0
     set_ne sim(spicewave,1,st) 0
 
@@ -1317,8 +1575,8 @@ proc simconf {} {
   set_sim_defaults
   toplevel .sim -class Dialog
   wm title .sim {Simulation Configuration}
-  wm geometry .sim 700x340
-  wm transient .sim .
+  wm geometry .sim 790x370
+  # wm transient .sim [xschem get topwindow]
   frame .sim.topf
   set scrollframe [sframe .sim.topf]
   frame ${scrollframe}.top
@@ -1331,7 +1589,7 @@ proc simconf {} {
   set toggle 0
   foreach tool $sim(tool_list) {
     frame ${scrollframe}.center.$tool
-    label ${scrollframe}.center.$tool.l -width 12 -text $tool  -bg $bg($toggle)
+    label ${scrollframe}.center.$tool.l -width 12 -text $tool  -background $bg($toggle) -fg black 
     frame ${scrollframe}.center.$tool.r
     pack ${scrollframe}.center.$tool -fill both -expand yes
     pack ${scrollframe}.center.$tool.l -fill y -side left
@@ -1339,14 +1597,16 @@ proc simconf {} {
     for {set i 0} { $i < $sim($tool,n)} {incr i} {
       frame ${scrollframe}.center.$tool.r.$i
       pack ${scrollframe}.center.$tool.r.$i -fill x -expand yes
-      entry ${scrollframe}.center.$tool.r.$i.lab -textvariable sim($tool,$i,name) -width 18 -bg $bg($toggle)
-      radiobutton ${scrollframe}.center.$tool.r.$i.radio -bg $bg($toggle) \
-         -variable sim($tool,default) -value $i
-      text ${scrollframe}.center.$tool.r.$i.cmd -width 20 -height 3 -wrap none -bg $bg($toggle)
+      entry ${scrollframe}.center.$tool.r.$i.lab -textvariable sim($tool,$i,name) -width 18 \
+         -background $bg($toggle) -fg black
+      radiobutton ${scrollframe}.center.$tool.r.$i.radio -background $bg($toggle) -fg black \
+         -selectcolor white -variable sim($tool,default) -value $i
+      text ${scrollframe}.center.$tool.r.$i.cmd -width 20 -height 3 -wrap none -background $bg($toggle) -fg black
       ${scrollframe}.center.$tool.r.$i.cmd insert 1.0 $sim($tool,$i,cmd)
-      checkbutton ${scrollframe}.center.$tool.r.$i.fg -text Fg -variable sim($tool,$i,fg) -bg $bg($toggle)
-      checkbutton ${scrollframe}.center.$tool.r.$i.st -text Status -variable sim($tool,$i,st) -bg $bg($toggle)
-
+      checkbutton ${scrollframe}.center.$tool.r.$i.fg -text Fg -variable sim($tool,$i,fg) \
+        -selectcolor white -background $bg($toggle) -fg black
+      checkbutton ${scrollframe}.center.$tool.r.$i.st -text Status -variable sim($tool,$i,st) \
+        -selectcolor white -background $bg($toggle) -fg black
       pack ${scrollframe}.center.$tool.r.$i.lab -side left -fill y 
       pack ${scrollframe}.center.$tool.r.$i.radio -side left -fill y 
       pack ${scrollframe}.center.$tool.r.$i.cmd -side left -fill x -expand yes
@@ -1381,26 +1641,36 @@ XSCHEM before sending commands to the shell:
  - d: simulation directory (example: /home/schippes/.xschem/simulations)
  - terminal: terminal to be used for applications that need to be
    executed in terminal (example: $terminal -e ngspice -i "$N" -a)
+
 If for a given tool there are multiple rows then the radiobutton
 tells which one will be called by xschem.
 Variables should be used with the usual substitution character $: $n, $N, etc.
 Foreground (Fg) checkbutton tells xschem to wait for child process to finish.
 Status checkbutton tells xschem to report a status dialog (stdout, stderr,
 exit status) when process finishes.
-Any changes made in the command or tool name entries will be saved in 
-~/.xschem/simrc when 'Save Configuration to file' button is pressed.
-If 'Accept and Close' is pressed then the changes are kept in memory and dialog
-is closed without writing to a file, if xschem is restarted changes will be lost.
+
+If 'Accept, Save and Close' is pressed then changes made in the dialog box
+entries will be saved in ~/.xschem/simrc, changes will be persistent.
+
+If 'Accept, no Save and Close' is pressed then the changes are kept in
+memory and dialog is closed without writing to a file,
+if xschem is restarted changes will be lost.
+
 If no ~/.xschem/simrc is present then a minimal default setup is presented.
-To reset to default use the corresponding button or just delete the ~/.xschem/simrc
-file manually.
+To reset to default use the corresponding button or just delete the
+~/.xschem/simrc file manually.
     } ro
   }
-  button .sim.bottom.ok  -text {Save Configuration to file} -command "simconf_saveconf $scrollframe"
+  button .sim.bottom.ok  -text {Accept, Save and Close} -command "
+    set_sim_defaults
+    simconf_saveconf $scrollframe
+    destroy .sim
+    xschem set semaphore [expr {[xschem get semaphore] -1}]
+  "
   button .sim.bottom.reset -text {Reset to default} -command {
     simconf_reset
   }
-  button .sim.bottom.close -text {Accept and Close} -command {
+  button .sim.bottom.close -text {Accept, no Save and Close} -command {
     set_sim_defaults
     destroy .sim
     xschem set semaphore [expr {[xschem get semaphore] -1}]
@@ -1651,6 +1921,7 @@ proc reroute_net {old new} {
 ## $d : netlist directory
 proc sim_cmd {cmd} {
   global  netlist_dir terminal
+  regsub {/$} $netlist_dir {} netlist_dir
   set tool [xschem get netlist_type]
   set d ${netlist_dir}
   set S [xschem get schname]
@@ -1671,6 +1942,27 @@ proc sim_cmd {cmd} {
   return [subst $cmd]
 }
 
+# wrapper to proc simulate, if called from button.
+proc simulate_from_button {{callback {}}} {
+   global simulate_bg
+   set simvar tctx::[xschem get current_win_path]_simulate
+   if {![info exists $simvar] || [set $simvar] ne {orange}} {
+     simulate $callback
+   } elseif {[info exists $simvar] && [set $simvar] eq {orange}} {
+     set simulate_id tctx::[xschem get current_win_path]_simulate_id
+     if { [info exists $simulate_id] } {
+       set id [set $simulate_id]
+       set res [kill_running_cmds $id -15]
+       if { $res == 0} {
+         # something went wrong. Forget about the process
+         unset tctx::[xschem get current_win_path]_simulate_id
+         set tctx::[xschem get current_win_path]_simulate $simulate_bg
+         [xschem get top_path].menubar.simulate configure -background $simulate_bg
+       }
+     }
+   }
+}
+ 
 ## $N : netlist file full path (/home/schippes/simulations/opamp.spice) 
 ## $n : netlist file full path with extension chopped (/home/schippes/simulations/opamp)
 ## $s : schematic name (opamp) or netlist_name if given
@@ -1681,7 +1973,7 @@ proc simulate {{callback {}}} {
   global netlist_dir terminal sim env
   global execute XSCHEM_SHAREDIR has_x OS
 
-  simuldir 
+  regsub {/$} $netlist_dir {} netlist_dir
   set_sim_defaults
   set netlist_type [xschem get netlist_type]
   if { [set_netlist_dir 0] ne {}} {
@@ -1714,28 +2006,44 @@ proc simulate {{callback {}}} {
       set fg {execute}
     }
     set cmd [subst -nobackslashes $sim($tool,$def,cmd)]
+    
+    # window interface       tabbed interface
+    # -----------------------------------------
+    # top_path   win_path    top_path   win_path
+    #  {}        .drw         {}        .drw
+    #  .x1       .x1.drw      {}        .x1.drw
+    #  .x2       .x2.drw      {}        .x2.drw
+    set execute(callback) "
+       set_simulate_button [list [xschem get top_path] [xschem get current_win_path]]
+       $callback
+    "
+    if {$fg eq {execute_wait}} {xschem set semaphore [expr {[xschem get semaphore] +1}]}
+
     set save [pwd]
     cd $netlist_dir
-    if {$OS == "Windows"} {
-      # $cmd cannot be surrounded by {} as exec will change forward slash to backward slash
-      if { $callback ne {} } {
-        uplevel #0 "eval $callback"
-      }
-      #eval exec {cmd /V /C "cd $netlist_dir&&$cmd}
-      eval exec $cmd &
-      set id 0
-    } else {
-      set execute(callback) $callback
-      # puts $cmd
-      set id [eval $fg $st $cmd]
-      puts "Simulation started: execution ID: $id"
-    }
+    # Note: Windows $cmd cannot be surrounded by {} as exec will change forward slash to backward slash
+    set id [eval execute $st $cmd]   ;# Start simulation process
     cd $save
+
+    if {[info exists has_x] && $id >= 0 } {
+      set tctx::[xschem get current_win_path]_simulate_id $id
+      set button_path [xschem get top_path].menubar.simulate
+      $button_path configure -background orange
+      set tctx::[xschem get current_win_path]_simulate orange
+    }
+
+    puts "Simulation started: execution ID: $id"
+
+    if {$fg eq {execute_wait}} {
+      if {$id >= 0} {
+        vwait execute(pipe,$id)
+      }
+      xschem set semaphore [expr {[xschem get semaphore] -1}]
+    }
     return $id
   } else {
     return -1
   }
-  
 }
 
 proc gaw_echoline {} {
@@ -1755,8 +2063,8 @@ proc gaw_echoline {} {
 proc setup_tcp_gaw {} {
   global gaw_fd gaw_tcp_address netlist_dir has_x
  
+  regsub {/$} $netlist_dir {} netlist_dir
   if { [info exists gaw_fd] } { return 1; } 
-  simuldir
   set custom_netlist_file [xschem get netlist_name]
   if {$custom_netlist_file ne {}} {
     set s [file rootname $custom_netlist_file]
@@ -1775,7 +2083,7 @@ proc setup_tcp_gaw {} {
     }
     return 0
   }
-  chan configure $gaw_fd -blocking 1 -buffering line -encoding binary -translation binary
+  fconfigure $gaw_fd -blocking 1 -buffering line -encoding binary -translation binary
   fileevent $gaw_fd readable gaw_echoline
   puts $gaw_fd "table_set $s.raw"
   return 1
@@ -1784,7 +2092,7 @@ proc setup_tcp_gaw {} {
 proc gaw_cmd {cmd} {
   global gaw_fd gaw_tcp_address netlist_dir has_x
 
-  simuldir
+  regsub {/$} $netlist_dir {} netlist_dir
   if { ![info exists gaw_fd] && [catch {eval socket $gaw_tcp_address} gaw_fd] } {
     puts "Problems opening socket to gaw on address $gaw_tcp_address"
     unset gaw_fd
@@ -1796,7 +2104,7 @@ proc gaw_cmd {cmd} {
     }
     return
   }
-  chan configure $gaw_fd -blocking 0 -buffering line -encoding binary -translation binary
+  fconfigure $gaw_fd -blocking 0 -buffering line -encoding binary -translation binary
   puts $gaw_fd "$cmd"
   set n [regexp -all \n $cmd]
   incr n
@@ -1818,7 +2126,7 @@ proc gaw_cmd {cmd} {
   unset gaw_fd
 }
 
-proc waves {} { 
+proc waves {{type {}}} { 
   ## $N : netlist file full path (/home/schippes/simulations/opamp.spice) 
   ## $n : netlist file full path with extension chopped (/home/schippes/simulations/opamp)
   ## $s : schematic name (opamp) or netlist_name if given
@@ -1826,9 +2134,13 @@ proc waves {} {
   ## $d : netlist directory
 
   global netlist_dir terminal sim XSCHEM_SHAREDIR has_x 
-  global bespice_listen_port env
+  global bespice_listen_port env simulate_bg execute
 
-  simuldir
+  regsub {/$} $netlist_dir {} netlist_dir
+  if {$type ne {external} } {
+    load_raw $type
+    return
+  }
   set netlist_type [xschem get netlist_type]
   set_sim_defaults
   if { [set_netlist_dir 0] ne {}} {
@@ -1849,7 +2161,7 @@ proc waves {} {
       set N ${n}.${tool}
     }
     set tool ${tool}wave
-    if { ![info exists  sim($tool,default)] } {
+    if {![info exists  sim($tool,default)] } {
       if { [info exists has_x] } {alert_ "Warning: viewer for $tool is not configured"}
       puts "Warning: viewer for $tool is not configured"
       return
@@ -1862,11 +2174,20 @@ proc waves {} {
     } else {
       set fg {execute}
     }
+    set cmd [subst -nobackslashes $sim($tool,$def,cmd)]
+
     set save [pwd]
     cd $netlist_dir
-    set cmd [subst -nobackslashes $sim($tool,$def,cmd)]
-    eval $fg $st $cmd
+    set id [eval execute $st $cmd]
     cd $save
+
+    if {$fg eq {execute_wait}} {
+      if {$id >= 0} {
+        xschem set semaphore [expr {[xschem get semaphore] +1}]
+        vwait execute(pipe,$id)
+        xschem set semaphore [expr {[xschem get semaphore] -1}]
+      }
+    }
   }
 }
 # ============================================================
@@ -1883,8 +2204,9 @@ proc graph_push_undo {} {
 
 # allow change color (via graph_change_wave_color) of double clicked wave
 proc graph_edit_wave {n n_wave} {
-  global graph_sel_color graph_selected colors graph_sel_wave
+  global graph_sel_color graph_selected graph_sel_wave
   global graph_schname cadlayers
+  if {[winfo exists .graphdialog]} {return}
   set graph_schname [xschem get schname]
   set_ne graph_sel_color 4
   set graph_selected $n
@@ -1903,13 +2225,16 @@ proc graph_edit_wave {n n_wave} {
   xschem setprop rect 2 $graph_selected color $col fast
   xschem draw_graph  $graph_selected
   toplevel .graphdialog -class Dialog
-  wm transient .graphdialog .
+  wm transient .graphdialog [xschem get topwindow]
   frame .graphdialog.f
-  button .graphdialog.ok -text OK -command {destroy .graphdialog}
+  button .graphdialog.ok -text OK -command {
+    destroy .graphdialog
+  }
   button .graphdialog.cancel -text Cancel -command {destroy .graphdialog}
   for {set i 4} {$i < $cadlayers} {incr i} {
-    radiobutton .graphdialog.f.r$i -value $i -bg [lindex $colors $i] \
-         -variable graph_sel_color -command {graph_change_wave_color $graph_sel_wave }
+    radiobutton .graphdialog.f.r$i -value $i -background [lindex $tctx::colors $i] \
+         -variable graph_sel_color -command {graph_change_wave_color $graph_sel_wave } \
+         -selectcolor white -foreground black
     pack .graphdialog.f.r$i -side left -fill both -expand yes
   }
   grid .graphdialog.f  - -sticky nsew
@@ -1945,13 +2270,13 @@ proc graph_edit_wave {n n_wave} {
 # add nodes from provided list of {node color} .... 
 # used in hilight_net()
 proc graph_add_nodes_from_list {nodelist} {
-  global graph_bus graph_selected graph_schname
+  global graph_bus graph_selected graph_schname has_x
   if {$graph_bus} {
     set sep ,
   } else {
     set sep \n
   }
-  if { [winfo exists .graphdialog] } {
+  if { [info exists has_x] && [winfo exists .graphdialog] } {
     set sel {}
     set current_node_list [.graphdialog.center.right.text1 get 1.0 {end - 1 chars}]
     set col  [xschem getprop rect 2 $graph_selected color]
@@ -1971,7 +2296,7 @@ proc graph_add_nodes_from_list {nodelist} {
       set first 1
     }
     if {$change_done && $graph_bus} {
-      set sel "[string toupper $busname],${sel}\n"
+      set sel "[string toupper $busname];${sel}\n"
     } else {
       set sel "${sel}\n"
     }
@@ -2003,7 +2328,7 @@ proc graph_add_nodes_from_list {nodelist} {
       set first 1
     }
     if {$change_done && $graph_bus} {
-      set sel "[string toupper $busname],${sel}\n"
+      set sel "[string toupper $busname];${sel}\n"
     } else {
       set sel "${sel}\n"
     }
@@ -2038,6 +2363,7 @@ proc graph_add_nodes {} {
   set change_done 0
   foreach i $sel_idx {
     set c [.graphdialog.center.left.list1 get $i]
+    # escape [ and ] characters.
     set c [regsub -all {([][])}  $c {\\\1}]
     if { ![regexp "(^|\[ \t\n\])${c}($|\[ \t\n\])" $current_node_list]} {
       if {$sel ne {}} {append sel $sep}
@@ -2046,7 +2372,7 @@ proc graph_add_nodes {} {
     }
   }
   if {$change_done && $graph_bus} {
-    set sel "BUS_NAME,${sel}\n"
+    set sel "BUS_NAME;${sel}\n"
   } else {
     set sel "${sel}\n"
   }
@@ -2073,6 +2399,29 @@ proc graph_get_signal_list {siglist pattern } {
   return $result
 }
 
+proc touches {sel tag} {
+  set res 0
+  scan $sel {%d.%d %d.%d} sel_linestart sel_charstart sel_lineend sel_charend
+  scan $tag {%d.%d %d.%d} tag_linestart tag_charstart tag_lineend tag_charend
+  set selstart [expr {$sel_linestart * 1000000 + $sel_charstart}]
+  set selend [expr {$sel_lineend * 1000000 + $sel_charend}]
+  set tagstart [expr {$tag_linestart * 1000000 + $tag_charstart}]
+  set tagend [expr {$tag_lineend * 1000000 + $tag_charend}]
+  # puts "selstart: $selstart"
+  # puts "selend: $selend"
+  # puts "tagstart: $tagstart"
+  # puts "tagend: $tagend"
+  if { ($tagstart >= $selstart && $tagstart <= $selend) ||
+       ($tagend >= $selstart && $tagend <= $selend) ||
+       ($selstart >= $tagstart && $selstart <= $tagend) ||
+       ($selend >= $tagstart && $selend <= $tagend)
+     } {
+    set res 1
+  }
+  # puts "touch: returning $res"
+  return $res
+}
+
 # change color of selected wave in text widget and redraw graph
 # OR
 # change color attribute of wave given as parameter, redraw graph
@@ -2082,14 +2431,34 @@ proc graph_change_wave_color {{wave {}}} {
   if { [xschem get schname] ne $graph_schname } return
   #  get tag the cursor is on:
   if { $wave eq {}} {
-    set tag [.graphdialog.center.right.text1 tag names insert]
-    if { [regexp {^t} $tag]} {
-      set index [string range $tag 1 end]
-      set col  [xschem getprop rect 2 $graph_selected color]
-      set col [lreplace $col $index $index  $graph_sel_color]
-      xschem setprop rect 2 $graph_selected color $col fast
+    set sel_range [.graphdialog.center.right.text1 tag ranges sel]
+    if {$sel_range ne {}} {
+      # puts "sel_range --> $sel_range"
+      foreach tag [.graphdialog.center.right.text1 tag names] {
+        if {$tag eq {sel}} {continue}
+        set tag_range [.graphdialog.center.right.text1 tag ranges $tag]
+        # puts "$tag --> $tag_range"
+
+        if { [touches $sel_range $tag_range]} {
+          set index [string range $tag 1 end]
+          set col  [xschem getprop rect 2 $graph_selected color]
+          set col [lreplace $col $index $index  $graph_sel_color]
+          xschem setprop rect 2 $graph_selected color $col fast
+        }
+      }
       graph_update_nodelist
       xschem draw_graph $graph_selected
+    } else {
+      set tag [.graphdialog.center.right.text1 tag names insert]
+      if { $tag eq {}} {set tag [.graphdialog.center.right.text1 tag names {insert - 1 char}]}
+      if { [regexp {^t} $tag]} {
+        set index [string range $tag 1 end]
+        set col  [xschem getprop rect 2 $graph_selected color]
+        set col [lreplace $col $index $index  $graph_sel_color]
+        xschem setprop rect 2 $graph_selected color $col fast
+        graph_update_nodelist
+        xschem draw_graph $graph_selected
+      }
     }
   # wave to change provided as parameter
   } else {
@@ -2100,57 +2469,64 @@ proc graph_change_wave_color {{wave {}}} {
   }
 }
 
-# tag nodes in text widget with assigned colors 
-proc graph_update_nodelist {} {
-  global graph_selected colors graph_sel_color graph_schname
-  if { [xschem get schname] ne $graph_schname } return
+# set txt [xschem getprop rect 2 $n node 2]
+# set txt [.graphdialog.center.right.text1 get 1.0 {end - 1 chars}]
+# return first and last indexes of nodes in txt
+proc graph_tag_nodes {txt} {
+  global graph_selected graph_sel_color
   # delete old tags
-  eval .graphdialog.center.right.text1 tag delete [ .graphdialog.center.right.text1 tag names]
-  # tagging nodes in text widget:
-  set col  [xschem getprop rect 2 $graph_selected color]
-  set col [string trim $col " \n"]
-
-  set regx {(?:(tcleval\()?"[^"]+"\)?)|(?:(tcleval\()?[^\n \t]+\)?)}
-  set txt [.graphdialog.center.right.text1 get 1.0 {end - 1 chars}]
+  if { [winfo exists .graphdialog.center.right.text1] } {
+    eval .graphdialog.center.right.text1 tag delete [ .graphdialog.center.right.text1 tag names] 
+    set col  [xschem getprop rect 2 $graph_selected color]
+    set col [string trim $col " \n"]
+  }
+  # non capturing `tcleval(` at beginning and `)` at end
+  set regx {(?:tcleval\(\n*)?("[^"]+"|[^ \t\n)]+)(?:\))?}
   set tt {}
   set cc {}
   set start 0
-  while {[regexp -indices -start $start $regx $txt idx]} {
+
+  while {[regexp -indices -start $start $regx $txt idxall idx]} {
     lappend tt [lindex $idx 0]
     set start [expr {[lindex $idx 1] + 1}]
     lappend cc $start
   }
-
-  set n 0
-  if { $tt ne {} } {
-    foreach t $tt c $cc {
-      set col_idx [lindex $col $n]
-      # add missing colors
-      if {$col_idx eq {}} {
-        set col_idx $graph_sel_color
-        lappend col $graph_sel_color
+  if { [winfo exists .graphdialog.center.right.text1] } {
+    set n 0
+    if { $tt ne {} } {
+      foreach t $tt c $cc {
+        set col_idx [lindex $col $n]
+        # add missing colors
+        if {$col_idx eq {}} {
+          set col_idx $graph_sel_color
+          lappend col $graph_sel_color
+        }
+        set b [lindex $tctx::colors $col_idx]
+        .graphdialog.center.right.text1 tag add t$n "1.0 + $t chars" "1.0 + $c chars"
+        if { [info tclversion] > 8.4} {
+          .graphdialog.center.right.text1 tag configure t$n -background $b -selectbackground grey40
+        } else {
+          .graphdialog.center.right.text1 tag configure t$n -background $b
+        }
+        incr n
       }
-      set b [lindex $colors $col_idx]  
-      .graphdialog.center.right.text1 tag add t$n "1.0 + $t chars" "1.0 + $c chars"
-
-      if { [info tclversion] > 8.4} {
-        .graphdialog.center.right.text1 tag configure t$n -background $b -selectbackground grey40
-      } else {
-        .graphdialog.center.right.text1 tag configure t$n -background $b
-      }
-      
-      incr n
+      # remove excess colors
+      set col [lrange $col 0 [expr {$n - 1}]]
+    } else {
+      set col {}
     }
-    # remove excess colors
-    set col [lrange $col 0 [expr {$n - 1}]]
-    ## for debug
-    # if { [llength $col] != [llength [tolist [.graphdialog.center.right.text1 get 1.0 {end - 1 chars}]]] } {
-    #   puts "PROBLEMS: colors and nodes of different length"
-    # }
-  } else {
-    set col {}
+    xschem setprop rect 2 $graph_selected color $col fast
   }
-  xschem setprop rect 2 $graph_selected color $col fast
+  return [list $tt $cc] 
+}
+
+# tag nodes in text widget with assigned colors 
+proc graph_update_nodelist {} {
+  global graph_selected graph_sel_color graph_schname
+  if { [xschem get schname] ne $graph_schname } return
+  # tagging nodes in text widget:
+  set txt [.graphdialog.center.right.text1 get 1.0 {end - 1 chars}]
+  graph_tag_nodes $txt
 }
 
 proc graph_fill_listbox {} {
@@ -2161,7 +2537,11 @@ proc graph_fill_listbox {} {
   set sim_type [uplevel #0 {subst [xschem getprop rect 2 $graph_selected sim_type 2]}]
   # puts "graph_fill_listbox: $rawfile $sim_type"
   if {$rawfile ne {}} {
-    set res [xschem raw read $rawfile $sim_type]
+    if {$sim_type eq {table}} {
+      set res [xschem raw table_read $rawfile $sim_type]
+    } else {
+      set res [xschem raw read $rawfile $sim_type]
+    }
     if {$res} {
       set retval [graph_get_signal_list [xschem raw_query list] $retval]
     } else {
@@ -2181,6 +2561,8 @@ proc graph_fill_listbox {} {
 proc graph_update_node {node} {
   global graph_selected
   graph_update_nodelist
+  # add a backslash before " and \ characters
+  # note the double escaping for regsub replace string
   regsub -all {[\\"]} $node "\\\\&" node_quoted
   graph_push_undo
   xschem setprop rect 2 $graph_selected node $node_quoted fast
@@ -2206,22 +2588,46 @@ proc graph_set_linewidth {graph_sel} {
     set custom_lw  $graph_linewidth_mult
   }
   graph_push_undo
-  xschem setprop rect 2 $graph_sel linewidth_mult $custom_lw
+  if {$custom_lw != $graph_linewidth_mult} {
+    xschem setprop rect 2 $graph_sel linewidth_mult $custom_lw
+  } else {
+    xschem setprop rect 2 $graph_sel linewidth_mult ;# delete attribute since it is default
+  }
+}
+
+proc raw_is_loaded {rawfile type} {
+  set loaded 0
+
+  set r [catch "uplevel #0 {subst $rawfile}" res]
+  if {$r == 0} {
+    set rawfile $res
+  } else {
+    return $loaded
+  }
+  set rawlist [lrange [xschem raw info] 2 end]
+  foreach {n f t} $rawlist {
+    if {$rawfile eq $f && $type eq $t} {
+       set loaded 1
+       break
+    }
+  }
+  return $loaded
 }
 
 proc graph_edit_properties {n} {
-  global graph_bus graph_sort graph_digital graph_selected colors graph_sel_color
-  global graph_unlocked graph_schname graph_logx graph_logy cadlayers graph_rainbow
-  global graph_linewidth_mult graph_change_done
+  global graph_bus graph_sort graph_digital graph_selected graph_sel_color
+  global graph_unlocked graph_schname graph_logx graph_logy cadlayers graph_rainbow 
+  global graph_linewidth_mult graph_change_done has_x graph_dialog_default_geometry
+
+  if { ![info exists has_x]} {return} 
   set graph_change_done 0
-  set geom {}
   if { [winfo exists .graphdialog]} {
-    set geom [winfo geometry .graphdialog]
+    set graph_dialog_default_geometry [winfo geometry .graphdialog]
   } 
   catch {destroy .graphdialog}
   toplevel .graphdialog -class Dialog ;# -width 1 -height 1
   wm withdraw .graphdialog
-  wm transient .graphdialog .
+  wm transient .graphdialog [xschem get topwindow]
   update idletasks
 
   set graph_selected $n
@@ -2278,15 +2684,16 @@ proc graph_edit_properties {n} {
 
   # center right frame
   label .graphdialog.center.right.lab1 -text { Signals in graph }
+  label .graphdialog.center.right.lab2 -text {    Sim type:}
   if { [info tclversion] > 8.4} {
-    ttk::combobox .graphdialog.center.right.list -values {dc ac tran op sp noise}  -width 4
+    ttk::combobox .graphdialog.center.right.list -values {dc ac tran op sp spectrum noise table}  -width 9
   } else {
     entry .graphdialog.center.right.list -width 4
   }
   if { [info tclversion] > 8.4} {
     bind .graphdialog.center.right.list <<ComboboxSelected>> {
       xschem setprop rect 2 $graph_selected sim_type [.graphdialog.center.right.list get] fast
-      if {[file_exists [.graphdialog.center.right.rawentry get]]} {
+      if {[raw_is_loaded [.graphdialog.center.right.rawentry get] [.graphdialog.center.right.list get]]} {
         graph_fill_listbox
       }
     }
@@ -2306,47 +2713,59 @@ proc graph_edit_properties {n} {
 
   bind .graphdialog.center.right.list <KeyRelease> {
     xschem setprop rect 2 $graph_selected sim_type [.graphdialog.center.right.list get] fast
-    if {[file_exists [.graphdialog.center.right.rawentry get]]} {
+    if {[raw_is_loaded [.graphdialog.center.right.rawentry get] [.graphdialog.center.right.list get]]} {
       graph_fill_listbox
     }
   }
 
 
-  label .graphdialog.center.right.rawlab -text { Raw file: }
   entry .graphdialog.center.right.rawentry -width 30
+  button .graphdialog.center.right.rawbut -text {Raw file:} -command {
+    regsub {/$} $netlist_dir {} netlist_dir
+   .graphdialog.center.right.rawentry delete 0 end
+   .graphdialog.center.right.rawentry insert 0 [string map [list $netlist_dir {$netlist_dir}] [select_raw]]
+    xschem setprop rect 2 $graph_selected rawfile [.graphdialog.center.right.rawentry get] fast
+    xschem setprop rect 2 $graph_selected sim_type [.graphdialog.center.right.list get] fast
+    if {[raw_is_loaded [.graphdialog.center.right.rawentry get] [.graphdialog.center.right.list get]]} {
+      graph_fill_listbox
+    }
+
+  }
 
   bind .graphdialog.center.right.rawentry <KeyRelease> {
     xschem setprop rect 2 $graph_selected rawfile [.graphdialog.center.right.rawentry get] fast
     xschem setprop rect 2 $graph_selected sim_type [.graphdialog.center.right.list get] fast
-    if {[file_exists [.graphdialog.center.right.rawentry get]]} {
+    if {[raw_is_loaded [.graphdialog.center.right.rawentry get] [.graphdialog.center.right.list get]]} {
       graph_fill_listbox
     }
   }
   .graphdialog.center.right.rawentry insert 0 [xschem getprop rect 2 $graph_selected rawfile 2]
   .graphdialog.center.right.rawentry xview moveto 1
-  text .graphdialog.center.right.text1 -wrap none -width 50 -height 5 -bg grey70 -fg black \
+  text .graphdialog.center.right.text1 -wrap none -width 50 -height 5 -background grey90 -fg black \
      -insertbackground grey40 -exportselection 1 \
      -yscrollcommand {.graphdialog.center.right.yscroll set} \
      -xscrollcommand {.graphdialog.center.right.xscroll set}
   scrollbar .graphdialog.center.right.yscroll -command {.graphdialog.center.right.text1 yview}
   scrollbar .graphdialog.center.right.xscroll -orient horiz -command {.graphdialog.center.right.text1 xview}
 
-  grid .graphdialog.center.right.lab1 .graphdialog.center.right.list .graphdialog.center.right.rawlab \
-       .graphdialog.center.right.rawentry -
+  grid .graphdialog.center.right.lab1 .graphdialog.center.right.lab2 .graphdialog.center.right.list \
+       .graphdialog.center.right.rawbut  .graphdialog.center.right.rawentry -
   grid configure .graphdialog.center.right.rawentry -sticky ew
-  grid .graphdialog.center.right.text1 - - - .graphdialog.center.right.yscroll -sticky nsew
-  grid .graphdialog.center.right.xscroll - - - - -sticky ew
+  grid .graphdialog.center.right.text1 - - - - .graphdialog.center.right.yscroll -sticky nsew
+  grid .graphdialog.center.right.xscroll - - - - - -sticky ew
   grid rowconfig .graphdialog.center.right 0 -weight 0
   grid rowconfig .graphdialog.center.right 1 -weight 1 -minsize 3c
   grid rowconfig .graphdialog.center.right 2 -weight 0
   grid columnconfig .graphdialog.center.right 0 -weight 0
   grid columnconfig .graphdialog.center.right 1 -weight 0
   grid columnconfig .graphdialog.center.right 2 -weight 0
-  grid columnconfig .graphdialog.center.right 3 -weight 1
-  grid columnconfig .graphdialog.center.right 4 -weight 0
+  grid columnconfig .graphdialog.center.right 3 -weight 0
+  grid columnconfig .graphdialog.center.right 4 -weight 1
+  grid columnconfig .graphdialog.center.right 5 -weight 0
 
   # bottom frame
   button .graphdialog.bottom.cancel -text Cancel -command {
+    set graph_dialog_default_geometry [winfo geometry .graphdialog]
     destroy .graphdialog
     set graph_selected {}
     set graph_schname {}
@@ -2365,6 +2784,7 @@ proc graph_edit_properties {n} {
         xschem setprop rect 2 $graph_selected flags {graph} fast
       }
     }
+    set graph_dialog_default_geometry [winfo geometry .graphdialog]
     destroy .graphdialog
     set graph_selected {}
     set graph_schname {}
@@ -2391,8 +2811,8 @@ proc graph_edit_properties {n} {
   pack .graphdialog.bottom.cancel -side left
 
   for {set i 4} {$i < $cadlayers} {incr i} {
-    radiobutton .graphdialog.bottom.r$i -value $i -bg [lindex $colors $i] \
-      -variable graph_sel_color -command graph_change_wave_color
+    radiobutton .graphdialog.bottom.r$i -value $i -background [lindex $tctx::colors $i] \
+      -variable graph_sel_color -command graph_change_wave_color -selectcolor white -foreground black
     pack .graphdialog.bottom.r$i -side left
   }
 
@@ -2499,7 +2919,7 @@ proc graph_edit_properties {n} {
   # top frame
   label .graphdialog.top.labsearch -text Search:
   entry .graphdialog.top.search -width 10 
-  checkbutton .graphdialog.top.bus -text Bus -padx 2 -variable graph_bus
+  checkbutton .graphdialog.top.bus -text Bus -padx 2 -variable graph_bus 
   checkbutton .graphdialog.top.incr -text {Incr. sort} -variable graph_sort -indicatoron 1 \
     -command graph_fill_listbox
   checkbutton .graphdialog.top.rainbow -text {Rainbow col.} -variable graph_rainbow \
@@ -2522,7 +2942,14 @@ proc graph_edit_properties {n} {
   } else {
     .graphdialog.top.lwe insert 0 $custom_lw
   }
-  checkbutton .graphdialog.top.unlocked -text {Unlock. X axis} -variable graph_unlocked
+  checkbutton .graphdialog.top.unlocked -text {Unlock. X axis} -variable graph_unlocked \
+  -command {
+      if {$graph_unlocked} {
+        xschem setprop rect 2 $graph_selected flags {graph,unlocked} fast
+      } else {
+        xschem setprop rect 2 $graph_selected flags {graph} fast
+      }
+  }
   checkbutton .graphdialog.top.dig -text {Digital} -variable graph_digital -indicatoron 1 \
     -command {
        if { [xschem get schname] eq $graph_schname } {
@@ -2682,7 +3109,7 @@ proc graph_edit_properties {n} {
   graph_fill_listbox
 
   # fill data in right textbox
-  set plotted_nodes [xschem getprop rect 2 $n node 0]
+  set plotted_nodes [xschem getprop rect 2 $n node 2]
   if {[string length $plotted_nodes] > 0 && [string index $plotted_nodes end] ne "\n"} {append plotted_nodes \n}
   .graphdialog.center.right.text1 insert 1.0 $plotted_nodes
   graph_update_nodelist
@@ -2690,12 +3117,13 @@ proc graph_edit_properties {n} {
   # .graphdialog.center.right.text1 insert {insert lineend + 1 char} foo\n
   # tkwait window .graphdialog
   wm deiconify .graphdialog
-  if {$geom ne {}} { wm geometry .graphdialog $geom}
+  if {$graph_dialog_default_geometry ne {}} { wm geometry .graphdialog $graph_dialog_default_geometry}
 }
 
 proc graph_show_measure {{action show}} {
-  global measure_id measure_text
+  global measure_id measure_text has_x
  
+  if {![info exists has_x]} return;
   set_ne measure_text "y=\nx="
   if { [info exists measure_id] } {
     after cancel $measure_id
@@ -2705,8 +3133,8 @@ proc graph_show_measure {{action show}} {
   if {$action eq {stop}} { return }
   set measure_id [after 400 {
     unset measure_id
-    toplevel .measure -bg {}
-    label .measure.lab -text $measure_text -bg black -fg yellow -justify left
+    toplevel .measure -background {}
+    label .measure.lab -text $measure_text -background black -fg yellow -justify left
     pack .measure.lab
     wm overrideredirect .measure 1
     wm geometry .measure +[expr {[winfo pointerx .measure] +10}]+[expr {[winfo pointery .measure] -8}]
@@ -2718,6 +3146,7 @@ proc get_shell { {curpath {}} } {
  global netlist_dir debug_var
  global  terminal
 
+ regsub {/$} $netlist_dir {} netlist_dir
  set save [pwd]
  if { $curpath ne {} } {
    cd $curpath
@@ -2732,7 +3161,7 @@ proc edit_netlist {netlist } {
  global netlist_dir debug_var
  global editor terminal OS
 
- simuldir
+ regsub {/$} $netlist_dir {} netlist_dir
  set netlist_type [xschem get netlist_type]
 
  if { [regexp vim $editor] } { set ftype "-c \":set filetype=$netlist_type\"" } else { set ftype {} }
@@ -2772,6 +3201,42 @@ proc save_file_dialog { msg ext global_initdir {initialf {}} {overwrt 1} } {
   set initdir $temp
   return $r
 }
+
+# opens indicated instance (or selected one) into a separate tab/window
+# keeping the hierarchy path, as it was descended into (as with 'e' key).
+proc open_sub_schematic {{inst {}} {inst_number 0}} {
+  set one_sel [expr {[xschem get lastsel] == 1}]
+  if { $inst eq {} && $one_sel} {
+    set inst [lindex [xschem selected_set] 0]
+    xschem unselect_all
+  } else {
+    set instlist {}
+    # get list of instances (instance names only) 
+    foreach {i s t} [xschem instance_list] {lappend instlist $i}
+    # if provided $inst is not in the list return 0
+    if {[lsearch -exact $instlist $inst] == -1} {return 0}
+  }
+  # open a new top level in another window / tab
+  set rawfile [xschem raw_query rawfile]
+  set sim_type [xschem raw_query sim_type]
+  set res [xschem schematic_in_new_window force]
+  # if successfull descend into indicated sub-schematic
+  if {$res} {
+    xschem new_schematic switch [xschem get last_created_window]
+    if { $rawfile ne {}} {
+      if {$sim_type eq {op}} {
+        xschem annotate_op $rawfile
+      } else {
+        xschem raw_read $rawfile $sim_type
+      }
+    }
+    xschem select instance $inst fast
+    xschem descend
+    return 1
+  }
+  return 0
+}
+
 
 proc is_xschem_file {f} {
   if { ![file exists $f] } { return 0 
@@ -2879,26 +3344,30 @@ proc cleanup {} {
 }
 
 proc display {} {
-    variable c_t
-    if { [winfo exists $c_t(w)]} {
-      set w $c_t(w)
-      set n $c_t(n)
-      cleanup
-      destroy $w.title
-      for {set i 0} {$i < $n} {incr i} {
-        destroy $w.b$i
-      }
-      set i $c_t(top)
-      button $w.title -text Recent -pady 0 -padx 0 -width 7 -state disabled -disabledforeground black \
-        -background grey60 -highlightthickness 0 -borderwidth 0 -font {TkDefaultFont 12 bold}
-      pack $w.title -side top -fill x
-      while {1} {
-        button $w.b$i -text $c_t($i,text)  -pady 0 -padx 0 -command $c_t($i,command) -width 7
-        pack $w.b$i -side top -fill x
-        set i [expr {($i + 1) % $n}]
-        if { $i == $c_t(top) } break
-      }
+  global has_x
+  variable c_t
+  
+  if {![info exists has_x]} {return}
+
+  if { [winfo exists $c_t(w)]} {
+    set w $c_t(w)
+    set n $c_t(n)
+    cleanup
+    destroy $w.title
+    for {set i 0} {$i < $n} {incr i} {
+      destroy $w.b$i
     }
+    set i $c_t(top)
+    button $w.title -text Recent -pady 0 -padx 0 -state disabled -disabledforeground black \
+      -background grey60 -borderwidth 0 -font {TkDefaultFont 12 bold}
+    pack $w.title -side top -fill x
+    while {1} {
+      button $w.b$i -text $c_t($i,text)  -pady 0 -padx 0 -command $c_t($i,command) -takefocus 0
+      pack $w.b$i -side top -fill x
+      set i [expr {($i + 1) % $n}]
+      if { $i == $c_t(top) } break
+    }
+  }
 }
 
 proc add {f} {
@@ -2910,7 +3379,11 @@ proc add {f} {
     set ret 1
     set i [expr { ($c_t(top)-1) % $c_t(n) } ];# last element
     set c_t($i,file) $f
-    set c_t($i,command) "xschem abort_operation; myload_display_preview {$f}; xschem place_symbol {$f} "
+    set c_t($i,command) "
+      set file_dialog_retval {}
+      xschem abort_operation
+      file_dialog_display_preview {$f}
+      xschem place_symbol {$f} "
     set c_t($i,text)  [file tail [file rootname $f]]
     set c_t(top) $i
     if {$ret} {write_recent_file}
@@ -2919,11 +3392,11 @@ proc add {f} {
 }
 ## end Recent component toolbar
 
-proc myload_set_colors1 {} {
-  global myload_files1 dircolor
+proc file_dialog_set_colors1 {} {
+  global file_dialog_files1 dircolor
   for {set i 0} { $i< [.load.l.paneleft.list index end] } { incr i} {
     set maxlen 0
-    set name "[lindex $myload_files1 $i]"
+    set name "[lindex $file_dialog_files1 $i]"
     .load.l.paneleft.list itemconfigure $i -foreground black -selectforeground black
     foreach j [array names dircolor] {
       set pattern $j
@@ -2937,33 +3410,47 @@ proc myload_set_colors1 {} {
   }
 }
 
-proc myload_set_colors2 {} {
-  global myload_index1 myload_files2 dircolor
-  set dir1 [abs_sym_path [.load.l.paneleft.list get $myload_index1]]
-  for {set i 0} { $i< [.load.l.paneright.list index end] } { incr i} {
+proc file_dialog_set_colors2 {} {
+  global file_dialog_index1 file_dialog_files2 dircolor file_dialog_files1
+  set dir1 [abs_sym_path [lindex $file_dialog_files1 $file_dialog_index1]]
+  for {set i 0} { $i< [.load.l.paneright.f.list index end] } { incr i} {
     set maxlen 0
-    set name "$dir1/[lindex $myload_files2 $i]"
+    set name "$dir1/[lindex $file_dialog_files2 $i]"
     if {[ file isdirectory $name]} {
-      .load.l.paneright.list itemconfigure $i -foreground blue
+      .load.l.paneright.f.list itemconfigure $i -foreground blue
       foreach j [array names dircolor] {
         set pattern $j 
         set color $dircolor($j)
         set len [string length [regexp -inline $pattern $dir1]]
         # puts "len=$len\npattern=$pattern\nname=$name\n\n\n"
         if { $len > $maxlen } {
-          .load.l.paneright.list itemconfigure $i -foreground $color -selectforeground $color
+          .load.l.paneright.f.list itemconfigure $i -foreground $color -selectforeground $color
           set maxlen $len
         }
       }
 
     } else {
-      .load.l.paneright.list itemconfigure $i -foreground black
+      .load.l.paneright.f.list itemconfigure $i -foreground black
     }
   }
 }
 
-proc myload_set_home {dir} {
-  global pathlist  myload_files1 myload_index1
+proc file_dialog_set_names1 {} {
+  global file_dialog_names1 file_dialog_files1 load_file_dialog_fullpath
+  
+  set file_dialog_names1 {}
+  foreach i $file_dialog_files1 {
+    if { $load_file_dialog_fullpath == 1} {
+      set item $i
+    } else {
+      set item [get_cell $i 0]
+    }
+    lappend file_dialog_names1 $item
+  }
+}
+  
+proc file_dialog_set_home {dir} {
+  global pathlist  file_dialog_files1 file_dialog_index1 file_dialog_names1
 
   set curr_dirname [xschem get current_dirname]
   .load.l.paneleft.list selection clear 0 end
@@ -2978,74 +3465,78 @@ proc myload_set_home {dir} {
   }
   set i [lsearch -exact $pl $dir]
   if { $i>=0 } {
-    set myload_files1 $pathlist
+    set file_dialog_files1 $pathlist
+    file_dialog_set_names1
     update
-    myload_set_colors1
+    file_dialog_set_colors1
     .load.l.paneleft.list xview moveto 1
-    set myload_index1 $i
-    .load.l.paneleft.list selection set $myload_index1
+    set file_dialog_index1 $i
+    .load.l.paneleft.list selection set $file_dialog_index1
   } else {
-    set myload_files1 [list $dir]
+    set file_dialog_files1 [list $dir]
+    file_dialog_set_names1
     update
-    myload_set_colors1
+    file_dialog_set_colors1
     .load.l.paneleft.list xview moveto 1
-    set myload_index1 0
+    set file_dialog_index1 0
     .load.l.paneleft.list selection set 0
   }
 }
 
 proc setglob {dir} {
-      global myload_globfilter myload_files2 OS
-      set myload_files2 [lsort [glob -nocomplain -directory $dir -tails -type d .* *]]
-      if { $myload_globfilter eq {*}} {
-        set myload_files2 ${myload_files2}\ [lsort [
-           glob -nocomplain -directory $dir -tails -type {f} .* $myload_globfilter]]
+      global file_dialog_globfilter file_dialog_files2 OS
+      # puts "setglob: $dir, filter=$file_dialog_globfilter"
+      set file_dialog_files2 [lsort [glob -nocomplain -directory $dir -tails -type d .* *]]
+      if { $file_dialog_globfilter eq {*}} {
+        set file_dialog_files2 ${file_dialog_files2}\ [lsort [
+           glob -nocomplain -directory $dir -tails -type {f} .* $file_dialog_globfilter]]
       } else {
         if {$OS == "Windows"} {
-          regsub {:} $myload_globfilter {\:} myload_globfilter
+          regsub {:} $file_dialog_globfilter {\:} file_dialog_globfilter
         }
-        set myload_files2 ${myload_files2}\ [lsort [
-           glob -nocomplain -directory $dir -tails -type {f} $myload_globfilter]]
+        set file_dialog_files2 ${file_dialog_files2}\ [lsort [
+           glob -nocomplain -directory $dir -tails -type {f} $file_dialog_globfilter]]
       }
 }
 
 proc load_file_dialog_mkdir {dir} {
-  global myload_dir1 has_x
+  global file_dialog_dir1 has_x
   if { $dir ne {} } {
-    if {[catch {file mkdir "${myload_dir1}/$dir"} err]} {
+    if {[catch {file mkdir "${file_dialog_dir1}/$dir"} err]} {
       puts $err
-      if {$has_x} {
+      if {[info exists has_x]} {
         tk_messageBox -message "$err" -icon error -parent [xschem get topwindow] -type ok
       }
     }
-    setglob ${myload_dir1}
-    myload_set_colors2
+    setglob ${file_dialog_dir1}
+    file_dialog_set_colors2
   }
 }
 
 proc load_file_dialog_up {dir} {
-  global myload_dir1
+  global file_dialog_dir1
   bind .load.l.paneright.draw <Expose> {}
+  bind .load.l.paneright.draw <Configure> {}
   .load.l.paneright.draw configure -background white
   set d [file dirname $dir]
   if { [file isdirectory $d]} {
-    myload_set_home $d
+    file_dialog_set_home $d
     setglob $d
-    myload_set_colors2
-    set myload_dir1 $d
+    file_dialog_set_colors2
+    set file_dialog_dir1 $d
   }
 }
 
 
-proc myload_getresult {loadfile confirm_overwrt} {
-  global myload_dir1 myload_retval myload_ext has_x
-  if { $myload_retval ne {}} {
-    if { [regexp {^https?://} $myload_retval] } {
-      set fname $myload_retval
-    } elseif { [regexp {^/} $myload_retval]} {
-      set fname $myload_retval
+proc file_dialog_getresult {loadfile confirm_overwrt} {
+  global file_dialog_dir1 file_dialog_retval file_dialog_ext has_x
+  if { $file_dialog_retval ne {}} {
+    if { [regexp {^https?://} $file_dialog_retval] } {
+      set fname $file_dialog_retval
+    } elseif { [regexp {^/} $file_dialog_retval]} {
+      set fname $file_dialog_retval
     } else {
-      set fname "$myload_dir1/$myload_retval"
+      set fname "$file_dialog_dir1/$file_dialog_retval"
     }
     if {![file exists "$fname"] } {
       return "$fname"
@@ -3060,7 +3551,7 @@ proc myload_getresult {loadfile confirm_overwrt} {
         if {$answer eq {1}} {
           return "$fname"
         } else { 
-          set myload_retval {}
+          set file_dialog_retval {}
           return {}
         }
       }
@@ -3073,7 +3564,7 @@ proc myload_getresult {loadfile confirm_overwrt} {
         set answer 1
       }
       if { $answer eq {0}} {
-        set myload_retval {}
+        set file_dialog_retval {}
         return {}
       } else { ;# $answer == 1
         if { $type eq {GENERATOR} } {
@@ -3083,11 +3574,11 @@ proc myload_getresult {loadfile confirm_overwrt} {
         return "$fname"
       }
     # $type == SYMBOL or SCHEMATIC
-    } elseif { $type ne {SYMBOL} && ($myload_ext eq {*.sym}) } { ;# SCHEMATIC
+    } elseif { $type ne {SYMBOL} && ($file_dialog_ext eq {*.sym}) } { ;# SCHEMATIC
       set answer [
         alert_ "$fname does not seem to be a SYMBOL file...\nContinue?" {} 0 1]
       if { $answer eq {0}} {
-        set myload_retval {}
+        set file_dialog_retval {}
         return {}
       } else {
         return "$fname"
@@ -3100,32 +3591,93 @@ proc myload_getresult {loadfile confirm_overwrt} {
   }
 }
 
-proc myload_place_symbol {} {
-  global myload_retval
+proc file_dialog_place_symbol {} {
+  global file_dialog_retval
 
   set entry [.load.buttons_bot.entry get]
-  # puts "entry=$entry, myload_retval=$myload_retval"
-  set myload_retval  $entry
-  set sym [myload_getresult 2 0]
-  # puts "sym=$sym myload_dir1=$myload_dir1 myload_dir2=$myload_dir2"
+  # puts "entry=$entry"
+  set file_dialog_retval  $entry
+  set sym [file_dialog_getresult 2 0]
+  # puts "sym=$sym"
   xschem abort_operation
   if {$sym ne {}} {
     xschem place_symbol "$sym"
   }
 }
 
-proc myload_display_preview {f} {
+proc file_dialog_display_preview {f} {
   set type [is_xschem_file $f]
   if { $type ne {0} && $type ne {GENERATOR} } {
     if { [winfo exists .load] } {
       .load.l.paneright.draw configure -background {}
       xschem preview_window draw .load.l.paneright.draw "$f"
       bind .load.l.paneright.draw <Expose> [subst {xschem preview_window draw .load.l.paneright.draw "$f"}]
+      bind .load.l.paneright.draw <Configure> [subst {xschem preview_window draw .load.l.paneright.draw "$f"}]
     }
   } else {
     bind .load.l.paneright.draw <Expose> {}
+    bind .load.l.paneright.draw <Configure> {}
     .load.l.paneright.draw configure -background white
   }
+}
+
+proc file_dialog_right_listboxselect {dirselect} {
+    global file_dialog_yview file_dialog_dir1 file_dialog_dir2  file_dialog_retval file_dialog_sel
+    global OS file_dialog_loadfile file_dialog_index1 file_dialog_files1 file_dialog_globfilter
+    set file_dialog_yview [.load.l.paneright.f.list yview] 
+    set file_dialog_sel [.load.l.paneright.f.list curselection]
+    if { $file_dialog_sel ne {} } {
+      set curr_dir [abs_sym_path [lindex $file_dialog_files1 $file_dialog_index1]]
+      set curr_item [.load.l.paneright.f.list get $file_dialog_sel]
+
+      if {$curr_item eq {..}} {
+        set file_dialog_d [file dirname $curr_dir]
+      } elseif {$curr_item eq {.} } {
+        set file_dialog_d  $curr_dir
+      } else {
+        if {$OS == "Windows"} {
+          if {[regexp {^[A-Za-z]\:/$} $curr_dir]} {
+            set file_dialog_d "$curr_dir$curr_item"
+          } else {
+            set file_dialog_d "$curr_dir/$curr_item"
+          }
+        } else {
+          if {$curr_dir eq "/"} {
+            set file_dialog_d "$curr_dir$curr_item"
+          } else {
+            set file_dialog_d "$curr_dir/$curr_item"
+          }
+        }
+      }
+
+      if { !$dirselect && [file isdirectory $file_dialog_d] } {
+        .load.buttons_bot.entry delete 0 end
+        set file_dialog_retval  {   }
+        return
+      }
+
+      set file_dialog_dir1 $curr_dir
+      set file_dialog_dir2 $curr_item
+      if { [file isdirectory $file_dialog_d]} {
+        bind .load.l.paneright.draw <Expose> {}
+        bind .load.l.paneright.draw <Configure> {}
+        .load.l.paneright.draw configure -background white
+        file_dialog_set_home $file_dialog_d
+        setglob $file_dialog_d
+        file_dialog_set_colors2
+        set file_dialog_dir1 $file_dialog_d
+      } else {
+        .load.buttons_bot.entry delete 0 end
+        .load.buttons_bot.entry insert 0 $file_dialog_dir2
+
+        file_dialog_display_preview  $file_dialog_d
+        # puts "xschem preview_window draw .load.l.paneright.draw \"$file_dialog_dir1/$file_dialog_dir2\""
+      }
+    }
+    if {$file_dialog_loadfile == 2} {
+      # set to something different to any file to force a new placement in file_dialog_place_symbol
+      set file_dialog_retval  {   }
+    }
 }
 
 # global_initdir: name of global variable containing the initial directory
@@ -3136,277 +3688,318 @@ proc myload_display_preview {f} {
 #
 proc load_file_dialog {{msg {}} {ext {}} {global_initdir {INITIALINSTDIR}} 
      {loadfile {1}} {confirm_overwrt {1}} {initialf {}}} {
-  global myload_index1 myload_files2 myload_files1 myload_retval myload_dir1 pathlist OS
-  global myload_default_geometry myload_sash_pos myload_yview tcl_version myload_globfilter myload_dir2
-  global myload_save_initialfile myload_loadfile myload_ext
+  global file_dialog_index1 file_dialog_files2 file_dialog_files1 file_dialog_retval file_dialog_dir1 pathlist OS
+  global file_dialog_default_geometry file_dialog_sash_pos file_dialog_yview 
+  global file_dialog_names1 tcl_version file_dialog_globfilter file_dialog_dir2
+  global file_dialog_save_initialfile file_dialog_loadfile file_dialog_ext
 
   if { [winfo exists .load] } {
     .load.buttons_bot.cancel invoke
   }
-  set myload_loadfile $loadfile
-  if {$ext ne {}} {set myload_ext $ext}
-  set myload_globfilter $myload_ext
-  set myload_save_initialfile $initialf
-  set myload_retval {} 
+  set file_dialog_loadfile $loadfile
+  if {$ext ne {}} {set file_dialog_ext $ext}
+  set file_dialog_globfilter $file_dialog_ext
+
+  set file_dialog_save_initialfile $initialf
+  set file_dialog_retval {} 
   upvar #0 $global_initdir initdir
   if { $loadfile != 2} {xschem set semaphore [expr {[xschem get semaphore] +1}]}
   toplevel .load -class Dialog
   wm title .load $msg
-  wm transient .load .
-  set_ne myload_index1 0
-  if { ![info exists myload_files1]} {
-    set myload_files1 $pathlist
-    set myload_index1 0
+  # wm transient .load [xschem get topwindow]
+  set_ne file_dialog_index1 0
+  if { ![info exists file_dialog_files1]} {
+    set file_dialog_files1 $pathlist
+    file_dialog_set_names1
+    update
+    set file_dialog_index1 0
   }
-  set_ne myload_files2 {}
+  set_ne file_dialog_files2 {}
   panedwindow  .load.l -orient horizontal -height 8c
-  if { $loadfile == 2} {frame .load.l.recent}
-  frame .load.l.paneleft
-  eval [subst {listbox .load.l.paneleft.list -listvariable myload_files1 -width 20 -height 12 \
+  if { $loadfile == 2} {frame .load.l.recent -takefocus 0}
+  frame .load.l.paneleft -takefocus 0 -highlightcolor red -highlightthickness 2 -bg {grey90}
+  eval [subst {listbox .load.l.paneleft.list -listvariable file_dialog_names1 -width 40 -height 12 \
+    -fg black -background {grey90} -highlightthickness 0 -relief flat -borderwidth 0 \
     -yscrollcommand ".load.l.paneleft.yscroll set" -selectmode browse \
     -xscrollcommand ".load.l.paneleft.xscroll set" -exportselection 0}]
   if { ![catch {.load.l.paneleft.list cget -justify}]} {
     .load.l.paneleft.list configure -justify right
   }
-  myload_set_colors1
-  scrollbar .load.l.paneleft.yscroll -command ".load.l.paneleft.list yview" 
-  scrollbar .load.l.paneleft.xscroll -command ".load.l.paneleft.list xview" -orient horiz
+  file_dialog_set_colors1
+  scrollbar .load.l.paneleft.yscroll -command ".load.l.paneleft.list yview" -takefocus 0
+  scrollbar .load.l.paneleft.xscroll -command ".load.l.paneleft.list xview" -orient horiz -takefocus 0
   pack  .load.l.paneleft.yscroll -side right -fill y
   pack  .load.l.paneleft.xscroll -side bottom -fill x
-  pack  .load.l.paneleft.list -fill both -expand true
+  pack  .load.l.paneleft.list -fill both -expand true -padx 12
   bind .load.l.paneleft.list <<ListboxSelect>> { 
-    # bind .load.l.paneright.draw <Expose> {}
-    # .load.l.paneright.draw configure -background white
-    set myload_sel [.load.l.paneleft.list curselection]
-    if { $myload_sel ne {} } {
-      set myload_dir1 [abs_sym_path [.load.l.paneleft.list get $myload_sel]]
-      set myload_index1 $myload_sel
-      #### avoid clearing search entry and resetting glob filter
-      #### when changing directory in left listbox
-      # set myload_globfilter $myload_ext
-      # if {$myload_save_initialfile eq {}} {.load.buttons_bot.entry delete 0 end}
-      setglob $myload_dir1
-      myload_set_colors2
+    set file_dialog_sel [.load.l.paneleft.list curselection]
+    if { $file_dialog_sel ne {} } {
+      set file_dialog_dir1 [abs_sym_path [lindex $file_dialog_files1 $file_dialog_sel]]
+      set file_dialog_index1 $file_dialog_sel
+
+      set file_dialog_globfilter  *[.load.buttons_bot.src get]*
+      if { $file_dialog_globfilter eq {**} } { set file_dialog_globfilter * }
+
+      setglob $file_dialog_dir1
+      file_dialog_set_colors2
     }
   }
-  frame .load.l.paneright
-  frame .load.l.paneright.draw -background white -height 3.8c
-  listbox .load.l.paneright.list  -listvariable myload_files2 -width 20 -height 12\
-    -yscrollcommand ".load.l.paneright.yscroll set" -selectmode browse \
-    -xscrollcommand ".load.l.paneright.xscroll set" -exportselection 0
-  scrollbar .load.l.paneright.yscroll -command ".load.l.paneright.list yview"
-  scrollbar .load.l.paneright.xscroll -command ".load.l.paneright.list xview" -orient horiz
-  pack .load.l.paneright.draw -side bottom -anchor s -fill x 
-  pack  .load.l.paneright.yscroll -side right -fill y
-  pack  .load.l.paneright.xscroll -side bottom -fill x
-  pack  .load.l.paneright.list -side bottom  -fill both -expand true
+
+
+  panedwindow .load.l.paneright -orient vertical 
+  frame .load.l.paneright.f -takefocus 0
+  frame .load.l.paneright.draw -background white -height 3.8c -takefocus 0
+  .load.l.paneright add .load.l.paneright.f
+  .load.l.paneright add .load.l.paneright.draw -minsize 200
+
+
+  if { ![catch {.load.l.paneright  panecget .load.l.paneright.f -stretch}]} {
+    set optnever {-stretch never}
+    set optalways {-stretch always}
+  } else {
+    set optnever {}
+    set optalways {}
+  }
+
+
+  eval .load.l.paneright paneconfigure .load.l.paneright.f $optnever
+  eval .load.l.paneright paneconfigure .load.l.paneright.draw $optalways
+
+
+
+  listbox .load.l.paneright.f.list  -background {grey90} -listvariable file_dialog_files2 -width 20 -height 12\
+    -fg black -highlightcolor red -highlightthickness 2 \
+    -yscrollcommand ".load.l.paneright.f.yscroll set" -selectmode browse \
+    -xscrollcommand ".load.l.paneright.f.xscroll set" -exportselection 0
+  scrollbar .load.l.paneright.f.yscroll -command ".load.l.paneright.f.list yview" -takefocus 0
+  scrollbar .load.l.paneright.f.xscroll -command ".load.l.paneright.f.list xview" -orient horiz -takefocus 0
+  pack  .load.l.paneright.f.yscroll -side right -fill y
+  pack  .load.l.paneright.f.xscroll -side bottom -fill x
+  pack  .load.l.paneright.f.list -side bottom  -fill both -expand true
 
   if { $loadfile == 2} {
-    .load.l  add .load.l.recent -minsize 30
+    .load.l  add .load.l.recent
     c_toolbar::display
   }
   .load.l  add .load.l.paneleft -minsize 40
-  .load.l  add .load.l.paneright -minsize 40
-  # .load.l paneconfigure .load.l.paneleft -stretch always
-  # .load.l paneconfigure .load.l.paneright -stretch always
-  frame .load.buttons 
-  frame .load.buttons_bot
-  button .load.buttons_bot.ok -width 5 -text OK -command "
-    set myload_retval \[.load.buttons_bot.entry get\]
+  .load.l  add .load.l.paneright -minsize 300
+  eval .load.l paneconfigure .load.l.paneleft $optnever
+  eval .load.l paneconfigure .load.l.paneright $optalways
+  frame .load.buttons -takefocus 0
+  frame .load.buttons_bot -takefocus 0
+  button .load.buttons_bot.ok -width 5 -text OK -takefocus 0 -command "
+    set file_dialog_retval \[.load.buttons_bot.entry get\]
     destroy .load
     xschem preview_window destroy {} {}
-    set $global_initdir \"\$myload_dir1\"
+    set $global_initdir \"\$file_dialog_dir1\"
   "
-  button .load.buttons_bot.cancel -width 5 -text Cancel -command "
-    set myload_retval {}
+  button .load.buttons_bot.cancel -width 5 -text Cancel -takefocus 0 -command "
+    set file_dialog_retval {}
     destroy .load
-    if {\$myload_loadfile == 2} {xschem abort_operation}
+    if {\$file_dialog_loadfile == 2} {xschem abort_operation}
     xschem preview_window destroy {} {}
-    set $global_initdir \"\$myload_dir1\"
+    set $global_initdir \"\$file_dialog_dir1\"
   "
-  button .load.buttons.home -width 5 -text {Home} -command {
+  wm protocol .load WM_DELETE_WINDOW {.load.buttons_bot.cancel invoke}
+  button .load.buttons.home -width 5 -text {Home} -takefocus 0 -command {
     bind .load.l.paneright.draw <Expose> {}
+    bind .load.l.paneright.draw <Configure> {}
     .load.l.paneright.draw configure -background white
-    set myload_files1 $pathlist
+    set file_dialog_files1 $pathlist
+    file_dialog_set_names1
     update
-    myload_set_colors1
+    file_dialog_set_colors1
     .load.l.paneleft.list xview moveto 1
-    set myload_index1 0
-    set myload_dir1 [abs_sym_path [.load.l.paneleft.list get $myload_index1]]
-    setglob $myload_dir1
-    myload_set_colors2
+    set file_dialog_index1 0
+    set file_dialog_dir1 [abs_sym_path [lindex $file_dialog_files1 $file_dialog_index1]]
+    setglob $file_dialog_dir1
+    file_dialog_set_colors2
     .load.l.paneleft.list selection clear 0 end
-    .load.l.paneright.list selection clear 0 end
-    .load.l.paneleft.list selection set $myload_index1
+    .load.l.paneright.f.list selection clear 0 end
+    .load.l.paneleft.list selection set $file_dialog_index1
   }
-  label .load.buttons_bot.label  -text {  File/Search:}
-  entry .load.buttons_bot.entry
-  if { $myload_save_initialfile ne {} } { 
-    .load.buttons_bot.entry insert 0 $myload_save_initialfile
+  label .load.buttons_bot.label  -text { File:}
+  entry .load.buttons_bot.entry -highlightcolor red -highlightthickness 2
+  label .load.buttons_bot.srclab  -text { Search:}
+  entry .load.buttons_bot.src -width 18 -highlightcolor red -highlightthickness 2
+  .load.buttons_bot.src delete 0 end
+  .load.buttons_bot.src insert 0 $file_dialog_globfilter
+  if { $file_dialog_save_initialfile ne {} } { 
+    .load.buttons_bot.entry insert 0 $file_dialog_save_initialfile
   }
-  bind .load.buttons_bot.entry <KeyRelease> {
-    if {$myload_save_initialfile eq {} } {
-      set myload_globfilter  *[.load.buttons_bot.entry get]*
-      if { $myload_globfilter eq {**} } { set myload_globfilter * }
-      setglob $myload_dir1
+  bind .load.buttons_bot.src <KeyRelease> {
+    if {$file_dialog_save_initialfile eq {} } {
+      set file_dialog_globfilter  *[.load.buttons_bot.src get]*
+      if { $file_dialog_globfilter eq {**} } { set file_dialog_globfilter * }
+      setglob $file_dialog_dir1
+      if {[.load.buttons_bot.entry get] ne {}} {
+        .load.l.paneright.f.list yview moveto 1.0
+      } else {
+        if { [info exists file_dialog_yview]} {
+         .load.l.paneright.f.list yview moveto  [lindex $file_dialog_yview 0]
+        }
+      }
     }
-    # set to something different to any file to force a new placement in myload_place_symbol
-    set myload_retval {   }
+    # set to something different to any file to force a new placement in file_dialog_place_symbol
+    set file_dialog_retval {   }
   }
   bind .load.buttons_bot.entry <ButtonPress> {
-    # set to something different to any file to force a new placement in myload_place_symbol
-    set myload_retval {   }
+    # set to something different to any file to force a new placement in file_dialog_place_symbol
+    set file_dialog_retval {   }
   }
-  radiobutton .load.buttons_bot.all -text All -variable myload_globfilter -value {*} \
-     -command { set myload_ext $myload_globfilter; setglob $myload_dir1 }
-  radiobutton .load.buttons_bot.sym -text .sym -variable myload_globfilter -value {*.sym} \
-     -command { set myload_ext $myload_globfilter; setglob $myload_dir1 }
-  radiobutton .load.buttons_bot.sch -text .sch -variable myload_globfilter -value {*.sch} \
-     -command { set myload_ext $myload_globfilter; setglob $myload_dir1 }
-  button .load.buttons.up -width 5 -text Up -command {load_file_dialog_up  $myload_dir1}
-  label .load.buttons.mkdirlab -text { New dir: } -fg blue
-  entry .load.buttons.newdir -width 16
-  button .load.buttons.mkdir -width 5 -text Create -fg blue -command { 
+
+  # radiobutton .load.buttons_bot.all -text All -variable file_dialog_globfilter -value {*} -takefocus 0 \
+  #    -command {
+  #       set file_dialog_ext $file_dialog_globfilter
+  #       setglob $file_dialog_dir1
+  #       .load.buttons_bot.src delete 0 end
+  #       .load.buttons_bot.src insert 0 $file_dialog_globfilter
+  #     }
+  # radiobutton .load.buttons_bot.sym -text .sym -variable file_dialog_globfilter -value {*.sym} -takefocus 0 \
+  #    -command {
+  #       set file_dialog_ext $file_dialog_globfilter
+  #       setglob $file_dialog_dir1
+  #       .load.buttons_bot.src delete 0 end
+  #       .load.buttons_bot.src insert 0 $file_dialog_globfilter
+  #     }
+  # radiobutton .load.buttons_bot.sch -text .sch -variable file_dialog_globfilter -value {*.sch} -takefocus 0 \
+  #    -command {
+  #       set file_dialog_ext $file_dialog_globfilter
+  #       setglob $file_dialog_dir1
+  #       .load.buttons_bot.src delete 0 end
+  #       .load.buttons_bot.src insert 0 $file_dialog_globfilter
+  #     }
+
+  button .load.buttons.up -width 5 -text Up -command {load_file_dialog_up  $file_dialog_dir1} -takefocus 0
+  label .load.buttons.mkdirlab -text { New dir: } 
+  entry .load.buttons.newdir -width 16 -takefocus 0
+  button .load.buttons.mkdir -width 5 -text Create -takefocus 0 -command { 
     load_file_dialog_mkdir [.load.buttons.newdir get]
   }
-  button .load.buttons.rmdir -width 5 -text Delete -fg blue -command { 
+  button .load.buttons.rmdir -width 5 -text Delete -takefocus 0 -command { 
     if { [.load.buttons.newdir get] ne {} } {
-      file delete "${myload_dir1}/[.load.buttons.newdir get]"
-      setglob ${myload_dir1}
-      myload_set_colors2
+      file delete "${file_dialog_dir1}/[.load.buttons.newdir get]"
+      setglob ${file_dialog_dir1}
+      file_dialog_set_colors2
     }
   }
-  button .load.buttons.pwd -text {Current dir} -command {load_file_dialog_up  [xschem get schname]}
-  pack .load.buttons.home .load.buttons.up .load.buttons.pwd -side left
+  button .load.buttons.pwd -text {Current dir} -takefocus 0 -command {load_file_dialog_up  [xschem get schname]}
+  checkbutton .load.buttons.path -text {Library paths} -variable load_file_dialog_fullpath -takefocus 0 \
+    -command {
+      file_dialog_set_names1
+      update
+      file_dialog_set_colors1
+      .load.l.paneleft.list xview moveto 1
+    }
+  pack .load.buttons.home .load.buttons.up .load.buttons.pwd .load.buttons.path -side left
   pack .load.buttons.mkdirlab -side left
   pack .load.buttons.newdir -expand true -fill x -side left
   pack .load.buttons.rmdir .load.buttons.mkdir -side right
-  pack .load.buttons_bot.all .load.buttons_bot.sym .load.buttons_bot.sch -side left
+  # pack .load.buttons_bot.all .load.buttons_bot.sym .load.buttons_bot.sch -side left
+  pack .load.buttons_bot.srclab -side left
+  pack .load.buttons_bot.src -side left 
   pack .load.buttons_bot.label -side left
   pack .load.buttons_bot.entry -side left -fill x -expand true
   pack .load.buttons_bot.cancel .load.buttons_bot.ok -side left
   pack .load.buttons_bot -side bottom -fill x
   pack .load.buttons -side bottom -fill x
   pack .load.l -expand true -fill both
-  if { [info exists myload_default_geometry]} {
-     wm geometry .load "${myload_default_geometry}"
+  if { [info exists file_dialog_default_geometry]} {
+     wm geometry .load "${file_dialog_default_geometry}"
   }
-  myload_set_home $initdir
+  file_dialog_set_home $initdir
   if { $loadfile != 2} {
     bind .load <Return> " 
-      set myload_retval \[.load.buttons_bot.entry get\]
-      if {\$myload_retval ne {} } {
+      set file_dialog_retval \[.load.buttons_bot.entry get\]
+      if {\$file_dialog_retval ne {} && !\[file isdirectory \$file_dialog_retval\]} {
+        bind .load.l.paneright.draw <Expose> {}
+        bind .load.l.paneright.draw <Configure> {}
         destroy .load
         xschem preview_window destroy {} {}
-        set $global_initdir \"\$myload_dir1\"
+        set $global_initdir \"\$file_dialog_dir1\"
       }
     "
-    bind .load.l.paneright.list <Double-Button-1> "
-      set myload_retval \[.load.buttons_bot.entry get\]
-      if {\$myload_retval ne {}  && 
-          !\[file isdirectory \"\$myload_dir1/\[.load.l.paneright.list get \$myload_sel\]\"\]} {
+    bind .load.l.paneright.f.list <Double-Button-1> "
+      set file_dialog_retval \[.load.buttons_bot.entry get\]
+      if {\$file_dialog_retval ne {} && !\[file isdirectory \$file_dialog_retval\]} {
         bind .load.l.paneright.draw <Expose> {}
+        bind .load.l.paneright.draw <Configure> {}
         destroy .load
         xschem preview_window destroy {} {}
-        set $global_initdir \"\$myload_dir1\"
+        set $global_initdir \"\$file_dialog_dir1\"
       }
     "
   }
   bind .load <Escape> "
-    set myload_retval {}
+    set file_dialog_retval {}
     destroy .load
-    if {\$myload_loadfile == 2} {xschem abort_operation}
+    if {\$file_dialog_loadfile == 2} {xschem abort_operation}
     xschem preview_window destroy {} {}
-    set $global_initdir \"\$myload_dir1\"
+    set $global_initdir \"\$file_dialog_dir1\"
   "
 
   ### update
-  if { [info exists myload_sash_pos] } {
+  if { [info exists file_dialog_sash_pos] } {
     eval .load.l sash mark 0 [.load.l sash coord 0]
-    eval .load.l sash dragto 0 [subst $myload_sash_pos]
+    eval .load.l sash dragto 0 [subst $file_dialog_sash_pos]
   }
   ### update
   .load.l.paneleft.list xview moveto 1
   bind .load <Configure> {
-    set myload_sash_pos [.load.l sash coord 0]
-    set myload_default_geometry [wm geometry .load]
+    set file_dialog_sash_pos [.load.l sash coord 0]
+    set file_dialog_default_geometry [wm geometry .load]
     .load.l.paneleft.list xview moveto 1
-    # regsub {\+.*} $myload_default_geometry {} myload_default_geometry
+    # regsub {\+.*} $file_dialog_default_geometry {} file_dialog_default_geometry
   }
 
-  bind .load.l.paneright.yscroll <Motion> {
-    set myload_yview [.load.l.paneright.list yview]
+  bind .load.l.paneright.f.yscroll <Motion> {
+    set file_dialog_yview [.load.l.paneright.f.list yview]
   }
 
   xschem preview_window create .load.l.paneright.draw {}
-  set myload_dir1 [abs_sym_path [.load.l.paneleft.list get $myload_index1]]
-  setglob $myload_dir1
-  myload_set_colors2
+  set file_dialog_dir1 [abs_sym_path [lindex $file_dialog_files1 $file_dialog_index1]]
+  setglob $file_dialog_dir1
+  file_dialog_set_colors2
 
 
-  if {$myload_loadfile == 2} { 
+  if {$file_dialog_loadfile == 2} { 
     bind .load <Leave> {
-      if { {%W} eq {.load} && $myload_retval ne {} && [.load.buttons_bot.entry get] ne $myload_retval} {
-        myload_place_symbol
+      if { {%W} eq {.load} && $file_dialog_retval ne {} && [.load.buttons_bot.entry get] ne $file_dialog_retval} {
+        file_dialog_place_symbol
       }
     }
   }
 
-  bind .load.l.paneright.list <ButtonPress> { 
-    set myload_yview [.load.l.paneright.list yview]
+  bind .load.l.paneright.f.list <KeyRelease-Return> { 
+    file_dialog_right_listboxselect 1
   }
-  bind .load.l.paneright.list <<ListboxSelect>> {
-    set myload_yview [.load.l.paneright.list yview] 
-    set myload_sel [.load.l.paneright.list curselection]
-    if { $myload_sel ne {} } {
-      set myload_dir1 [abs_sym_path [.load.l.paneleft.list get $myload_index1]]
-      set myload_dir2 [.load.l.paneright.list get $myload_sel]
-      if {$myload_dir2 eq {..}} {
-        set myload_d [file dirname $myload_dir1]
-      } elseif { $myload_dir2 eq {.} } {
-        set myload_d  $myload_dir1
-      } else {
-        if {$OS == "Windows"} {
-          if {[regexp {^[A-Za-z]\:/$} $myload_dir1]} {
-            set myload_d "$myload_dir1$myload_dir2"
-          } else {
-            set myload_d "$myload_dir1/$myload_dir2"
-          }
-        } else {
-          if {$myload_dir1 eq "/"} {
-            set myload_d "$myload_dir1$myload_dir2"
-          } else {
-            set myload_d "$myload_dir1/$myload_dir2"
-          }
-        }
-      }
-      if { [file isdirectory $myload_d]} {
-        bind .load.l.paneright.draw <Expose> {}
-        .load.l.paneright.draw configure -background white
-        myload_set_home $myload_d
-        setglob $myload_d
-        myload_set_colors2
-        set myload_dir1 $myload_d
-        # .load.buttons_bot.entry delete 0 end
-      } else {
-        .load.buttons_bot.entry delete 0 end
-        .load.buttons_bot.entry insert 0 $myload_dir2
-        myload_display_preview  $myload_dir1/$myload_dir2
-        # puts "xschem preview_window draw .load.l.paneright.draw \"$myload_dir1/$myload_dir2\""
-      }
-    }
-    if {$myload_loadfile == 2} {
-      set myload_retval  {   }
-    }
-  };# bind .load.l.paneright.list <<ListboxSelect>>
-  if { [info exists myload_yview]} {
-   .load.l.paneright.list yview moveto  [lindex $myload_yview 0]
+
+  bind .load.l.paneright.f.list <ButtonRelease-1> { 
+    file_dialog_right_listboxselect 1
   }
+
+  bind .load.l.paneright.f.list <KeyRelease-Up> { 
+    file_dialog_right_listboxselect 0
+  }
+
+  bind .load.l.paneright.f.list <KeyRelease-Down> { 
+    file_dialog_right_listboxselect 0
+  }
+
+  # bind .load.l.paneright.f.list <<ListboxSelect>> {
+  #   file_dialog_right_listboxselect
+  # }
+
+  if { [info exists file_dialog_yview]} {
+   .load.l.paneright.f.list yview moveto  [lindex $file_dialog_yview 0]
+  }
+  focus .load.buttons_bot.src
+  .load.buttons_bot.src selection range 0 end
   if {$loadfile != 2} {
     tkwait window .load
     xschem set semaphore [expr {[xschem get semaphore] -1}]
   }
-  return [myload_getresult $loadfile $confirm_overwrt]
+  return [file_dialog_getresult $loadfile $confirm_overwrt]
 }
 
 # get last n path components: example , n=1 --> /aaa/bbb/ccc/ddd.sch -> ccc/ddd.sch
@@ -3477,7 +4070,7 @@ proc create_pins {} {
   # viewdata $retval
   set pcnt 0
   set y 0
-  set fd [open $USER_CONF_DIR/.clipboard.sch "w"]
+  set fd [open $USER_CONF_DIR/.clipboard.sch w]
   foreach i $lines { 
     puts $fd "C \{${dirprefix}[lindex $i 1].sym\} 0 [set y [expr {$y-20}]] \
                 0 0 \{ name=p[incr pcnt] lab=[lindex $i 0] \}"
@@ -3514,7 +4107,7 @@ proc schpins_to_sympins {} {
   xschem copy
   set clipboard [read_data_nonewline $USER_CONF_DIR/.clipboard.sch]
   set lines [split $clipboard \n]
-  set fd [open $USER_CONF_DIR/.clipboard.sch "w"]
+  set fd [open $USER_CONF_DIR/.clipboard.sch w]
   foreach i $lines {
     set ii [split [regexp -all -inline {\S+} $i]]
     if {[regexp {^C \{.*(i|o|io)pin} $i ]} {
@@ -3584,7 +4177,7 @@ proc add_lab_no_prefix {} {
   # viewdata $retval
   set pcnt 0
   set y 0
-  set fd [open $USER_CONF_DIR/.clipboard.sch "w"]
+  set fd [open $USER_CONF_DIR/.clipboard.sch w]
   foreach i $lines {
     puts $fd "C \{${dirprefix}lab_pin.sym\} 0 [set y [expr {$y+20}]] \
                0 0 \{ name=p[incr pcnt] verilog_type=wire lab=[lindex $i 0] \}"
@@ -3606,7 +4199,7 @@ proc add_lab_prefix {} {
   # viewdata $retval
   set pcnt 0
   set y 0
-  set fd [open $USER_CONF_DIR/.clipboard.sch "w"]
+  set fd [open $USER_CONF_DIR/.clipboard.sch w]
   foreach i $lines {
     puts $fd "C \{${dirprefix}lab_pin.sym\} 0 [set y [expr {$y+20}]] \
                0 0 \{ name=p[incr pcnt] verilog_type=reg lab=i[lindex $i 0] \}"
@@ -3638,101 +4231,130 @@ proc make_symbol_lcc {name} {
   return {}
 }
 
-# create simulation dir 'simulation/' under current schematic directory
+# point netlist_dir to  simulation dir 'simulation/' under current schematic directory
 proc simuldir {} {
   global netlist_dir local_netlist_dir has_x
   if { $local_netlist_dir == 1 } {
     set simdir [xschem get current_dirname]/simulation
-    if {[catch {file mkdir "$simdir"} err]} {
-      puts $err
-      if {$has_x} {
-        tk_messageBox -message "$err" -icon error -parent [xschem get topwindow] -type ok
-      } 
-    }
     set netlist_dir $simdir
+    regsub {/$} $netlist_dir {} netlist_dir
+    return $netlist_dir
+  }
+  if { $local_netlist_dir == 2 } {
+    set simdir [xschem get current_dirname]/simulation/[get_cell [xschem get current_name] 0]
+    set netlist_dir $simdir
+    regsub {/$} $netlist_dir {} netlist_dir
     return $netlist_dir
   }
   return {}
 }
 
 #
-# force==0: force creation of $netlist_dir (if netlist_dir variable not empty)
+# what==0: force creation of $netlist_dir (if netlist_dir variable not empty)
 #           and return current setting.
-#           if netlist_dir variable empty:
-#               if no dir given prompt user
-#               else set netlist_dir to dir
 #
-# force==1: if no dir given prompt user
-#           else set netlist_dir to dir
+# what==1: if no dir given prompt user
+#           else set netlist_dir to dir  
+#
+# what==2: just set netlist_dir according to local_netlist_dir setting
 #
 # Return current netlist directory
 #
-proc set_netlist_dir { force {dir {} }} {
-  global netlist_dir env OS has_x
+proc set_netlist_dir { what {dir {} }} {
+  global netlist_dir env OS has_x local_netlist_dir USER_CONF_DIR
 
-  if { ( $force == 0 )  && ( $netlist_dir ne {} ) } {
-    if {![file exist $netlist_dir]} {
-      if {[catch {file mkdir "$netlist_dir"} err]} {
-        puts $err
-        if {$has_x} {
-          tk_messageBox -message "$err" -icon error -parent [xschem get topwindow] -type ok
-        } 
-      }
+  #### set local-to-schematic-dir if local_netlist_dir tcl var is set
+  simuldir
+  regsub {/$} $netlist_dir {} netlist_dir
+  if {$what == 2} { return $netlist_dir }
 
-    }
-    regsub {^~/} $netlist_dir ${env(HOME)}/ netlist_dir
-    return $netlist_dir
-  } 
-  if { $dir eq {} } {
-    if { $netlist_dir ne {} }  { 
-      set initdir $netlist_dir
-    } else {
-      if {$OS == "Windows"} {
-        set initdir  $env(windir)
-      } else {
-        set initdir  [pwd]
+  #### what == 0
+  if {$what == 0} {
+    if {$netlist_dir ne {}} {
+      if {![file exist $netlist_dir]} {
+        if {[catch {file mkdir "$netlist_dir"} err]} {
+          puts stderr $err
+          if {[info exists has_x]} {
+            tk_messageBox -message "$err" -icon error -parent [xschem get topwindow] -type ok
+          } 
+        }
       }
-    }
-    # 20140409 do not change netlist_dir if user Cancels action
-    set new_dir [tk_chooseDirectory -initialdir $initdir \
-       -parent [xschem get topwindow] -title {Select netlist DIR} -mustexist false]
+    } 
+  #### what == 1
   } else {
-    set new_dir $dir
-  }
-
-  if {$new_dir ne {} } {
-    if {![file exist $new_dir]} {
-      if {[catch {file mkdir "$new_dir"} err]} {
-        puts $err
-        if {$has_x} {
-          tk_messageBox -message "$err" -icon error -parent [xschem get topwindow] -type ok
-        } 
-      }
-
+    # if local_netlist_dir is set can not provide a dir, set dir to netlist_dir as set by proc simuldir
+    if {$local_netlist_dir != 0} {
+      set dir $netlist_dir
     }
-    set netlist_dir $new_dir  
-  }
+    if { $dir eq {} } {
+      # set to default simulations/ directory.
+      if {$local_netlist_dir == 0  && $netlist_dir eq {}} {
+        set initdir "$USER_CONF_DIR/simulations"
+      } elseif {$local_netlist_dir == 0 } {
+        set initdir $netlist_dir
+      } elseif { $netlist_dir ne {} }  { 
+        set initdir $netlist_dir
+      } else {
+        if {$OS == "Windows"} {
+          set initdir  $env(windir)
+        } else {
+          set initdir  [pwd]
+        }
+      }
+      # prompt user for a dir
+      set new_dir [tk_chooseDirectory -initialdir $initdir \
+         -parent [xschem get topwindow] -title {Select netlist DIR} -mustexist false]
+    } else {
+      # use provided dir argument
+      set new_dir $dir
+    }
+  
+    # create new dir if not already existing
+    if {$new_dir ne {} } {
+      if {![file exist $new_dir]} {
+        if {[catch {file mkdir "$new_dir"} err]} {
+          puts stderr $err
+          if {[info exists has_x]} {
+            tk_messageBox -message "$err" -icon error -parent [xschem get topwindow] -type ok
+          } 
+        }
+  
+      }
+      set netlist_dir $new_dir  
+    }
+  } ;# what == 1
   regsub {^~/} $netlist_dir ${env(HOME)}/ netlist_dir
-  return $netlist_dir
+  regsub {/$} $netlist_dir {} netlist_dir
+  # return $netlist_dir if valid and existing, else return empty string
+  if {$netlist_dir ne {} && [file exists $netlist_dir]} {
+    return $netlist_dir
+  }
+  return {}
 }
 
 
 proc enter_text {textlabel {preserve_disabled disabled}} {
-  global retval rcode has_cairo preserve_unchanged_attrs wm_fix props
-  set rcode {}
+  global retval has_cairo preserve_unchanged_attrs wm_fix props enter_text_default_geometry
+  set tctx::rcode {}
   toplevel .dialog -class Dialog
   wm title .dialog {Enter text}
-  wm transient .dialog .
+  wm transient .dialog [xschem get topwindow]
 
   set X [expr {[winfo pointerx .dialog] - 30}]
   set Y [expr {[winfo pointery .dialog] - 25}]
 
+  bind .dialog <Configure> {
+    # puts [wm geometry .dialog]
+    set enter_text_default_geometry [wm geometry .dialog]
+    regsub {\+.*} $enter_text_default_geometry {} enter_text_default_geometry
+  }
+
   # 20100203
   if { $wm_fix } { tkwait visibility .dialog }
-  wm geometry .dialog "+$X+$Y"
+  wm geometry .dialog "${enter_text_default_geometry}+$X+$Y"
   frame .dialog.f1
   label .dialog.f1.txtlab -text $textlabel
-  text .dialog.txt -width 100 -height 4
+  text .dialog.txt -width 120 -height 9
   .dialog.txt delete 1.0 end
   .dialog.txt insert 1.0 $retval
   checkbutton .dialog.f1.l1 -text "preserve unchanged props" -variable preserve_unchanged_attrs \
@@ -3751,11 +4373,11 @@ proc enter_text {textlabel {preserve_disabled disabled}} {
   pack  .dialog.edit.props -side bottom -expand yes -fill x 
   pack .dialog.edit  -side top  -fill x 
   if {$has_cairo } {
-    entry .dialog.edit.hsize.hsize -relief sunken -textvariable vsize -width 20
+    entry .dialog.edit.hsize.hsize -relief sunken -textvariable tctx::vsize -width 20
   } else {
-    entry .dialog.edit.hsize.hsize -relief sunken -textvariable hsize -width 20
+    entry .dialog.edit.hsize.hsize -relief sunken -textvariable tctx::hsize -width 20
   }
-  entry .dialog.edit.vsize.vsize -relief sunken -textvariable vsize -width 20
+  entry .dialog.edit.vsize.vsize -relief sunken -textvariable tctx::vsize -width 20
   text .dialog.edit.props.props -width 70 -height 3
   .dialog.edit.props.props insert 1.0 $props
   label .dialog.edit.hsize.hlab -text "hsize:"
@@ -3773,15 +4395,15 @@ proc enter_text {textlabel {preserve_disabled disabled}} {
    set props [.dialog.edit.props.props get 1.0 {end - 1 chars}]
    set retval [.dialog.txt get 1.0 {end - 1 chars}]
    if {$has_cairo} { 
-     set hsize $vsize
+     set tctx::hsize $tctx::vsize
    }
-   set rcode {ok}
+   set tctx::rcode {ok}
    destroy .dialog 
   }
   button .dialog.buttons.cancel -text "Cancel" -command  \
   {
    set retval {}
-   set rcode {}
+   set tctx::rcode {}
    destroy .dialog 
   }
   button .dialog.buttons.b3 -text "Load" -command \
@@ -3876,7 +4498,7 @@ proc tclcmd {} {
     destroy .tclcmd
   }
   toplevel .tclcmd -class Dialog
-  wm transient .tclcmd .
+  # wm transient .tclcmd [xschem get topwindow]
   label .tclcmd.txtlab -text {Enter TCL expression. Shift-Return will evaluate}
   panedwindow .tclcmd.p -orient vert
   text .tclcmd.t -width 100 -height 3
@@ -3908,10 +4530,10 @@ proc tclcmd {} {
 }
 
 proc select_layers {} {
-  global dark_colorscheme colors enable_layer
+  global dark_colorscheme enable_layer
   xschem set semaphore [expr {[xschem get semaphore] +1}]
   toplevel .sl -class Dialog
-  wm transient .sl .
+  wm transient .sl [xschem get topwindow]
   if { $dark_colorscheme == 1 } {
     set txt_color black
   } else {
@@ -3926,7 +4548,7 @@ proc select_layers {} {
   pack .sl.f1.ok -side left -expand yes -fill x
   frame .sl.f0.f$f 
   pack .sl.f0.f$f -side left -fill y
-  foreach i $colors {
+  foreach i $tctx::colors {
     if { $dark_colorscheme == 1 } {
       set ind_bg white
     } else {
@@ -3980,7 +4602,7 @@ proc color_dim {} {
   xschem set semaphore [expr {[xschem get semaphore] +1}]
   toplevel .dim -class Dialog
   wm title .dim {Dim colors}
-  wm transient .dim .
+  wm transient .dim [xschem get topwindow]
   checkbutton .dim.bg -text {Dim background} -variable enable_dim_bg
   # xschem color_dim <scale value> sets also dim_value variable
   scale .dim.scale -digits 2 -label {Dim factor} -length 256 \
@@ -3997,6 +4619,7 @@ proc color_dim {} {
 
 # show xschem about dialog
 proc about {} {
+  global OS
   if [winfo exists .about] { 
     bind .about.link <Button-1> {}
     bind .about.link2 <Button-1> {}
@@ -4004,7 +4627,7 @@ proc about {} {
   }
   toplevel .about -class Dialog
   wm title .about {About XSCHEM}
-  wm transient .about .
+  wm transient .about [xschem get topwindow]
   label .about.xschem -text "XSCHEM V[xschem get version]" -font {Sans 24 bold}
   label .about.descr -text "Schematic editor / netlister for VHDL, Verilog, SPICE, tEDAx"
   button .about.link -text {http://repo.hu/projects/xschem} -font Underline-Font -fg blue -relief flat
@@ -4023,10 +4646,17 @@ proc about {} {
   pack .about.descr
   pack .about.copyright
   pack .about.close
-  bind .about.link <Button-1> {execute 0 xdg-open http://repo.hu/projects/xschem}
-  bind .about.link2 <Button-1> {execute 0 xdg-open https://github.com/StefanSchippers/xschem}
-  bind .about.link3 <Button-1> {execute 0 xdg-open http://repo.hu/projects/xschem/index.html}
-  bind .about.link4 <Button-1> {execute 0 xdg-open file://$XSCHEM_SHAREDIR/../doc/xschem/xschem_man/xschem_man.html}
+  if {$OS == "Windows"} {
+    bind .about.link <Button-1> {eval start http://repo.hu/projects/xschem}
+    bind .about.link2 <Button-1> {eval start https://github.com/StefanSchippers/xschem}
+    bind .about.link3 <Button-1> {eval start http://repo.hu/projects/xschem/index.html}
+    bind .about.link4 <Button-1> {eval start $XSCHEM_SHAREDIR/../doc/xschem/xschem_man/xschem_man.html}
+  } else {
+    bind .about.link <Button-1> {execute 0 xdg-open http://repo.hu/projects/xschem}
+    bind .about.link2 <Button-1> {execute 0 xdg-open https://github.com/StefanSchippers/xschem}
+    bind .about.link3 <Button-1> {execute 0 xdg-open http://repo.hu/projects/xschem/index.html}
+    bind .about.link4 <Button-1> {execute 0 xdg-open file://$XSCHEM_SHAREDIR/../doc/xschem/xschem_man/xschem_man.html}
+  }
 }
 
 proc property_search {} {
@@ -4041,7 +4671,7 @@ proc property_search {} {
     xschem set semaphore [expr {[xschem get semaphore] +1}]
     toplevel .dialog -class Dialog
     wm title .dialog {Search}
-    wm transient .dialog .
+    wm transient .dialog [xschem get topwindow]
     if { ![info exists X] } {
       set X [expr {[winfo pointerx .dialog] - 60}]
       set Y [expr {[winfo pointery .dialog] - 35}]
@@ -4123,13 +4753,14 @@ proc tclpropeval {s instname symname} {
 
 # this hook is called in translate() if whole string is contained in a tcleval(...) construct
 proc tclpropeval2 {s} {
-  global debug_var env path
+  global debug_tcleval env path debug_var sch_basename
 
   set raw_level [xschem get raw_level]
   set netlist_type [xschem get netlist_type]
   # puts "tclpropeval2: s=|$s|"
   if {$debug_var <=-1} {puts "tclpropeval2: $s"}
   set path [string range [xschem get sch_path] 1 end]
+  set sch_basename [file tail [file rootname [xschem get current_name]]]
   # skip hierarchy components above the level where raw file has been loaded. 
   # node path names to look up in raw file begin from there.
   set skip 0
@@ -4155,7 +4786,7 @@ proc tclpropeval2 {s} {
   # puts "tclpropeval2: s=|$s|"
   # puts "tclpropeval2: subst $s=|[subst $s]|"
   if { [catch {uplevel #0 "subst \{$s\}"} res] } {
-    if { $debug_var<=-1 } { puts "tclpropeval2 warning: $s --> $res"}
+    if { $debug_tcleval > 0} { puts "tclpropeval2 warning: $s --> $res"}
     set res ?\n
   }
   # puts "tclpropeval2: res=|$res|"
@@ -4163,14 +4794,14 @@ proc tclpropeval2 {s} {
 }
 
 proc attach_labels_to_inst {} {
-  global use_lab_wire use_label_prefix custom_label_prefix rcode do_all_inst rotated_text
+  global use_lab_wire use_label_prefix custom_label_prefix do_all_inst rotated_text
 
-  set rcode {}
+  set tctx::rcode {}
   if { [winfo exists .dialog] } return
   xschem set semaphore [expr {[xschem get semaphore] +1}]
   toplevel .dialog -class Dialog
   wm title .dialog {Add labels to instances}
-  wm transient .dialog .
+  wm transient .dialog [xschem get topwindow]
 
   # 20100408
   set X [expr {[winfo pointerx .dialog] - 60}]
@@ -4188,10 +4819,10 @@ proc attach_labels_to_inst {} {
   button .dialog.but.ok -text OK -command {
         set custom_label_prefix [.dialog.custom.e get]
         #### put command here
-        set rcode yes
+        set tctx::rcode yes
         destroy .dialog 
   }
-  button .dialog.but.cancel -text Cancel -command { set rcode {}; destroy .dialog }
+  button .dialog.but.cancel -text Cancel -command { set tctx::rcode {}; destroy .dialog }
   checkbutton .dialog.but.wire -text {use wire labels} -variable use_lab_wire
   checkbutton .dialog.but.do_all -text {Do all} -variable do_all_inst
   label .dialog.but.rot -text {Rotated Text}
@@ -4229,13 +4860,13 @@ proc ask_save_optional { {ask {save file?}} {cancel 1}} {
 }
 
 proc ask_save { {ask {save file?}} {cancel 1}} {
-  global rcode wm_fix
-  set rcode {}
+  global wm_fix
+  set tctx::rcode {}
   if { [winfo exists .dialog] } return
   xschem set semaphore [expr {[xschem get semaphore] +1}]
   toplevel .dialog -class Dialog
   wm title .dialog {Ask Save}
-  wm transient .dialog .
+  wm transient .dialog [xschem get topwindow]
 
   set X [expr {[winfo pointerx .dialog] - 60}]
   set Y [expr {[winfo pointery .dialog] - 35}]
@@ -4246,19 +4877,19 @@ proc ask_save { {ask {save file?}} {cancel 1}} {
   frame .dialog.f1
   button .dialog.f1.b1 -text {Yes} -command\
   {
-   set rcode {yes}
+   set tctx::rcode {yes}
    destroy .dialog
   }
   if {$cancel} {
     button .dialog.f1.b2 -text {Cancel} -command\
     {
-     set rcode {}
+     set tctx::rcode {}
      destroy .dialog
     }
   }
   button .dialog.f1.b3 -text {No} -command\
   {
-   set rcode {no}
+   set tctx::rcode {no}
    destroy .dialog
   }
   pack .dialog.l1 .dialog.f1 -side top -fill x
@@ -4275,17 +4906,17 @@ proc ask_save { {ask {save file?}} {cancel 1}} {
   grab set .dialog
   tkwait window .dialog
   xschem set semaphore [expr {[xschem get semaphore] -1}]
-  return $rcode
+  return $tctx::rcode
 }
 
 
 proc edit_vi_prop {txtlabel} {
-  global XSCHEM_TMP_DIR retval symbol prev_symbol rcode debug_var editor
+  global XSCHEM_TMP_DIR retval symbol prev_symbol debug_var editor
   global user_wants_copy_cell
  
   set netlist_type [xschem get netlist_type]
   set user_wants_copy_cell 0
-  set rcode {}
+  set tctx::rcode {}
   set filename .xschem_edit_file.[pid]
   if ![string compare $netlist_type "vhdl"] { set suffix vhd } else { set suffix v }
   set filename $filename.$suffix
@@ -4300,16 +4931,16 @@ proc edit_vi_prop {txtlabel} {
   if [string compare $tmp $retval] {
          set retval $tmp
          if {$debug_var<=-1} {puts "modified"}
-         set rcode ok
-         return  $rcode
+         set tctx::rcode ok
+         return  $tctx::rcode
   } else {
-         set rcode {}
-         return $rcode
+         set tctx::rcode {}
+         return $tctx::rcode
   }
 }
 
 proc edit_vi_netlist_prop {txtlabel} {
-  global XSCHEM_TMP_DIR retval rcode debug_var editor
+  global XSCHEM_TMP_DIR retval debug_var editor
   global user_wants_copy_cell
  
   set netlist_type [xschem get netlist_type]
@@ -4332,15 +4963,15 @@ proc edit_vi_netlist_prop {txtlabel} {
          regsub -all {(["\\])} $retval {\\\1} retval ;#"  editor is confused by the previous quote
          set retval \"${retval}\" 
          if {$debug_var <= -1}  {puts "modified"}
-         set rcode ok
-         return  $rcode
+         set tctx::rcode ok
+         return  $tctx::rcode
   } else {
-         set rcode {}
-         return $rcode
+         set tctx::rcode {}
+         return $tctx::rcode
   }
 }
 proc reset_colors {ask} {
-  global colors dark_colors light_colors dark_colorscheme USER_CONF_DIR svg_colors ps_colors
+  global dark_colors light_colors dark_colorscheme USER_CONF_DIR svg_colors ps_colors
   global light_colors_save dark_colors_save
 
   if {$ask} {
@@ -4352,13 +4983,13 @@ proc reset_colors {ask} {
   set light_colors $light_colors_save
   set dark_colors $dark_colors_save
   if { $dark_colorscheme == 1 } {
-    set colors $dark_colors
+    set tctx::colors $dark_colors
   } else {
-    set colors $light_colors
+    set tctx::colors $light_colors
   }
   regsub -all {"} $light_colors  {} ps_colors
   regsub -all {#} $ps_colors  {0x} ps_colors
-  regsub -all {"} $colors {} svg_colors
+  regsub -all {"} $tctx::colors {} svg_colors
   regsub -all {#} $svg_colors {0x} svg_colors
   file delete ${USER_CONF_DIR}/colors
   xschem build_colors
@@ -4367,7 +4998,7 @@ proc reset_colors {ask} {
 }
 
 proc change_color {} {
-  global colors dark_colors light_colors dark_colorscheme cadlayers USER_CONF_DIR svg_colors ps_colors
+  global dark_colors light_colors dark_colorscheme cadlayers USER_CONF_DIR svg_colors ps_colors
 
   set n [xschem get rectcolor]
   if { $n < 0 || $n >=$cadlayers} return
@@ -4381,7 +5012,7 @@ proc change_color {} {
   set value [tk_chooseColor -initialcolor $initial_color]
   if {[string compare $value {}] } {
     set cc [lreplace $c $n $n $value]
-    set colors $cc
+    set tctx::colors $cc
     if { $dark_colorscheme == 1 } {
       set dark_colors $cc
     } else {
@@ -4389,7 +5020,7 @@ proc change_color {} {
       regsub -all {"} $cc  {} ps_colors
       regsub -all {#} $ps_colors  {0x} ps_colors
     }
-    regsub -all {"} $colors {} svg_colors
+    regsub -all {"} $tctx::colors {} svg_colors
     regsub -all {#} $svg_colors {0x} svg_colors
 
     xschem build_colors
@@ -4405,17 +5036,17 @@ proc change_color {} {
 
 proc edit_prop {txtlabel} {
   global edit_prop_size infowindow_text selected_tok edit_symbol_prop_new_sel edit_prop_pos
-  global prev_symbol retval symbol rcode no_change_attrs preserve_unchanged_attrs copy_cell debug_var
+  global prev_symbol retval symbol no_change_attrs preserve_unchanged_attrs copy_cell debug_var
   global user_wants_copy_cell editprop_sympath retval_orig old_selected_tok
   set user_wants_copy_cell 0
-  set rcode {}
+  set tctx::rcode {}
   set retval_orig $retval
   if {$debug_var <= -1}  {puts " edit_prop{}: retval=$retval"}
   if { [winfo exists .dialog] } return
   xschem set semaphore [expr {[xschem get semaphore] +1}]
   toplevel .dialog  -class Dialog 
   wm title .dialog {Edit Properties}
-  wm transient .dialog .
+  wm transient .dialog [xschem get topwindow]
   set X [expr {[winfo pointerx .dialog] - 60}]
   set Y [expr {[winfo pointery .dialog] - 35}]
 
@@ -4465,7 +5096,7 @@ proc edit_prop {txtlabel} {
     }
     set symbol [.dialog.f1.e2 get]
     set abssymbol [abs_sym_path $symbol]
-    set rcode {ok}
+    set tctx::rcode {ok}
     set user_wants_copy_cell $copy_cell
     set prev_symbol [abs_sym_path $prev_symbol]
     if { ($abssymbol ne $prev_symbol) && $copy_cell } {
@@ -4493,12 +5124,12 @@ proc edit_prop {txtlabel} {
     destroy .dialog
   }
   button .dialog.f1.b2 -text "Cancel" -command  {
-    set rcode {}
+    set tctx::rcode {}
     set edit_symbol_prop_new_sel {}
     destroy .dialog
   }
   wm protocol .dialog  WM_DELETE_WINDOW {
-    set rcode {}
+    set tctx::rcode {}
     set edit_symbol_prop_new_sel {}
     destroy .dialog
   }
@@ -4552,7 +5183,7 @@ proc edit_prop {txtlabel} {
           set retval_orig [.dialog.symprop get 1.0 {end - 1 chars}]
         } else {
           set retval [.dialog.symprop get 1.0 {end - 1 chars}]
-          regsub -all {(["\\])} $retval {\\\1} retval ;#"  editor is confused by the previous quote
+          regsub -all {(["\\])} $retval {\\\1} retval ;# vim syntax fix "
           set retval \"${retval}\"
           set retval_orig [xschem subst_tok $retval_orig $old_selected_tok $retval]
         }
@@ -4595,27 +5226,47 @@ proc edit_prop {txtlabel} {
     wm geometry .dialog $edit_prop_pos
   }
   set edit_symbol_prop_new_sel 0
+
+  tkwait visibility .dialog
+  # select text after value= or lab= and place cursor just before selection
+  set regx {value *= *("[^"]+"|[^ \t\n"]+)}   ;# vim syntax fix "
+  set regx1 {value *= *[^ \n]}
+  set idx [.dialog.symprop search -regexp -nolinestop -count nchars $regx 1.0]
+  .dialog.symprop search -regexp -nolinestop -count len $regx1 1.0
+  incr len -1
+  if {$idx eq {} } { 
+    set regx {lab *= *("[^"]+"|[^ \t\n"]+)} ;# vim syntax fix "
+    set regx1 {lab *= *[^ \n]}
+    set idx [.dialog.symprop search -regexp -nolinestop -count nchars $regx 1.0]
+    .dialog.symprop search -regexp -nolinestop -count len $regx1 1.0
+    incr len -1
+  }
+  if { $idx ne {} } {
+    .dialog.symprop tag add sel "$idx + $len chars" "$idx + $nchars chars"
+    .dialog.symprop mark set insert "$idx + $len chars"
+  }
+  focus .dialog.symprop
   tkwait window .dialog
   xschem set semaphore [expr {[xschem get semaphore] -1}]
-  return $rcode
+  return $tctx::rcode
 }
 
 proc read_data_nonewline {f} {
-  set fid [open $f "r"]
+  set fid [open $f r]
   set data [read -nonewline $fid]
   close $fid
   return $data
 }
 
 proc read_data {f} {
-  set fid [open $f "r"]
+  set fid [open $f r]
   set data [read $fid]
   close $fid
   return $data
 }
 
 proc read_data_window {w f} {
-  set fid [open $f "r"]
+  set fid [open $f r]
   set t [read $fid]
   #  $w delete 0.0 end
   ## 20171103 insert text at cursor position instead of at beginning (insert index tag)
@@ -4624,7 +5275,7 @@ proc read_data_window {w f} {
 }
 
 proc write_data {data f} {
-  set fid [open $f "w"]
+  set fid [open $f w]
   puts  -nonewline $fid $data
   close $fid
   return {}
@@ -4632,16 +5283,16 @@ proc write_data {data f} {
 
 proc text_line {txtlabel clear {preserve_disabled disabled} } {
   global text_line_default_geometry preserve_unchanged_attrs wm_fix
-  global retval rcode debug_var selected_tok retval_orig old_selected_tok
+  global retval debug_var selected_tok retval_orig old_selected_tok
   set retval_orig $retval
   if $clear==1 then {set retval ""}
   if {$debug_var <= -1}  {puts " text_line{}: clear=$clear"}
   if {$debug_var <= -1}  {puts " text_line{}: retval=$retval"}
-  set rcode {}
+  set tctx::rcode {}
   if { [winfo exists .dialog] } return
   toplevel .dialog  -class Dialog
   wm title .dialog {Text input}
-  wm transient .dialog .
+  wm transient .dialog [xschem get topwindow]
   set X [expr {[winfo pointerx .dialog] - 60}]
   set Y [expr {[winfo pointery .dialog] - 35}]
 
@@ -4677,12 +5328,12 @@ proc text_line {txtlabel clear {preserve_disabled disabled} } {
       set selected_tok {<ALL>}
     }
     destroy .dialog
-    set rcode {ok}
+    set tctx::rcode {ok}
   }
   button .dialog.f1.b2 -text "Cancel" -command  \
   {
     set retval [.dialog.textinput get 1.0 {end - 1 chars}]
-    set rcode {}
+    set tctx::rcode {}
     destroy .dialog
   }
   button .dialog.f1.b3 -text "Load" -command \
@@ -4775,9 +5426,9 @@ proc text_line {txtlabel clear {preserve_disabled disabled} } {
   #tkwait visibility .dialog
   #grab set .dialog
   #focus .dialog.textinput
-  set rcode {}   
+  set tctx::rcode {}   
   tkwait window .dialog
-  return $rcode
+  return $tctx::rcode
 }
 
 # alert_ text [position] [nowait] [yesno]
@@ -4788,20 +5439,21 @@ proc text_line {txtlabel clear {preserve_disabled disabled} } {
 # if yesnow is 1 show yes and no buttons and return user choice (1 / 0).
 # (this works only if nowait is unset).
 proc alert_ {txtlabel {position +200+300} {nowait {0}} {yesno 0}} {
-  global has_x rcode
-  set rcode 1
+  global has_x
+  set tctx::rcode 1
   if {![info exists has_x] } {return}
   toplevel .alert -class Dialog
   wm title .alert {Alert}
-  wm transient .alert .
-  set X [expr {[winfo pointerx .alert] - 60}]
+  wm transient .alert [xschem get topwindow]
+  set X [expr {[winfo pointerx .alert] - 70}]
   set Y [expr {[winfo pointery .alert] - 60}]
   if { [string compare $position ""] != 0 } {
     wm geometry .alert $position
   } else {
     wm geometry .alert "+$X+$Y"
   }
-  label .alert.l1  -text $txtlabel -wraplength 700
+  label .alert.l1 -font {Sans 10 bold} \
+       -text "                              \n  ${txtlabel}  \n" -wraplength 750 
   if { $yesno} {
     set oktxt Yes
   } else {
@@ -4809,22 +5461,22 @@ proc alert_ {txtlabel {position +200+300} {nowait {0}} {yesno 0}} {
   }
   button .alert.b1 -text $oktxt -command  \
   {
-    set rcode 1
+    set tctx::rcode 1
     destroy .alert
   } 
   if {$yesno} {
     button .alert.b2 -text "No" -command  \
     {  
-      set rcode 0
+      set tctx::rcode 0
       destroy .alert
     }  
   }
 
-  pack .alert.l1 -side top -fill x
-  pack .alert.b1 -side left -fill x
-  if {$yesno} {pack .alert.b2 -side left -fill x}
+  pack .alert.l1 -side top -fill both -expand yes
+  pack .alert.b1 -side left -fill x -expand yes
+  if {$yesno} {pack .alert.b2 -side left -fill x -expand yes}
   tkwait visibility .alert
-  grab set .alert
+  # grab set .alert
   focus .alert.b1
   bind .alert <Return> { destroy .alert }
   bind .alert <Escape> { destroy .alert }
@@ -4839,7 +5491,7 @@ proc alert_ {txtlabel {position +200+300} {nowait {0}} {yesno 0}} {
     }
   }
   if {!$nowait} {tkwait window .alert}
-  return $rcode
+  return $tctx::rcode
 }
 
 proc show_infotext {{err 0}} {
@@ -4872,7 +5524,7 @@ proc infowindow {} {
   if ![winfo exists $z] {
     toplevel $z
     wm title $z {Info window}
-    # wm transient $z .
+    # wm transient $z [xschem get topwindow]
     wm  geometry $z 90x24+0+400
     wm iconname $z {Info window}
     wm withdraw $z
@@ -4919,7 +5571,7 @@ proc textwindow {filename {ro {}}} {
   toplevel $textwindow_w
   wm title $textwindow_w $filename
   wm iconname $textwindow_w $filename
-  wm transient $textwindow_w .
+  # wm transient $textwindow_w [xschem get topwindow]
  frame $textwindow_w.buttons
   pack $textwindow_w.buttons -side bottom -fill x -pady 2m
   button $textwindow_w.buttons.dismiss -text Dismiss -command "destroy $textwindow_w"
@@ -4927,7 +5579,7 @@ proc textwindow {filename {ro {}}} {
   if { $ro eq {} } {
     button $textwindow_w.buttons.save -text "Save" -command \
      { 
-      set textwindow_fileid [open $textwindow_filename "w"]
+      set textwindow_fileid [open $textwindow_filename w]
       puts -nonewline $textwindow_fileid [$textwindow_w.text get 1.0 {end - 1 chars}]
       close $textwindow_fileid 
       destroy $textwindow_w
@@ -4943,7 +5595,7 @@ proc textwindow {filename {ro {}}} {
   pack $textwindow_w.text -expand yes -fill both
   pack $textwindow_w.xscroll -side bottom -fill x
   bind $textwindow_w <Escape> "$textwindow_w.buttons.dismiss invoke"
-  set textwindow_fileid [open $filename "r"]
+  set textwindow_fileid [open $filename r]
 
   # 20171103 insert at insertion cursor(insert tag) instead of 0.0
   $textwindow_w.text insert insert [read $textwindow_fileid]
@@ -4952,8 +5604,9 @@ proc textwindow {filename {ro {}}} {
 }
 
 proc viewdata {data {ro {}} {win .view}} {
-  global viewdata_wcounter  rcode viewdata_filename
-  global viewdata_w OS viewdata_fileid env
+  global viewdata_wcounter viewdata_filename
+  global viewdata_w OS viewdata_fileid env has_x
+  if {![info exists has_x]} {return}
   # set viewdata_w .view$viewdata_wcounter
   # catch {destroy $viewdata_w}
   if {$win eq {.view}} {
@@ -4962,10 +5615,10 @@ proc viewdata {data {ro {}} {win .view}} {
   } else {
     set viewdata_w $win
   }
-  set rcode {}
+  set tctx::rcode {}
   toplevel $viewdata_w
   wm title $viewdata_w {View data}
-  wm transient $viewdata_w .
+  # wm transient $viewdata_w [xschem get topwindow]
   frame $viewdata_w.buttons
   pack $viewdata_w.buttons -side bottom -fill x -pady 2m
 
@@ -4980,7 +5633,7 @@ proc viewdata {data {ro {}} {win .view}} {
         set viewdata_filename [tk_getSaveFile -initialdir [pwd] ]
       }
       if { $viewdata_filename != "" } {
-        set viewdata_fileid [open $viewdata_filename "w"]
+        set viewdata_fileid [open $viewdata_filename w]
         puts -nonewline $viewdata_fileid [$viewdata_w.text get 1.0 {end - 1 chars}]
         close $viewdata_fileid
       }
@@ -4997,7 +5650,7 @@ proc viewdata {data {ro {}} {win .view}} {
   pack $viewdata_w.xscroll -side bottom -fill x
   # 20171103 insert at insertion cursor(insert tag) instead of 0.0
   $viewdata_w.text insert insert $data
-  return $rcode
+  return $tctx::rcode
 }
 
 proc sub_match_file { f {paths {}} } {
@@ -5130,7 +5783,7 @@ proc download_url {url} {
   if {![file exists ${XSCHEM_TMP_DIR}/xschem_web]} { 
     if {[catch {file mkdir "${XSCHEM_TMP_DIR}/xschem_web"} err]} {
       puts $err
-      if {$has_x} {
+      if {[info exists has_x]} {
         tk_messageBox -message "$err" -icon error -parent [xschem get topwindow] -type ok
       } 
     }
@@ -5179,9 +5832,12 @@ proc rel_sym_path {symbol} {
     if { ![string compare $path_elem .]  && [info exist curr_dirname]} {
       set path_elem $curr_dirname
     }
+    if {![regexp {/$} $path_elem]} {
+      append path_elem /
+    }
     set pl [string length $path_elem]
     if { [string equal -length $pl $path_elem $symbol] } {
-      set name [string range $symbol [expr {$pl+1}] end]
+      set name [string range $symbol [expr {$pl}] end]
       # When $path_elem is "C:/", string equal will match, 
       # but $path_elem should not be removed from $name if $name 
       # has more / for more directory levels.
@@ -5253,7 +5909,7 @@ proc abs_sym_path {fname {ext {} } } {
     set found 1
     set tmpdirname [file dirname $tmpdirname]
   }
-  ## if tmpfname reducced to '..' return dirname of tmpdirname
+  ## if tmpfname reduced to '..' return dirname of tmpdirname
   if { $tmpfname eq {..}} { return "[file dirname $tmpdirname]" }
   ## if given file begins with './' or '../' and dir or file exists relative to curr_dirname 
   ## just return it.
@@ -5317,11 +5973,11 @@ proc swap_compare_schematics {} {
 proc input_line {txt {cmd {}} {preset {}}  {w 12}} {
   global wm_fix retval
   set retval {}
-  if { [winfo exists .dialog] } return
+  if { [winfo exists .dialog] } {return}
   xschem set semaphore [expr {[xschem get semaphore] +1}]
   toplevel .dialog -class Dialog
   wm title .dialog {Input number}
-  wm transient .dialog .
+  wm transient .dialog [xschem get topwindow]
   set X [expr {[winfo pointerx .dialog] - 60}]
   set Y [expr {[winfo pointery .dialog] - 35}]
   # 20100203
@@ -5350,6 +6006,7 @@ proc input_line {txt {cmd {}} {preset {}}  {w 12}} {
   pack .dialog.f2 -expand yes -fill x
   bind .dialog <Escape> {.dialog.f2.cancel invoke}
   bind .dialog <Return> {.dialog.f2.ok invoke}
+  tkwait visibility .dialog
   grab set .dialog
   focus .dialog.f1.e
   tkwait window .dialog
@@ -5361,14 +6018,15 @@ proc launcher {launcher_var {launcher_program {} } } {
   # env, XSCHEM_SHAREDIR and netlist_dir not used directly but useful in paths passed thru launcher_var
   global launcher_default_program env XSCHEM_SHAREDIR netlist_dir
   
+  regsub {/$} $netlist_dir {} netlist_dir
   if { ![string compare $launcher_program {}] } { set launcher_program $launcher_default_program}
   eval exec  [subst $launcher_program] {[subst $launcher_var]} &
 }
 
 proc reconfigure_layers_button { { topwin {} } } {
-   global colors dark_colorscheme
+   global dark_colorscheme
    set c [xschem get rectcolor]
-   $topwin.menubar.layers configure -background [lindex $colors $c]
+   $topwin.menubar.layers configure -background [lindex $tctx::colors $c]
    if { $dark_colorscheme == 1 && $c == 0} {
      $topwin.menubar.layers configure -foreground white
    } else {
@@ -5377,9 +6035,9 @@ proc reconfigure_layers_button { { topwin {} } } {
 }
 
 proc reconfigure_layers_menu { {topwin {} } } {
-   global colors dark_colorscheme
+   global dark_colorscheme
    set j 0
-   foreach i $colors {
+   foreach i $tctx::colors {
      set ind_bg white
      if {  $j == [xschem get backlayer] } {
         if { $dark_colorscheme == 1 } { 
@@ -5434,12 +6092,12 @@ proc balloon_show {w arg pos} {
     if {[eval winfo containing  [winfo pointerxy .]]!=$w} {return}
     set top $w.balloon
     catch {destroy $top}
-    toplevel $top -bd 1 -bg black
+    toplevel $top -bd 1 -background black
     wm overrideredirect $top 1
     if {[string equal [tk windowingsystem] aqua]}  {
         ::tk::unsupported::MacWindowStyle style $top help none
     }   
-    pack [message $top.txt -aspect 10000 -bg lightyellow \
+    pack [message $top.txt -aspect 10000 -fg black -background lightyellow \
         -font fixed -text $arg]
     if { $pos } {
       set wmx [winfo rootx $w]
@@ -5468,84 +6126,84 @@ proc context_menu { } {
   set y [expr {[winfo pointery .ctxmenu] - 10}]
   if { !$selection} {
     button .ctxmenu.b9 -text {Open most recent} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-       -highlightthickness 0 -image CtxmenuRecent -compound left \
+       -bg {#d9d9d9} -fg black -activeforeground black -image CtxmenuRecent -compound left \
       -font [subst $font] -command {set retval 9; destroy .ctxmenu} 
   }
   button .ctxmenu.b10 -text {Edit attributes} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-     -highlightthickness 0 -image CtxmenuEdit -compound left \
+     -bg {#d9d9d9} -fg black -activeforeground black -image CtxmenuEdit -compound left \
     -font [subst $font] -command {set retval 10; destroy .ctxmenu}
   button .ctxmenu.b11 -text {Edit attr in editor} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-     -highlightthickness 0 -image CtxmenuEdit -compound left \
+     -bg {#d9d9d9} -fg black -activeforeground black -image CtxmenuEdit -compound left \
     -font [subst $font] -command {set retval 11; destroy .ctxmenu}
   if {$selection} {
     button .ctxmenu.b12 -text {Descend schematic} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-       -highlightthickness 0 -image CtxmenuDown -compound left \
+     -bg {#d9d9d9} -fg black -activeforeground black -image CtxmenuDown -compound left \
       -font [subst $font] -command {set retval 12; destroy .ctxmenu}
     button .ctxmenu.b13 -text {Descend symbol} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-       -highlightthickness 0 -image CtxmenuDownSym -compound left \
+     -bg {#d9d9d9} -fg black -activeforeground black -image CtxmenuDownSym -compound left \
       -font [subst $font] -command {set retval 13; destroy .ctxmenu}
     button .ctxmenu.b18 -text {Delete selection} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-       -highlightthickness 0 -image CtxmenuDelete -compound left \
+     -bg {#d9d9d9} -fg black -activeforeground black -image CtxmenuDelete -compound left \
       -font [subst $font] -command {set retval 18; destroy .ctxmenu}
     button .ctxmenu.b7 -text {Cut selection} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-       -highlightthickness 0 -image CtxmenuCut -compound left \
+     -bg {#d9d9d9} -fg black -activeforeground black -image CtxmenuCut -compound left \
       -font [subst $font] -command {set retval 7; destroy .ctxmenu}
     button .ctxmenu.b15 -text {Copy selection} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-       -highlightthickness 0 -image CtxmenuCopy -compound left \
+     -bg {#d9d9d9} -fg black -activeforeground black -image CtxmenuCopy -compound left \
       -font [subst $font] -command {set retval 15; destroy .ctxmenu}
     button .ctxmenu.b16 -text {Move selection} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-       -highlightthickness 0 -image CtxmenuMove -compound left \
+       -bg {#d9d9d9} -fg black -activeforeground black -image CtxmenuMove -compound left \
       -font [subst $font] -command {set retval 16; destroy .ctxmenu}
     button .ctxmenu.b17 -text {Duplicate selection} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-       -highlightthickness 0 -image CtxmenuDuplicate -compound left \
+       -bg {#d9d9d9} -fg black -activeforeground black -image CtxmenuDuplicate -compound left \
       -font [subst $font] -command {set retval 17; destroy .ctxmenu}
     button .ctxmenu.b22 -text {Rotate selection} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-       -highlightthickness 0 -image CtxmenuRotate -compound left \
+       -bg {#d9d9d9} -fg black -activeforeground black -image CtxmenuRotate -compound left \
       -font [subst $font] -command {xschem rotate; destroy .ctxmenu}
     button .ctxmenu.b23 -text {Flip selection} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-       -highlightthickness 0 -image CtxmenuFlip -compound left \
+       -bg {#d9d9d9} -fg black -activeforeground black -image CtxmenuFlip -compound left \
       -font [subst $font] -command {xschem flip; destroy .ctxmenu}
     button .ctxmenu.b24 -text {Rotate in-place sel.} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-       -highlightthickness 0 -image CtxmenuRotate -compound left \
+       -bg {#d9d9d9} -fg black -activeforeground black -image CtxmenuRotate -compound left \
       -font [subst $font] -command {xschem rotate_in_place; destroy .ctxmenu}
     button .ctxmenu.b25 -text {Flip in-place sel.} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-       -highlightthickness 0 -image CtxmenuFlip -compound left \
+       -bg {#d9d9d9} -fg black -activeforeground black -image CtxmenuFlip -compound left \
       -font [subst $font] -command {xschem flip_in_place; destroy .ctxmenu}
   }
   if {!$selection} {
     button .ctxmenu.b14 -text {Go to upper level} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-       -highlightthickness 0 -image CtxmenuUp -compound left \
+       -bg {#d9d9d9} -fg black -activeforeground black -image CtxmenuUp -compound left \
       -font [subst $font] -command {set retval 14; destroy .ctxmenu}
     button .ctxmenu.b1 -text {Insert symbol} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-       -highlightthickness 0 -image CtxmenuSymbol -compound left \
+       -bg {#d9d9d9} -fg black -activeforeground black -image CtxmenuSymbol -compound left \
       -font [subst $font] -command {set retval 1; destroy .ctxmenu}
     button .ctxmenu.b2 -text {Insert wire} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-       -highlightthickness 0 -image CtxmenuWire -compound left \
+       -bg {#d9d9d9} -fg black -activeforeground black -image CtxmenuWire -compound left \
       -font [subst $font] -command {set retval 2; destroy .ctxmenu}
     button .ctxmenu.b3 -text {Insert line} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-       -highlightthickness 0 -image CtxmenuLine -compound left \
+       -bg {#d9d9d9} -fg black -activeforeground black -image CtxmenuLine -compound left \
       -font [subst $font] -command {set retval 3; destroy .ctxmenu}
     button .ctxmenu.b4 -text {Insert box} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-       -highlightthickness 0 -image CtxmenuBox -compound left \
+       -bg {#d9d9d9} -fg black -activeforeground black -image CtxmenuBox -compound left \
       -font [subst $font] -command {set retval 4; destroy .ctxmenu}
     button .ctxmenu.b5 -text {Insert polygon} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-       -highlightthickness 0 -image CtxmenuPoly -compound left \
+       -bg {#d9d9d9} -fg black -activeforeground black -image CtxmenuPoly -compound left \
       -font [subst $font] -command {set retval 5; destroy .ctxmenu}
     button .ctxmenu.b19 -text {Insert arc} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-       -highlightthickness 0 -image CtxmenuArc -compound left \
+       -bg {#d9d9d9} -fg black -activeforeground black -image CtxmenuArc -compound left \
       -font [subst $font] -command {set retval 19; destroy .ctxmenu}
     button .ctxmenu.b20 -text {Insert circle} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-       -highlightthickness 0 -image CtxmenuCircle -compound left \
+       -bg {#d9d9d9} -fg black -activeforeground black -image CtxmenuCircle -compound left \
       -font [subst $font] -command {set retval 20; destroy .ctxmenu}
     button .ctxmenu.b6 -text {Insert text} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-       -highlightthickness 0 -image CtxmenuText -compound left \
+       -bg {#d9d9d9} -fg black -activeforeground black -image CtxmenuText -compound left \
       -font [subst $font] -command {set retval 6; destroy .ctxmenu}
-    button .ctxmenu.b8 -text {Paste selection} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-       -highlightthickness 0 -image CtxmenuPaste -compound left \
+    button .ctxmenu.b8 -text {Paste clipboard} -padx 3 -pady 0 -anchor w -activebackground grey50 \
+       -bg {#d9d9d9} -fg black -activeforeground black -image CtxmenuPaste -compound left \
       -font [subst $font] -command {set retval 8; destroy .ctxmenu}
   }
   button .ctxmenu.b21 -text {Abort command} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-     -highlightthickness 0 -image CtxmenuAbort -compound left \
+     -bg {#d9d9d9} -fg black -activeforeground black -image CtxmenuAbort -compound left \
     -font [subst $font] -command {set retval 21; destroy .ctxmenu}
 
   pack .ctxmenu.b21 -fill x -expand true
@@ -5588,11 +6246,16 @@ proc context_menu { } {
   wm geometry .ctxmenu "+$x+$y";# move away from screen edges
   bind .ctxmenu <Leave> {if { {%W} eq {.ctxmenu} } {destroy .ctxmenu}}
   tkwait window .ctxmenu
+  # when context menu is destroyed an EnterNotify event is generated in the
+  # main xschem window. We want to process this event before taking 
+  # actions based on $retval.
+  update
   return $retval
 }
 
 proc tab_ctx_cmd {tab_but what} {
-  global terminal editor netlist_dir
+  global terminal editor netlist_dir OS has_x
+  regsub {/$} $netlist_dir {} netlist_dir
   # get win_path from tab name
   set win_path [lindex [$tab_but cget -command] 3] ;# xschem new_schematic switch .x1.drw
   set tablist [xschem tab_list]
@@ -5606,29 +6269,60 @@ proc tab_ctx_cmd {tab_but what} {
   if {!$found} { set filename {}}
   if { $filename ne {} } {
     if {$what eq {dir}} {
-      execute 0 xdg-open [file dirname $filename]
+      if {$OS == "Windows" } {
+        set dir [file dirname $filename]
+        set command [list {*}[auto_execok start] {}]
+        exec {*}$command $dir &
+      } else {
+        execute 0 xdg-open [file dirname $filename]
+      }
     } elseif {$what eq {copy}} {
       clipboard clear
       clipboard append $filename
     } elseif {$what eq {term}} {
-      set save [pwd]
-      cd [file dirname $filename]
-      execute 0 $terminal
-      cd $save
+      if {$OS == "Windows" } {
+        set save [pwd]
+        set dir [file dirname $filename]
+        cd $dir
+        set command [list {*}[auto_execok start] {}]
+        exec {*}$command &
+        cd $save
+      } else {
+        set save [pwd]
+        cd [file dirname $filename]
+        execute 0 $terminal
+        cd $save
+      }
     } elseif {$what eq {simterm}} {
-      set save [pwd]
-      cd $netlist_dir
-      execute 0 $terminal
-      cd $save
+      if {$OS == "Windows" } {
+        set save [pwd]
+        cd $netlist_dir
+        set command [list {*}[auto_execok start] {}]
+        exec {*}$command &
+        cd $save
+      } else {
+        set save [pwd]
+        cd $netlist_dir
+        execute 0 $terminal
+        cd $save
+      }
     } elseif {$what eq {edit}} {
       eval execute 0 $editor $filename
     } elseif {$what eq {netlist}} {
       set old [xschem get current_win_path]
       set save [pwd]
       xschem new_schematic switch $win_path {} 0 ;# no draw
-      cd $netlist_dir
-      eval execute 0 $editor [xschem get netlist_name fallback]
-      cd $save
+      if {[file exists $netlist_dir] && [file exists "$netlist_dir/[xschem get netlist_name fallback]"]} {
+        cd $netlist_dir
+        eval execute 0 $editor \"[xschem get netlist_name fallback]\"
+        cd $save
+      } else {
+        if {[info exists has_x]} {
+          alert_ {Netlist not existing, not yet generated} {} 0 0
+        } else {
+          puts {Netlist not existing, not yet generated}
+        }
+      }
       xschem new_schematic switch $old {} 0 ;# no draw
     } elseif {$what eq {save}} {
       set old [xschem get current_win_path]
@@ -5644,12 +6338,30 @@ proc tab_ctx_cmd {tab_but what} {
         # don't switch if we were on the tab that has been closed.
         xschem new_schematic switch $old {} 1 ;# draw
       }
+    } elseif {[regexp {^open } $what]} {
+      set counterpart [lindex $what 1]
+      set filetype  [lindex $what 2]
+
+      # see if $counterpart already open, in this case switch to it
+      set found 0
+      foreach {tabname filename} $tablist {
+        if {$filename eq $counterpart} {
+          set found 1
+          break
+        }
+      }
+      if {$found} {
+        xschem new_schematic switch $tabname {} 1 ;# draw
+      } else {
+        xschem new_schematic create {1} $counterpart
+        if {$filetype ne {symbol} } { xschem set netlist_type symbol}
+      }
     }
   }
   # puts $filename
 }
 proc tab_context_menu {tab_but} {
-  global retval
+  global retval search_schematic
 
 
   # find filename associated with tab button
@@ -5663,20 +6375,25 @@ proc tab_context_menu {tab_but} {
     }
   }
   if {!$found} { set filename {}}
-
-
-
   set old [xschem get current_win_path]
   xschem new_schematic switch $win_path {} 0 ;# no draw
   set filetype [xschem get netlist_type] ;# symbol or spice or vhdl or tedax or verilog
   xschem new_schematic switch $old {} 0 ;# no draw
 
   if {$filetype ne {symbol}} {
-    set counterpart [abs_sym_path $filename .sym]
+    if {$search_schematic == 1} {
+      set counterpart [abs_sym_path [xschem get current_name] {.sym}]
+    } else {
+      set counterpart [abs_sym_path $filename .sym]
+    }
     set msg {Open symbol}
     set img CtxmenuSymbol
   } else {
-    set counterpart [abs_sym_path $filename .sch]
+    if {$search_schematic == 1} {
+      set counterpart [abs_sym_path [xschem get current_name] {.sch}]
+    } else {
+      set counterpart [abs_sym_path $filename .sch]
+    }
     set msg {Open schematic}
     set img CtxmenuSchematic
   }
@@ -5694,40 +6411,36 @@ proc tab_context_menu {tab_but} {
   set x [expr {[winfo pointerx .ctxmenu] - 10}]
   set y [expr {[winfo pointery .ctxmenu] - 10}]
   button .ctxmenu.b0 -text {Tab menu} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-     -bg white -highlightthickness 0 -state disabled -disabledforeground black -font [subst $font]
+     -fg black -background white -state disabled -disabledforeground black -font [subst $font]
   button .ctxmenu.b1 -text {Copy filename} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-     -highlightthickness 0 -image CtxmenuCopy -compound left \
+     -bg {#d9d9d9} -fg black -activeforeground black -image CtxmenuCopy -compound left \
     -font [subst $font] -command "set retval 1; tab_ctx_cmd $tab_but copy; destroy .ctxmenu"
   button .ctxmenu.b2 -text {Open directory} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-     -highlightthickness 0 -image CtxmenuOpendir -compound left \
+     -bg {#d9d9d9} -fg black -activeforeground black -image CtxmenuOpendir -compound left \
     -font [subst $font] -command "set retval 2; tab_ctx_cmd $tab_but dir; destroy .ctxmenu"
   button .ctxmenu.b3 -text {Open circuit dir. term.} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-     -highlightthickness 0 -image CtxmenuTerm -compound left \
+     -bg {#d9d9d9} -fg black -activeforeground black -image CtxmenuTerm -compound left \
     -font [subst $font] -command "set retval 3; tab_ctx_cmd $tab_but term; destroy .ctxmenu"
   button .ctxmenu.b4 -text {Open sim. dir. term.} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-     -highlightthickness 0 -image CtxmenuTerm -compound left \
-    -font [subst $font] -command "set retval 3; tab_ctx_cmd $tab_but simterm; destroy .ctxmenu"
+     -bg {#d9d9d9} -fg black -activeforeground black -image CtxmenuTerm -compound left \
+    -font [subst $font] -command "set retval 4; tab_ctx_cmd $tab_but simterm; destroy .ctxmenu"
   if {$counterpart ne {}} {
     button .ctxmenu.b6 -text $msg -padx 3 -pady 0 -anchor w -activebackground grey50 \
-       -highlightthickness 0 -image $img -compound left \
+       -bg {#d9d9d9} -fg black -activeforeground black -image $img -compound left \
       -font [subst $font] \
-      -command "
-         set retval 6
-         xschem new_schematic create {} $counterpart
-         destroy .ctxmenu
-       "
+      -command "set retval 6; tab_ctx_cmd $tab_but {open {$counterpart} $filetype} ; destroy .ctxmenu"
   }
   if {$filetype ne {symbol}} {
     button .ctxmenu.b5 -text {Edit netlist} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-       -highlightthickness 0 -image CtxmenuEdit -compound left \
+       -bg {#d9d9d9} -fg black -activeforeground black -image CtxmenuEdit -compound left \
       -font [subst $font] -command "set retval 5; tab_ctx_cmd $tab_but netlist; destroy .ctxmenu"
   }
   button .ctxmenu.b7 -text {Save} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-     -highlightthickness 0 -image CtxmenuSave -compound left \
+     -bg {#d9d9d9} -fg black -activeforeground black -image CtxmenuSave -compound left \
     -font [subst $font] -command "set retval 7; tab_ctx_cmd $tab_but save; destroy .ctxmenu"
   button .ctxmenu.b8 -text {Close tab} -padx 3 -pady 0 -anchor w -activebackground grey50 \
-     -highlightthickness 0 -image CtxmenuDelete -compound left \
-    -font [subst $font] -command "set retval 7; tab_ctx_cmd $tab_but close; destroy .ctxmenu"
+     -bg {#d9d9d9} -fg black -activeforeground black -image CtxmenuDelete -compound left \
+    -font [subst $font] -command "set retval 8; tab_ctx_cmd $tab_but close; destroy .ctxmenu"
 
   pack .ctxmenu.b0 -fill x -expand true
   pack .ctxmenu.b1 -fill x -expand true
@@ -5768,7 +6481,7 @@ proc tab_context_menu {tab_but} {
 # Code contributed by Neil Johnson (github: nejohnson)
 #
 proc setup_toolbar {} {
-  global toolbar_visible toolbar_horiz toolbar_list XSCHEM_SHAREDIR
+  global toolbar_visible toolbar_horiz toolbar_list XSCHEM_SHAREDIR dark_gui_colorscheme
   set_ne toolbar_visible 1
   set_ne toolbar_horiz   1
   set_ne toolbar_list { 
@@ -5820,11 +6533,18 @@ proc setup_toolbar {} {
 # Create a tool button which may be displayed
 #
 proc toolbar_add {name cmd { help "" } {topwin {} } } {
-    if {![winfo exists  $topwin.toolbar]} {
-       frame $topwin.toolbar -relief raised -bd 0 -bg white
+    global dark_gui_colorscheme
+
+    if { $dark_gui_colorscheme ==1} {
+      set bg black
+    } else {
+      set bg white
     }
-    button $topwin.toolbar.b$name -image img$name -relief flat -bd 0 -bg white -fg white -height 24 \
-    -padx 0 -pady 0  -highlightthickness 0 -command $cmd
+    if {![winfo exists  $topwin.toolbar]} {
+       frame $topwin.toolbar -relief raised -bd 0 -background $bg 
+    }
+    button $topwin.toolbar.b$name -image img$name -relief flat -bd 0 -background $bg -fg $bg -height 24 \
+    -padx 0 -pady 0 -command $cmd
     if { $help == "" } { balloon $topwin.toolbar.b$name $name } else { balloon $topwin.toolbar.b$name $help }
 }
 
@@ -5838,7 +6558,7 @@ proc toolbar_show { { topwin {} } } {
     # puts "toolbar_show: $topwin"
     set toolbar_visible 1
     if {![winfo exists  $topwin.toolbar]} {
-       frame $topwin.toolbar -relief raised -bd 0 -bg white
+       frame $topwin.toolbar -relief raised -bd 0 -background white 
     }
     if {[winfo ismapped $topwin.toolbar]} {return}
     if { $toolbar_horiz } { 
@@ -5857,10 +6577,10 @@ proc toolbar_show { { topwin {} } } {
     foreach b $toolbar_list {
         if { $b == "---" } {
             if { $toolbar_horiz } {
-                frame $topwin.toolbar.sep$toolbar_sepn -bg lightgrey -width 2
+                frame $topwin.toolbar.sep$toolbar_sepn -background lightgrey -width 2
                 pack $topwin.toolbar.sep$toolbar_sepn -side $pos -padx 1 -pady 0 -fill y
             } else {
-                frame $topwin.toolbar.sep$toolbar_sepn -bg lightgrey -height 2
+                frame $topwin.toolbar.sep$toolbar_sepn -background lightgrey -height 2
                 pack $topwin.toolbar.sep$toolbar_sepn -side $pos -padx 0 -pady 1 -fill x
             }
             incr toolbar_sepn
@@ -5922,7 +6642,8 @@ proc setup_tabbed_interface {} {
       bind .tabs.x0 <ButtonPress-3> {tab_context_menu %W}
       bind .tabs.x0 <ButtonPress-1> {swap_tabs %X %Y press}
       bind .tabs.x0 <ButtonRelease-1> {swap_tabs %X %Y release}
-      button .tabs.add -padx 0 -pady 0  -takefocus 0 -text { + } -command "xschem new_schematic create"
+      button .tabs.add -padx 0 -pady 0  -takefocus 0 -text { + } \
+          -command "xschem new_schematic create"
       pack .tabs.x0 .tabs.add -side left
       balloon .tabs.add {Create a new tab}
       pack_tabs
@@ -6038,17 +6759,23 @@ proc next_tab {} {
 }
 
 proc set_tab_names {{mod {}}} {
-  global tabbed_interface has_x
+  global tabbed_interface has_x dark_gui_colorscheme
+
+  if {$dark_gui_colorscheme == 0} { 
+    set tab_color Palegreen
+  } else {
+     set tab_color DarkGreen
+  }
 
   if {[info exists has_x] && $tabbed_interface } {
     set currwin [xschem get current_win_path]
     regsub {\.drw} $currwin {} tabname
     if {$tabname eq {}} { set tabname .x0}
-    .tabs$tabname configure -text [file tail [xschem get schname]]$mod -bg Palegreen
+    .tabs$tabname configure -text [file tail [xschem get schname]]$mod -background $tab_color
     balloon .tabs$tabname [xschem get schname]
     for { set i 0} { $i < $tctx::max_new_windows} { incr i} {
       if { [winfo exists .tabs.x$i] && ($tabname ne ".x$i")} {
-         .tabs.x$i configure -bg $tctx::tab_bg
+         .tabs.x$i configure -background $tctx::tab_bg
       }
     }
   }
@@ -6064,9 +6791,9 @@ proc quit_xschem { {force {}}} {
 }
 
 proc raise_dialog {parent window_path } {
-  global myload_loadfile component_browser_on_top
+  global file_dialog_loadfile component_browser_on_top
   foreach i ".dialog .graphdialog .load" {
-    if {!$component_browser_on_top && [info exists myload_loadfile ] && $myload_loadfile == 2 && $i eq {.load} } {
+    if {!$component_browser_on_top && [info exists file_dialog_loadfile ] && $file_dialog_loadfile == 2 && $i eq {.load} } {
       continue
     }
     if {[winfo exists $i] && [winfo ismapped $i] && [winfo ismapped $parent] &&
@@ -6106,6 +6833,7 @@ namespace eval tctx {
   variable max_new_windows
   variable source_swap_tab
   variable dest_swap_tab
+  variable colors
 }
 
 ## list of dialogs: when open do not perform context switching
@@ -6136,28 +6864,31 @@ proc no_open_dialogs {} {
 ## "debug_var" there is only a global debug mode
 ## "xschem_server_getdata" only one tcp listener per process
 ## "bespice_server_getdata" only one tcp listener per process
-## "myload_*" only one load_file_dialog window is allowed
+## "file_dialog_*" only one load_file_dialog window is allowed
 
 set tctx::global_list {
   PDK_ROOT PDK SKYWATER_MODELS SKYWATER_STDCELLS 
   INITIALINSTDIR INITIALLOADDIR INITIALPROPDIR INITIALTEXTDIR XSCHEM_LIBRARY_PATH
   add_all_windows_drives auto_hilight autofocus_mainwindow
   autotrim_wires bespice_listen_port big_grid_points bus_replacement_char cadgrid cadlayers
-  cadsnap cairo_font_name change_lw color_ps colors compare_sch constrained_move
+  cadsnap cairo_font_name change_lw color_ps tctx::colors compare_sch constr_mv
   copy_cell crosshair_layer custom_label_prefix custom_token dark_colors dark_colorscheme
-  delay_flag  dim_bg dim_value disable_unique_names do_all_inst draw_crosshair
+  dark_gui_colorscheme delay_flag  dim_bg dim_value disable_unique_names
+  do_all_inst draw_crosshair
   draw_grid draw_grid_axes draw_window edit_prop_pos edit_prop_size
   edit_symbol_prop_new_sel editprop_sympath en_hilight_conn_inst enable_dim_bg enable_stretch
-  filetmp fix_broken_tiled_fill flat_netlist fullscreen gaw_fd gaw_tcp_address graph_bus
-  graph_change_done graph_digital graph_linewidth_mult graph_logx
+  enter_text_default_geometry filetmp fix_broken_tiled_fill flat_netlist fullscreen
+  gaw_fd gaw_tcp_address graph_bus
+  graph_change_done graph_digital graph_dialog_default_geometry graph_linewidth_mult graph_logx
   graph_logy graph_rainbow graph_schname graph_sel_color graph_sel_wave
-  graph_selected graph_sort graph_unlocked hide_empty_graphs hide_symbols hsize
-  incr_hilight infowindow_text launcher_default_program
+  graph_selected graph_sort graph_unlocked hide_empty_graphs hide_symbols tctx::hsize
+  incr_hilight incremental_select infowindow_text intuitive_interface 
+  keep_symbols launcher_default_program
   light_colors line_width live_cursor2_backannotate local_netlist_dir lvs_ignore
   lvs_netlist  measure_text netlist_dir netlist_show netlist_type no_ask_save
   no_change_attrs nolist_libs noprint_libs old_selected_tok only_probes path pathlist
   persistent_command preserve_unchanged_attrs prev_symbol ps_colors ps_paper_size rainbow_colors
-  rawfile_loaded rcode recentfile
+  tctx::rcode recentfile
   retval retval_orig rotated_text search_case search_exact search_found search_schematic
   search_select search_value selected_tok show_hidden_texts show_infowindow
   show_infowindow_after_netlist show_pin_net_names
@@ -6168,7 +6899,7 @@ set tctx::global_list {
   toolbar_visible transparent_svg undo_type use_lab_wire unselect_partial_sel_wires
   use_label_prefix use_tclreadline
   user_wants_copy_cell verilog_2001 verilog_bitblast viewdata_fileid viewdata_filename viewdata_w
-  vsize xschem_libs xschem_listen_port zoom_full_center
+  tctx::vsize xschem_libs xschem_listen_port zoom_full_center
 }
 
 ## list of global arrays to save/restore on context switching
@@ -6176,7 +6907,7 @@ set tctx::global_list {
 ## EXCEPTIONS, not to be saved/restored:
 ## execute
 set tctx::global_array_list {
-  replace_key dircolor sim enable_layer
+  replace_key dircolor sim enable_layer ngspice::ngspice_data
 }
 
 proc delete_ctx {context} {
@@ -6187,7 +6918,8 @@ proc delete_ctx {context} {
     # puts "delete_ctx $tctx::tctx"
     array unset $tctx::tctx
     foreach tctx::i $tctx::global_array_list {
-      if { [array exists ${tctx::tctx}_$tctx::i] } {
+      regsub {::} $tctx::i {__} arr_name
+      if { [array exists ${tctx::tctx}_$arr_name] } {
         array unset ${tctx::tctx}_$tctx::i
       }
     }
@@ -6213,8 +6945,10 @@ proc restore_ctx {context} {
       }
     }
     foreach tctx::i $tctx::global_array_list {
-      if { [array exists tctx::${tctx::tctx}_$tctx::i] } {
-        array set $tctx::i [array get [subst tctx::${tctx::tctx}_$tctx::i]]
+      unset -nocomplain $tctx::i
+      regsub {::} $tctx::i {__} arr_name
+      if { [array exists tctx::${tctx::tctx}_$arr_name] } {
+        array set $tctx::i [array get [subst tctx::${tctx::tctx}_$arr_name]]
       }
     }
   }
@@ -6241,7 +6975,8 @@ proc save_ctx {context} {
     }
     foreach tctx::i $tctx::global_array_list {
       if { [array exists $tctx::i] } {
-        array set [subst tctx::${tctx::tctx}_$tctx::i] [array get $tctx::i]
+        regsub {::} $tctx::i {__} arr_name
+        array set [subst tctx::${tctx::tctx}_$arr_name] [array get $tctx::i]
       }
     }
   }
@@ -6249,47 +6984,85 @@ proc save_ctx {context} {
 
 proc housekeeping_ctx {} {
   global has_x simulate_bg show_hidden_texts case_insensitive draw_window hide_symbols
-  global netlist_type
+  global netlist_type intuitive_interface
   if {![info exists has_x]} {return}
   uplevel #0 {
   }
   # puts "housekeeping_ctx, path: [xschem get current_win_path]"
   xschem set hide_symbols $hide_symbols
   xschem set draw_window $draw_window
+  xschem set intuitive_interface  $intuitive_interface
   xschem case_insensitive $case_insensitive
-  if {![info exists tctx::[xschem get current_win_path]_simulate]} {
-    [xschem get top_path].menubar.simulate configure -bg $simulate_bg
-  } else {
-    [xschem get top_path].menubar.simulate configure -bg red
-  }
+  set_sim_netlist_waves_buttons 
   .statusbar.7 configure -text $netlist_type
 }
 
-proc simulate_button {button_path} {
-  global simulate_bg
-  if { ![info exists tctx::[xschem get current_win_path]_simulate] } {
-    set tctx::[xschem get current_win_path]_simulate 1
-    $button_path configure -bg red
-    if {[catch {
-      simulate "clear_simulate_button $button_path tctx::[xschem get current_win_path]_simulate"
-    } err ]} {
-      puts {Error running simulation procedure}
-      alert_ {Error running simulation procedure}
-      clear_simulate_button $button_path tctx::[xschem get current_win_path]_simulate
+# callback that resets simulate button color at end of simulation
+proc set_simulate_button {top_path winpath} {
+  global simulate_bg execute has_x
+
+  if {![info exists has_x]} return
+  set current_win [xschem get current_win_path]
+  set simvar tctx::${winpath}_simulate
+  set sim_button $top_path.menubar.simulate
+
+  # puts "current_win=|$current_win|"
+  # puts "simvar=|$simvar|"
+  # puts "winpath=|$winpath|"
+  # puts "top_path=|$top_path|"
+  # puts "sim_button=|$sim_button|"
+  # puts "execute(exitcode,last)=|$execute(exitcode,last)|"
+
+  if {![info exists execute(exitcode,last)]} {
+    if { $current_win eq $winpath} {
+      $sim_button configure -background $simulate_bg
     }
-    if {$err == -1} {
-       puts {Error: simulate procedure returned error code -1}
-       alert_ {Error: simulate procedure returned error code -1}
+    set $simvar $simulate_bg
+  } elseif { $execute(exitcode,last) == 0} {
+    if { $current_win eq $winpath} {
+      $sim_button configure -background Green
     }
+    set $simvar Green
+  } else {   
+    if { $current_win eq $winpath} {
+      $sim_button configure -background red
+    }
+    set $simvar red
   }
 }
 
-proc clear_simulate_button {button_path simvar} {
-  global simulate_bg
-  if { "tctx::[xschem get current_win_path]_simulate" eq $simvar } {
-    $button_path configure -bg $simulate_bg
+
+# set simulate and netlist buttons on context change
+proc set_sim_netlist_waves_buttons {} {
+  global simulate_bg execute has_x
+
+  if {![info exists has_x]} {return}
+  set win_path [xschem get current_win_path]
+  set top_path [xschem get top_path]
+
+  set netlist_var tctx::${win_path}_netlist
+  set sim_var  tctx::${win_path}_simulate
+  set netlist_button $top_path.menubar.netlist
+  set sim_button $top_path.menubar.simulate
+  set waves_var tctx::${win_path}_waves
+  set waves_button $top_path.menubar.waves
+  if {![info exists $netlist_var] || [set $netlist_var] eq $simulate_bg} {
+    $netlist_button configure -background  $simulate_bg
+  } else { 
+    $netlist_button configure -background [set $netlist_var]
   }
-  unset $simvar
+
+  if {![info exists $sim_var] || [set $sim_var] eq $simulate_bg} {
+    $sim_button configure -background  $simulate_bg
+  } else { 
+    $sim_button configure -background [set $sim_var]
+  }
+
+  if {![info exists $waves_var] || [set $waves_var] eq $simulate_bg} {
+    $waves_button configure -background  $simulate_bg
+  } else { 
+    $waves_button configure -background [set $waves_var]
+  }
 }
 
 # these two routines are workarounds for broken remote desktop connection tools
@@ -6373,6 +7146,7 @@ global env has_x OS autofocus_mainwindow
       bind $topwin <Alt-ButtonPress> {xschem callback %W %T %x %y 0 %b 0 [expr {$Mod1Mask}]}
       bind $topwin <Control-Alt-ButtonPress> {xschem callback %W %T %x %y 0 %b 0 [expr {$ControlMask + $Mod1Mask}]}
       bind $topwin <Shift-Alt-ButtonPress> {xschem callback %W %T %x %y 0 %b 0 [expr {$ShiftMask + $Mod1Mask}]}
+      bind $topwin <Alt-Motion> {xschem callback %W %T %x %y 0 0 0 [expr {$Mod1Mask+%s}]}
       bind $topwin <Alt-KeyPress> {xschem callback %W %T %x %y %N 0 0 [expr {$Mod1Mask}]}
       bind $topwin <Control-Alt-KeyPress> {xschem callback %W %T %x %y %N 0 0 [expr {$ControlMask + $Mod1Mask}]}
       bind $topwin <Shift-Alt-KeyPress> {xschem callback %W %T %x %y %N 0 0 [expr {$ShiftMask + $Mod1Mask}]}
@@ -6402,6 +7176,8 @@ proc pack_widgets { { topwin {} } } {
     pack $topwin.statusbar.5 -side left 
     pack $topwin.statusbar.6 -side left 
     pack $topwin.statusbar.7 -side left 
+    pack $topwin.statusbar.10 -side left 
+    pack $topwin.statusbar.9 -side left 
     pack $topwin.statusbar.8 -side left 
     pack $topwin.statusbar.1 -side left -fill x
     pack $topwin.menubar -side top -fill x
@@ -6447,21 +7223,59 @@ proc switch_undo {} {
   }
 }
 
+
+proc select_raw {} {
+  global has_x netlist_dir
+  regsub {/$} $netlist_dir {} netlist_dir
+  set filename $netlist_dir/[file tail [file rootname [xschem get schname]]].raw
+  set types {
+      {{Raw Files}       {.raw}        }
+      {{All Files}        *            }  
+  } 
+  if {[info exists has_x]} {
+    set filename [tk_getOpenFile -title "Select file" -multiple 0 -initialdir $netlist_dir \
+            -initialfile [file tail $filename]  -filetypes $types]
+  }
+  return $filename
+}
+
+proc load_raw {{type {}}} {
+  global netlist_dir has_x
+
+  regsub {/$} $netlist_dir {} netlist_dir
+  if { [xschem raw_query loaded] != -1} { ;# unload existing raw file(s)
+    xschem raw_clear
+   }
+  set filename [select_raw]
+  if {[file exists $filename]} {
+    if {$type ne {}} {
+      xschem raw_read $filename $type
+    } else {
+      xschem raw_read $filename
+    }
+  }
+}
+
 proc build_widgets { {topwin {} } } {
-  global XSCHEM_SHAREDIR tabbed_interface simulate_bg OS
-  global colors recentfile color_ps transparent_svg menu_debug_var enable_stretch
-  global netlist_show flat_netlist split_files compare_sch
+  global XSCHEM_SHAREDIR tabbed_interface simulate_bg OS sim
+  global dark_gui_colorscheme draw_crosshair
+  global recentfile color_ps transparent_svg menu_debug_var enable_stretch
+  global netlist_show flat_netlist split_files compare_sch intuitive_interface
   global draw_grid big_grid_points sym_txt change_lw incr_hilight symbol_width
   global cadsnap cadgrid draw_window show_pin_net_names toolbar_visible hide_symbols undo_type
   global disable_unique_names persistent_command autotrim_wires en_hilight_conn_inst
   global local_netlist_dir editor netlist_type netlist_dir spiceprefix initial_geometry
   set mbg {}
-  set bbg {-highlightthickness 0}
 
   # if { $topwin ne {}} {
   #   set mbg {-bg gray50}
-  #   set bbg {-bg gray50 -highlightthickness 0}
   # }
+
+  if { $dark_gui_colorscheme} {
+    set selectcolor white
+  } else {
+    set selectcolor black
+  }
   eval frame $topwin.menubar -relief raised -bd 2 $mbg
   eval menubutton $topwin.menubar.file -text "File" -menu $topwin.menubar.file.menu \
    -padx 3 -pady 0 $mbg
@@ -6479,7 +7293,7 @@ proc build_widgets { {topwin {} } } {
    -padx 3 -pady 0 $mbg
   menu $topwin.menubar.prop.menu -tearoff 0
   eval menubutton $topwin.menubar.layers -text "Layers" -menu $topwin.menubar.layers.menu \
-   -padx 3 -pady 0 -background [lindex $colors 4]
+   -padx 3 -pady 0 -background [lindex $tctx::colors 4]
   menu $topwin.menubar.layers.menu -tearoff 0
   eval menubutton $topwin.menubar.tools -text "Tools" -menu $topwin.menubar.tools.menu \
    -padx 3 -pady 0 $mbg
@@ -6525,7 +7339,8 @@ proc build_widgets { {topwin {} } } {
   toolbar_add FileOpen "xschem load" "Open File" $topwin
 
   $topwin.menubar.file.menu add command -label "Open schematic in new window/tab" \
-      -command "xschem schematic_in_new_window" -accelerator Alt+E
+      -command "open_sub_schematic" -accelerator Alt+E
+      # -command "xschem schematic_in_new_window" -accelerator Alt+E
   $topwin.menubar.file.menu add command -label "Open symbol in new window/tab" \
       -command "xschem symbol_in_new_window" -accelerator Alt+I
 
@@ -6536,16 +7351,14 @@ proc build_widgets { {topwin {} } } {
   # toolbar_add FileMerge "xschem merge" "Merge File" $topwin
   $topwin.menubar.file.menu add command -label "Reload" -accelerator {Alt+S} \
     -command {
-     if { [string compare [tk_messageBox -type okcancel -parent [xschem get topwindow] \
-             -message {Are you sure you want to reload?}] ok]==0 } {
-             xschem reload
-        }
+      if {[alert_ "Are you sure you want to reload?" {} 0 1] == 1} {
+        xschem reload
+      }
     }
   toolbar_add FileReload {
-     if { [string compare [tk_messageBox -type okcancel -parent [xschem get topwindow] \
-             -message {Are you sure you want to reload?}] ok]==0 } {
-             xschem reload
-        }
+      if {[alert_ "Are you sure you want to reload?" {} 0 1] == 1} {
+        xschem reload
+      }
     } "Reload File" $topwin
   $topwin.menubar.file.menu add command -label "Save as" -command "xschem saveas" -accelerator {Ctrl+Shift+S}
   $topwin.menubar.file.menu add command -label "Save as symbol" \
@@ -6553,6 +7366,7 @@ proc build_widgets { {topwin {} } } {
   # added svg, png 20171022
   $topwin.menubar.file.menu add cascade -label "Image export" -menu $topwin.menubar.file.menu.im_exp
   menu $topwin.menubar.file.menu.im_exp -tearoff 0
+  $topwin.menubar.file.menu.im_exp add command -label "EPS Selection Export" -command "xschem print eps" 
   $topwin.menubar.file.menu.im_exp add command -label "PDF/PS Export" -command "xschem print pdf" -accelerator {*}
   $topwin.menubar.file.menu.im_exp add command -label "PDF/PS Export Full" -command "xschem print pdf_full"
   $topwin.menubar.file.menu.im_exp add command -label "Hierarchical PDF/PS Export" -command "xschem hier_psprint"
@@ -6571,38 +7385,47 @@ proc build_widgets { {topwin {} } } {
     quit_xschem
   }
   $topwin.menubar.option.menu add checkbutton -label "Color Postscript/SVG" -variable color_ps \
-     -command {
+     -selectcolor $selectcolor -command {
         if { $color_ps==1 } {xschem set color_ps 1} else { xschem set color_ps 0}
      }
-  $topwin.menubar.option.menu add checkbutton -label "Transparent SVG background" -variable transparent_svg
+  $topwin.menubar.option.menu add checkbutton -selectcolor $selectcolor  \
+     -label "Transparent SVG background" -variable transparent_svg
   $topwin.menubar.option.menu add checkbutton -label "Debug mode" -variable menu_debug_var \
-     -command {
+    -selectcolor $selectcolor  -command {
         if { $menu_debug_var==1 } {xschem debug 1} else { xschem debug 0}
      }
-  $topwin.menubar.option.menu add checkbutton -label "Undo buffer on Disk" -variable undo_type \
+  $topwin.menubar.option.menu add checkbutton -selectcolor $selectcolor \
+     -label "Undo buffer on Disk" -variable undo_type \
      -onvalue disk -offvalue memory -command {switch_undo}
   $topwin.menubar.option.menu add checkbutton -label "Enable stretch" -variable enable_stretch \
-     -accelerator Y 
+     -selectcolor $selectcolor  -accelerator Y 
   $topwin.menubar.option.menu add checkbutton -label "Unsel. partial sel. wires after stretch move" \
-     -variable unselect_partial_sel_wires
+     -selectcolor $selectcolor -variable unselect_partial_sel_wires
 
   $topwin.menubar.option.menu add checkbutton -label "Auto Join/Trim Wires" -variable autotrim_wires \
-     -command {
+     -selectcolor $selectcolor -command {
          if {$autotrim_wires == 1} {
            xschem trim_wires
            xschem redraw
          }
      }
-  $topwin.menubar.option.menu add checkbutton -label "Persistent wire/line place command" -variable persistent_command
+  $topwin.menubar.option.menu add checkbutton -selectcolor $selectcolor \
+    -label "Persistent wire/line place command" -variable persistent_command
+  $topwin.menubar.option.menu add checkbutton -label "Intuitive Click & Drag interface" \
+    -variable intuitive_interface -selectcolor $selectcolor \
+    -command {xschem set intuitive_interface $intuitive_interface}
+
+  $topwin.menubar.option.menu add checkbutton -label "Draw crosshair" \
+    -variable draw_crosshair -selectcolor $selectcolor -accelerator {Alt-X}
 
   $topwin.menubar.option.menu add command -label "Replace \[ and \] for buses in SPICE netlist" \
      -command {
        input_line "Enter two characters to replace default bus \[\] delimiters:" "set bus_replacement_char"
      }
   $topwin.menubar.option.menu add checkbutton \
-    -label "Group bus slices in Verilog instances" -variable verilog_bitblast
+    -selectcolor $selectcolor -label "Group bus slices in Verilog instances" -variable verilog_bitblast
   $topwin.menubar.option.menu add checkbutton -label "Draw grid" -variable draw_grid \
-     -accelerator {%} \
+     -selectcolor $selectcolor -accelerator {%} \
      -command {
        xschem redraw
      }
@@ -6613,17 +7436,17 @@ proc build_widgets { {topwin {} } } {
          xschem set cadsnap [expr {$cadsnap * 2.0} ]
        }
   $topwin.menubar.option.menu add checkbutton -label "Variable grid point size" -variable big_grid_points \
-     -command { xschem redraw }
+     -selectcolor $selectcolor -command { xschem redraw }
   $topwin.menubar.option.menu add separator
 
   $topwin.menubar.option.menu add checkbutton -label "No XCopyArea drawing model" -variable draw_window \
-         -accelerator {Ctrl+$} \
+         -selectcolor $selectcolor -accelerator {Ctrl+$} \
          -command {
            if { $draw_window == 1} { xschem set draw_window 1} else { xschem set draw_window 0}
          }
 
   $topwin.menubar.option.menu add checkbutton -label "Fix for GPUs with broken tiled fill" \
-         -variable fix_broken_tiled_fill \
+         -selectcolor $selectcolor -variable fix_broken_tiled_fill \
          -command {
            if { $fix_broken_tiled_fill == 1} {
              xschem set fix_broken_tiled_fill 1
@@ -6634,7 +7457,7 @@ proc build_widgets { {topwin {} } } {
            xschem redraw
          }
   $topwin.menubar.option.menu add checkbutton -label "Fix broken RDP mouse coordinates" \
-     -variable fix_mouse_coord -command {xschem set fix_mouse_coord $fix_mouse_coord}
+     -selectcolor $selectcolor -variable fix_mouse_coord -command {xschem set fix_mouse_coord $fix_mouse_coord}
 
   $topwin.menubar.option.menu add separator
 
@@ -6643,27 +7466,27 @@ proc build_widgets { {topwin {} } } {
   menu $topwin.menubar.option.menu.netlist -tearoff 0
 
   $topwin.menubar.option.menu.netlist add checkbutton -label "Flat netlist" -variable flat_netlist \
-     -accelerator : \
+     -selectcolor $selectcolor -accelerator : \
      -command {
         if { $flat_netlist==1 } {xschem set flat_netlist 1} else { xschem set flat_netlist 0} 
      }
   $topwin.menubar.option.menu.netlist add checkbutton -label "Split netlist" -variable split_files \
-     -accelerator {} 
+     -selectcolor $selectcolor -accelerator {} 
   $topwin.menubar.option.menu.netlist add radiobutton -label "Spice netlist"\
-       -variable netlist_type -value spice -accelerator {Shift+V} \
-       -command "xschem set netlist_type spice; xschem redraw"
+       -background grey60 -variable netlist_type -value spice -accelerator {Ctrl+Shift+V} \
+       -selectcolor $selectcolor -command "xschem set netlist_type spice; xschem redraw"
   $topwin.menubar.option.menu.netlist add radiobutton -label "VHDL netlist"\
-       -variable netlist_type -value vhdl -accelerator {Shift+V} \
-       -command "xschem set netlist_type vhdl; xschem redraw"
+       -background grey60 -variable netlist_type -value vhdl -accelerator {Ctrl+Shift+V} \
+       -selectcolor $selectcolor -command "xschem set netlist_type vhdl; xschem redraw"
   $topwin.menubar.option.menu.netlist add radiobutton -label "Verilog netlist"\
-       -variable netlist_type -value verilog -accelerator {Shift+V} \
-       -command "xschem set netlist_type verilog; xschem redraw"
+       -background grey60 -variable netlist_type -value verilog -accelerator {Ctrl+Shift+V} \
+       -selectcolor $selectcolor -command "xschem set netlist_type verilog; xschem redraw"
   $topwin.menubar.option.menu.netlist add radiobutton -label "tEDAx netlist" \
-       -variable netlist_type -value tedax -accelerator {Shift+V} \
-       -command "xschem set netlist_type tedax; xschem redraw"
+       -background grey60 -variable netlist_type -value tedax -accelerator {Ctrl+Shift+V} \
+       -selectcolor $selectcolor -command "xschem set netlist_type tedax; xschem redraw"
   $topwin.menubar.option.menu.netlist add radiobutton -label "Symbol global attrs" \
-       -variable netlist_type -value symbol -accelerator {Shift+V} \
-       -command "xschem set netlist_type symbol; xschem redraw"
+       -background grey60 -variable netlist_type -value symbol -accelerator {Ctrl+Shift+V} \
+       -selectcolor $selectcolor -command "xschem set netlist_type symbol; xschem redraw"
 
 
 
@@ -6690,33 +7513,69 @@ proc build_widgets { {topwin {} } } {
   $topwin.menubar.edit.menu add command -label "Move objects adding wires to connected pins" \
       -command "xschem move_objects kissing" -accelerator Shift+M
   toolbar_add EditMove "xschem move_objects" "Move objects" $topwin
-  $topwin.menubar.edit.menu add command -label "Flip in place selected objects" -state normal \
+  $topwin.menubar.edit.menu add command -label "Horizontal Flip in place selected objects" -state normal \
      -command {xschem flip_in_place} -accelerator {Alt-F}
+  $topwin.menubar.edit.menu add command -label "Vertical Flip in place selected objects" -state normal \
+     -command {xschem flipv_in_place} -accelerator {Alt-V}
   $topwin.menubar.edit.menu add command -label "Rotate in place selected objects" -state normal \
       -command {xschem rotate_in_place} -accelerator {Alt-R}
-  $topwin.menubar.edit.menu add command -label "Flip selected objects" -state normal \
+  $topwin.menubar.edit.menu add command -label "Vertical Flip selected objects" -state normal \
+     -command {xschem flipv} -accelerator {Shift-V}
+  $topwin.menubar.edit.menu add command -label "Horizontal Flip selected objects" -state normal \
      -command {xschem flip} -accelerator {Shift-F}
   $topwin.menubar.edit.menu add command -label "Rotate selected objects" -state normal \
       -command {xschem rotate} -accelerator {Shift-R}
-  $topwin.menubar.edit.menu add radiobutton -label "Unconstrained move" -variable constrained_move \
-     -value 0 -command {xschem set constrained_move 0} 
-  $topwin.menubar.edit.menu add radiobutton -label "Constrained Horizontal move" -variable constrained_move \
-     -value 1 -accelerator H -command {xschem set constrained_move 1} 
-  $topwin.menubar.edit.menu add radiobutton -label "Constrained Vertical move" -variable constrained_move \
-     -value 2 -accelerator V -command {xschem set constrained_move 2} 
+  $topwin.menubar.edit.menu add radiobutton -label "Unconstrained move" -variable constr_mv \
+     -selectcolor $selectcolor -background grey60 -value 0 -command {xschem set constr_mv 0} 
+  $topwin.menubar.edit.menu add radiobutton -label "Constrained Horizontal move" -variable constr_mv \
+     -selectcolor $selectcolor -background grey60 -value 1 -accelerator H -command {xschem set constr_mv 1} 
+  $topwin.menubar.edit.menu add radiobutton -label "Constrained Vertical move" -variable constr_mv \
+     -selectcolor $selectcolor -background grey60 -value 2 -accelerator V -command {xschem set constr_mv 2} 
   $topwin.menubar.edit.menu add command -label "Push schematic" -command "xschem descend" -accelerator E
   toolbar_add EditPushSch "xschem descend" "Push schematic" $topwin
   $topwin.menubar.edit.menu add command -label "Push symbol" -command "xschem descend_symbol" -accelerator I
   toolbar_add EditPushSym "xschem descend_symbol" "Push symbol" $topwin
   $topwin.menubar.edit.menu add command -label "Pop" -command "xschem go_back" -accelerator Ctrl+E
   toolbar_add EditPop "xschem go_back" "Pop" $topwin
-  eval button $topwin.menubar.waves -text "Waves"  -activebackground red  -takefocus 0 \
-   -padx 2 -pady 0 -command waves $bbg
-  eval button $topwin.menubar.simulate -text "Simulate"  -activebackground red  -takefocus 0 \
-   -padx 2 -pady 0 -command \{simulate_button $topwin.menubar.simulate\} $bbg
+
+
+  # eval is needed here to expand before evaluating 'button'
+  # eval button $topwin.menubar.waves -text "Waves" -activebackground orange  -takefocus 0 \
+  #  -padx 2 -pady 0 -command waves 
+
+  eval menubutton $topwin.menubar.waves -text "Waves" -activebackground orange  -takefocus 0 \
+   -padx 2 -pady 0 -bd 0 -relief raised -menu $topwin.menubar.waves.menu
+  menu  $topwin.menubar.waves.menu -tearoff 0
+  $topwin.menubar.waves.menu add command -label {External viewer} -command {waves external}
+  $topwin.menubar.waves.menu add separator
+  $topwin.menubar.waves.menu add command -label Clear -command {xschem raw_clear}
+  $topwin.menubar.waves.menu add separator
+  $topwin.menubar.waves.menu add command -label {Op Annotate} -command {
+       set retval [select_raw]
+       set show_hidden_texts 1
+       if {$retval ne {}} {
+         xschem annotate_op $retval
+       } else {
+         xschem annotate_op
+       }
+  }
+  $topwin.menubar.waves.menu add command -label Op -command {waves op}
+  $topwin.menubar.waves.menu add command -label Dc -command {waves dc}
+  $topwin.menubar.waves.menu add command -label Ac -command {waves ac}
+  $topwin.menubar.waves.menu add command -label Tran -command {waves tran}
+  $topwin.menubar.waves.menu add command -label Noise -command {waves noise}
+  $topwin.menubar.waves.menu add command -label Sp -command {waves ac}
+  $topwin.menubar.waves.menu add command -label Spectrum -command {waves ac}
+
+
+  eval button $topwin.menubar.simulate -text "Simulate"  -activebackground orange  -takefocus 0 \
+   -padx 2 -pady 0 -bd 0 -command {
+     simulate_from_button
+   }
   set simulate_bg [$topwin.menubar.simulate cget -bg]
-  eval button $topwin.menubar.netlist -text "Netlist"  -activebackground red  -takefocus 0 \
-   -padx 2 -pady 0 -command \{xschem netlist -erc\} $bbg
+  eval button $topwin.menubar.netlist -text "Netlist"  -activebackground orange  -takefocus 0 \
+   -padx 2 -pady 0 -bd 0 -command \{xschem netlist -erc\}
+
   # create  $topwin.menubar.layers.menu
   create_layers_menu $topwin
   $topwin.menubar.view.menu add command -label "Redraw" -command "xschem redraw" -accelerator Esc
@@ -6759,20 +7618,21 @@ proc build_widgets { {topwin {} } } {
          }
 
   $topwin.menubar.view.menu add checkbutton -label "Toggle variable line width" -variable change_lw \
-     -accelerator {_}
+     -selectcolor $selectcolor -accelerator {_}
   $topwin.menubar.view.menu add command -label "Set line width" \
        -command {
+         set change_lw 0
          input_line "Enter linewidth (float):" "xschem line_width"
        }
   $topwin.menubar.view.menu add checkbutton -label "Tabbed interface" -variable tabbed_interface \
-    -command setup_tabbed_interface
+    -selectcolor $selectcolor -command setup_tabbed_interface
 
   $topwin.menubar.view.menu add cascade -label "Show / Hide" \
        -menu $topwin.menubar.view.menu.show 
   menu $topwin.menubar.view.menu.show -tearoff 0
 
   $topwin.menubar.view.menu.show add checkbutton -label "Show ERC Info window" \
-    -variable show_infowindow -command {
+    -selectcolor $selectcolor -variable show_infowindow -command {
        if { $show_infowindow != 0 } {wm deiconify .infotext
        } else {wm withdraw .infotext}
      }
@@ -6782,21 +7642,22 @@ proc build_widgets { {topwin {} } } {
           xschem redraw
        }
   $topwin.menubar.view.menu.show add checkbutton -label "Symbol text" -variable sym_txt \
+     -selectcolor $selectcolor  \
      -accelerator {Ctrl+B} -command { xschem set sym_txt $sym_txt; xschem redraw }
   $topwin.menubar.view.menu.show add checkbutton -label "Show Toolbar" -variable toolbar_visible \
-     -command "
+     -selectcolor $selectcolor -command "
         if { \$toolbar_visible } \" toolbar_show $topwin\" else \"toolbar_hide $topwin\"
      "
   $topwin.menubar.view.menu.show add checkbutton -label "Horizontal Toolbar" -variable toolbar_horiz \
-     -command " 
+     -selectcolor $selectcolor -command " 
         if { \$toolbar_visible } \" toolbar_hide $topwin; toolbar_show $topwin \"
      "
   $topwin.menubar.view.menu.show add checkbutton -label "Show hidden texts"  -variable show_hidden_texts \
-         -command {xschem update_all_sym_bboxes; xschem redraw}
+         -selectcolor $selectcolor -command {xschem update_all_sym_bboxes; xschem redraw}
   $topwin.menubar.view.menu.show add checkbutton -label "Draw grid axes"  -variable draw_grid_axes \
-         -command {xschem redraw}
+         -selectcolor $selectcolor -command {xschem redraw}
   $topwin.menubar.view.menu.show add checkbutton -label "Show net names on symbol pins/floaters" \
-     -variable show_pin_net_names \
+     -selectcolor $selectcolor -variable show_pin_net_names \
      -command {
         xschem update_all_sym_bboxes
         xschem redraw
@@ -6806,19 +7667,19 @@ proc build_widgets { {topwin {} } } {
   $topwin.menubar.prop.menu add command -label "Edit with editor" -command "xschem edit_vi_prop" -accelerator Shift+Q
   $topwin.menubar.prop.menu add command -label "View" -command "xschem view_prop" -accelerator Ctrl+Shift+Q
   $topwin.menubar.prop.menu add command -label "Toggle *_ignore attribute on selected instances" \
-     -command "xschem toggle_ignore"
+     -command "xschem toggle_ignore" -accelerator Shift+T
   $topwin.menubar.prop.menu add command -label "Edit Header/License text" \
      -command { update_schematic_header } -accelerator Shift+B
   $topwin.menubar.prop.menu add command -background red -label "Edit file (danger!)" \
      -command "xschem edit_file" -accelerator Alt+Q
   $topwin.menubar.sym.menu add radiobutton -label "Show symbols" \
-     -variable hide_symbols -value 0 \
+     -selectcolor $selectcolor -background grey60 -variable hide_symbols -value 0 \
      -command {xschem set hide_symbols $hide_symbols; xschem redraw} -accelerator Alt+B
   $topwin.menubar.sym.menu add radiobutton -label "Show instance Bounding boxes for subcircuit symbols" \
-     -variable hide_symbols -value 1 \
+     -selectcolor $selectcolor -background grey60 -variable hide_symbols -value 1 \
      -command {xschem set hide_symbols $hide_symbols; xschem redraw} -accelerator Alt+B
   $topwin.menubar.sym.menu add radiobutton -label "Show instance Bounding boxes for all symbols" \
-     -variable hide_symbols -value 2 \
+     -selectcolor $selectcolor -background grey60 -variable hide_symbols -value 2 \
      -command {xschem set hide_symbols $hide_symbols; xschem redraw} -accelerator Alt+B
   $topwin.menubar.sym.menu add command -label "Set symbol width" \
      -command {
@@ -6836,6 +7697,12 @@ proc build_widgets { {topwin {} } } {
           -command "schpins_to_sympins" -accelerator Alt+H
   $topwin.menubar.sym.menu add command -label "Place symbol pin" \
           -command "xschem add_symbol_pin" -accelerator Alt+P
+  $topwin.menubar.sym.menu add command -label "Place net pin label" \
+          -command "xschem net_label 1" -accelerator Alt+L
+  $topwin.menubar.sym.menu add command -label "Place net wire label" \
+          -command "xschem net_label 0" -accelerator Alt-Shift-L
+  $topwin.menubar.sym.menu add command -label "Change selected inst. texts to floaters" \
+          -command "xschem floaters_from_selected_inst"
   $topwin.menubar.sym.menu add command -label "Print list of highlight nets" \
           -command "xschem print_hilight_net 1" -accelerator J
   $topwin.menubar.sym.menu add command -label "Print list of highlight nets, with buses expanded" \
@@ -6847,14 +7714,12 @@ proc build_widgets { {topwin {} } } {
   $topwin.menubar.sym.menu add command -label "Create pins from highlight nets" \
           -command "xschem print_hilight_net 0" -accelerator Ctrl-J
   $topwin.menubar.sym.menu add checkbutton \
+     -selectcolor $selectcolor  \
      -label "Search all search-paths for schematic associated to symbol" -variable search_schematic
   $topwin.menubar.sym.menu add checkbutton -label "Allow duplicated instance names (refdes)" \
-      -variable disable_unique_names
+      -selectcolor $selectcolor -variable disable_unique_names
   $topwin.menubar.tools.menu add command -label "Insert symbol" -command "xschem place_symbol" -accelerator {Ins, Shift-I}
   toolbar_add ToolInsertSymbol "xschem place_symbol" "Insert Symbol" $topwin
-  $topwin.menubar.tools.menu add command -label "Insert wire label" -command "xschem net_label 1" -accelerator {Alt-L}
-  $topwin.menubar.tools.menu add command -label "Insert wire label 2" -command "xschem net_label 0" \
-     -accelerator {Alt-Shift-L}
   $topwin.menubar.tools.menu add command -label "Insert text" -command "xschem place_text" -accelerator T
   toolbar_add ToolInsertText "xschem place_text" "Insert Text" $topwin
   $topwin.menubar.tools.menu add command -label "Insert wire" -command "xschem wire" -accelerator W
@@ -6870,7 +7735,7 @@ proc build_widgets { {topwin {} } } {
   toolbar_add ToolInsertArc "xschem arc" "Insert Arc" $topwin
   $topwin.menubar.tools.menu add command -label "Insert circle" -command "xschem circle" -accelerator Ctrl+Shift+C
   toolbar_add ToolInsertCircle "xschem circle" "Insert Circle" $topwin
-  $topwin.menubar.tools.menu add command -label "Insert PNG image" -command "xschem add_png"
+  $topwin.menubar.tools.menu add command -label "Insert JPG/PNG image" -command "xschem add_image"
   $topwin.menubar.tools.menu add command -label "Search" -accelerator Ctrl+F -command  property_search
   toolbar_add ToolSearch property_search "Search" $topwin
   $topwin.menubar.tools.menu add command -label "Align to Grid" -accelerator Alt+U -command  "xschem align"
@@ -6897,17 +7762,16 @@ proc build_widgets { {topwin {} } } {
    -label {Set schematic to compare and compare with} \
    -command "set compare_sch 1; xschem compare_schematics" 
   $topwin.menubar.hilight.menu add command \
-   -label {Swap compare schematics} -accelerator {Ctrl-Shift-X} \
+   -label {Swap compare schematics} \
    -command "swap_compare_schematics" 
   $topwin.menubar.hilight.menu add checkbutton \
-   -label {Compare schematics} \
+   -selectcolor $selectcolor -label {Compare schematics} \
    -command {
       xschem unselect_all
       xschem redraw } \
-   -variable compare_sch \
-   -accelerator {Alt-X}
+   -variable compare_sch
   $topwin.menubar.hilight.menu add checkbutton -label "View only Probes" -variable only_probes \
-         -accelerator {5} \
+         -selectcolor $selectcolor -accelerator {5} \
          -command { xschem only_probes }
   $topwin.menubar.hilight.menu add command \
    -label {Highlight net-pin mismatches on sel. instances} \
@@ -6921,7 +7785,8 @@ proc build_widgets { {topwin {} } } {
      -command "xschem warning_overlapped_symbols 1; xschem redraw" -accelerator {}
   $topwin.menubar.hilight.menu add command -label {Propagate Highlight selected net/pins} \
      -command "xschem hilight drill" -accelerator {Ctrl+Shift+K}
-  $topwin.menubar.hilight.menu add checkbutton -label "Increment Hilight Color" -variable incr_hilight
+  $topwin.menubar.hilight.menu add checkbutton \
+     -selectcolor $selectcolor -label "Increment Hilight Color" -variable incr_hilight
   $topwin.menubar.hilight.menu add command -label {Highlight selected net/pins} \
      -command "xschem hilight" -accelerator K
   $topwin.menubar.hilight.menu add command -label {Send selected net/pins to Viewer} \
@@ -6934,12 +7799,14 @@ proc build_widgets { {topwin {} } } {
   $topwin.menubar.hilight.menu add command -label {Un-highlight selected net/pins} \
      -command "xschem unhilight" -accelerator Ctrl+K
   # 20160413
-  $topwin.menubar.hilight.menu add checkbutton -label {Auto-highlight net/pins} -variable auto_hilight
+  $topwin.menubar.hilight.menu add checkbutton \
+     -selectcolor $selectcolor -label {Auto-highlight net/pins} -variable auto_hilight
   $topwin.menubar.hilight.menu add checkbutton -label {Enable highlight connected instances} \
-    -variable en_hilight_conn_inst
+    -selectcolor $selectcolor -variable en_hilight_conn_inst
 
   $topwin.menubar.simulation.menu add command -label "Set netlist Dir" \
     -command {
+          set local_netlist_dir 0
           set_netlist_dir 1
     }
   $topwin.menubar.simulation.menu add command -label "Set top level netlist name" \
@@ -6947,10 +7814,16 @@ proc build_widgets { {topwin {} } } {
           input_line {Set netlist file name} {xschem set netlist_name} [xschem get netlist_name] 40
     }
   $topwin.menubar.simulation.menu add checkbutton -label "Show netlist after netlist command" \
-     -variable netlist_show -accelerator {Shift+A} 
-  $topwin.menubar.simulation.menu add checkbutton -label "Use 'simulation' dir under current schematic dir" \
-    -variable local_netlist_dir \
-    -command { if {$local_netlist_dir == 0 } { set_netlist_dir 1 } else { simuldir} }
+     -selectcolor $selectcolor -variable netlist_show -accelerator {Shift+A} 
+  $topwin.menubar.simulation.menu add radiobutton -indicatoron 1 -label "Use netlist directory" \
+    -background grey60 -variable local_netlist_dir -value 0 \
+    -selectcolor $selectcolor -command {set_netlist_dir 1 }
+  $topwin.menubar.simulation.menu add radiobutton -indicatoron 1 -label "Use 'simulation' dir in schematic dir" \
+    -background grey60 -variable local_netlist_dir -value 1 \
+    -selectcolor $selectcolor -command {set_netlist_dir 1 }
+  $topwin.menubar.simulation.menu add radiobutton -indicatoron 1 -label "Use 'simulation/\[schname\]' dir in schematic dir" \
+    -background grey60 -variable local_netlist_dir -value 2 \
+    -selectcolor $selectcolor -command {set_netlist_dir 1 }
   $topwin.menubar.simulation.menu add command -label {Configure simulators and tools} -command {simconf}
   if {$OS == {Windows}} {
     $topwin.menubar.simulation.menu add command -label {List running sub-processes} -state disabled
@@ -6960,22 +7833,24 @@ proc build_widgets { {topwin {} } } {
     }
   }
   $topwin.menubar.simulation.menu add command -label {View last job data} -command {
-    viewdata $execute(data,last)
+    if { [info exists execute(data,last)] } {
+      viewdata $execute(data,last)
+    }
   }
   $topwin.menubar.simulation.menu add command -label {View last job errors} -command {
-    viewdata $execute(error,last)
+    if { [info exists execute(error,last)] } {
+      viewdata $execute(error,last)
+    }
   }
   $topwin.menubar.simulation.menu add command -label {Utile Stimuli Editor (GUI)} -command {
-     simuldir
      inutile [xschem get current_dirname]/stimuli.[file rootname [file tail [xschem get schname]]]
   }
   $topwin.menubar.simulation.menu add command -label {Utile Stimuli Translate} -command {
-     simuldir
      inutile_translate  [xschem get current_dirname]/stimuli.[file rootname [file tail [xschem get schname]]]
   }
   $topwin.menubar.simulation.menu add command -label {Shell [simulation path]} -command {
      if { [set_netlist_dir 0] ne "" } {
-        simuldir; get_shell $netlist_dir
+        get_shell $netlist_dir
      }
    }
   $topwin.menubar.simulation.menu add command -label {Edit Netlist} \
@@ -6997,21 +7872,25 @@ tclcommand=\"xschem raw_read \$netlist_dir/[file tail [file rootname [xschem get
 "
   }
   $topwin.menubar.simulation.menu.graph add command -label "Annotate Operating Point into schematic" \
-         -command {set show_hidden_texts 1; xschem annotate_op}
-  $topwin.menubar.simulation.menu.graph add checkbutton -variable rawfile_loaded \
-     -label {Load/Unload spice .raw file} -command {
-     xschem raw_read $netlist_dir/[file tail [file rootname [xschem get current_name]]].raw
-  }
+    -command {
+       set retval [select_raw]
+       set show_hidden_texts 1
+       if {$retval ne {}} {
+         xschem annotate_op $retval
+       } else {
+         xschem annotate_op
+       }
+    }
   $topwin.menubar.simulation.menu.graph add checkbutton -label "Live annotate probes with 'b' cursor" \
-         -variable live_cursor2_backannotate 
+     -selectcolor $selectcolor -variable live_cursor2_backannotate 
   $topwin.menubar.simulation.menu.graph add checkbutton -label "Hide graphs if no spice data loaded" \
-     -variable hide_empty_graphs -command {xschem redraw}
+     -selectcolor $selectcolor -variable hide_empty_graphs -command {xschem redraw}
 
 
   $topwin.menubar.simulation.menu add cascade -label "LVS" -menu $topwin.menubar.simulation.menu.lvs
   menu $topwin.menubar.simulation.menu.lvs -tearoff 0
   $topwin.menubar.simulation.menu.lvs add checkbutton -label "LVS netlist: Top level is a .subckt" \
-  -variable lvs_netlist -command {
+  -selectcolor $selectcolor -variable lvs_netlist -command {
     if {$lvs_netlist == 1} {
       xschem set format lvs_format 
     } else {
@@ -7019,12 +7898,13 @@ tclcommand=\"xschem raw_read \$netlist_dir/[file tail [file rootname [xschem get
     }
   }
   $topwin.menubar.simulation.menu.lvs add checkbutton -label "Set 'lvs_ignore' variable" \
+         -selectcolor $selectcolor \
          -variable lvs_ignore -command {xschem rebuild_connectivity; xschem unhilight_all}
   $topwin.menubar.simulation.menu.lvs add checkbutton -label "Use 'spiceprefix' attribute" -variable spiceprefix \
-         -command {xschem redraw} 
+         -selectcolor $selectcolor -command {xschem redraw} 
 
   toolbar_add Netlist { xschem netlist -erc } "Create netlist" $topwin
-  toolbar_add Simulate "simulate_button $topwin.menubar.simulate" "Run simulation" $topwin
+  toolbar_add Simulate "simulate_from_button" "Run simulation" $topwin
   toolbar_add Waves { waves } "View results" $topwin
 
   pack $topwin.menubar.file -side left
@@ -7073,16 +7953,17 @@ tclcommand=\"xschem raw_read \$netlist_dir/[file tail [file rootname [xschem get
   }
 
   frame $topwin.statusbar  
-  label $topwin.statusbar.1   -text "STATUS BAR 1"  
-  label $topwin.statusbar.2   -text "SNAP:"
-  entry $topwin.statusbar.3 -relief sunken -bg white \
-         -width 10 -foreground black -takefocus 0
-  label $topwin.statusbar.4   -text "GRID:"
-  entry $topwin.statusbar.5 -relief sunken -bg white \
-         -width 10 -foreground black -takefocus 0
-  label $topwin.statusbar.6   -text "NETLIST MODE:"
-  label $topwin.statusbar.7 -relief sunken -bg white \
-         -width 8 
+  label $topwin.statusbar.1 -text "STATUS BAR 1"  
+  label $topwin.statusbar.2 -text "SNAP:"
+  entry $topwin.statusbar.3 \
+         -width 7 -foreground black -takefocus 0
+  label $topwin.statusbar.4 -text "GRID:"
+  entry $topwin.statusbar.5 \
+         -width 7 -foreground black -takefocus 0
+  label $topwin.statusbar.6 -text "MODE:"
+  label $topwin.statusbar.7 -width 7 
+  label $topwin.statusbar.10 -text {Stretch:}
+  label $topwin.statusbar.9 -textvariable enable_stretch
   label $topwin.statusbar.8 -activebackground red -text {} 
 }
 
@@ -7112,7 +7993,7 @@ proc trace_set_paths {varname idxname op} {
 # when XSCHEM_LIBRARY_PATH is changed call this function to refresh and cache
 # new library search path.
 proc set_paths {} {
-  global XSCHEM_LIBRARY_PATH env pathlist OS add_all_windows_drives
+  global XSCHEM_LIBRARY_PATH env pathlist OS add_all_windows_drives file_dialog_names1
   set pathlist {}
   # puts stderr "caching search paths"
   if { [info exists XSCHEM_LIBRARY_PATH] } {
@@ -7140,8 +8021,6 @@ proc set_paths {} {
     }
   }
   if {$pathlist eq {}} { set pathlist [pwd] }
-  set myload_files1 $pathlist
-  # set INITIALLOADDIR INITIALINSTDIR INITIALPROPDIR as initial locations in load file dialog box
   set_initial_dirs
 }
 
@@ -7178,10 +8057,10 @@ proc set_missing_colors_to_black {} {
 }
 
 proc create_layers_menu { {topwin {} } } {
-  global dark_colorscheme colors
+  global dark_colorscheme
   if { $dark_colorscheme == 1 } { set txt_color black} else { set txt_color white} 
   set j 0
-  foreach i $colors {
+  foreach i $tctx::colors {
     ## 20121121
     if {  $j == [xschem get pinlayer] } { 
       set laylab [format %2d $j]-PIN
@@ -7233,7 +8112,7 @@ proc source_user_tcl_files {} {
 proc eval_postinit_commands {} {
   global postinit_commands
   if {[info exists postinit_commands]} {
-    catch {eval $postinit_commands}
+    catch {uplevel #0 $postinit_commands}
   }
 }
 
@@ -7245,7 +8124,7 @@ proc setup_tcp_xschem { {port_number {}} } {
   if {$port_number ne {}} { set xschem_listen_port $port_number}
   if { [info exists xschem_listen_port] && ($xschem_listen_port ne {}) } { 
     if {[catch {socket -server xschem_server $xschem_listen_port} err]} {
-      puts "setup_tcp_xschem: problems listening to TCP port: $xschem_listen_port"
+      puts "setup_tcp_xschem: problems finding a free TCP port"
       puts $err
       return 0
     } else {
@@ -7253,7 +8132,7 @@ proc setup_tcp_xschem { {port_number {}} } {
       set xschem_server_getdata(server) $chan
       # this piece of code deals with automatic port number selection (port_number argument set to 0) 
       # tcl will automatically choose a free tcp port.
-      set assigned_port [lindex [chan configure $chan -sockname] end]
+      set assigned_port [lindex [fconfigure $chan -sockname] end]
       set xschem_listen_port $assigned_port
       return $assigned_port
     }
@@ -7267,40 +8146,79 @@ proc setup_tcp_bespice {} {
     # We will attempt to open port $bespice_listen_port ... $bespice_listen_port + 1000 this should succeed ...
     # We need to make this attempt as several instances of xschem / bespice might be running.
     # Each of these instances needs it's own server listening on a dedicated port.
-    # The variable $bespice_listen_port is passed to bespice wave when the application is started in the function "set_sim_defaults()".
-    set port $bespice_listen_port
-    set last_port [expr $port + 1000] 
-    while { $port < $last_port } {    
-        if {[catch {socket -server bespice_server $port} err]} {
-          # failed => increment port
-          incr port
-        } else {
-          # succeded => set $bespice_listen_port and socket connection for communication
-          puts "setup_tcp_bespice: success : listening to TCP port: $port"
-          set bespice_server_getdata(server) $err
-          set bespice_listen_port $port
-          return 1
-        }
+    # The variable $bespice_listen_port is passed to bespice wave when the application is started
+    # in the function "set_sim_defaults()".
+    
+    # if $bespice_listen_port is set to 0 TCL will automatically find a free port
+    if {[catch {socket -server bespice_server $bespice_listen_port} err]} {
+      # failed
+      puts "setup_tcp_bespice: problems finding a free TCP port"
+      puts $err
+      return 0
+    } else {
+      # succeded => set $bespice_listen_port and socket connection for communication
+      set chan $err
+      set bespice_server_getdata(server) $chan
+      set assigned_port [lindex [fconfigure $chan -sockname] end]
+      set bespice_listen_port $assigned_port
+      puts stderr "setup_tcp_bespice: success : listening to TCP port: $bespice_listen_port"
+      return 1
     }
     puts "setup_tcp_bespice: problems listening to TCP port: $bespice_listen_port ... $last_port"
     puts $err
     return 0
   } 
   # bespice_listen_port not defined, nothing to do
-  # puts "setup_tcp_bespice: the functionallity was not set up as the variable \$bespice_listen_port hasn't been defined in your xschemrc file."
+  # puts "setup_tcp_bespice: the functionallity was not set up as the variable \$bespice_listen_port"
+  # puts "hasn't been defined in your xschemrc file."
   return 1
 }
 
 ### 
 ###   MAIN PROGRAM
 ###
+set_ne dark_colorscheme 1
+set_ne dark_gui_colorscheme 0
+
+if { [info exists has_x]} {
+  if { $dark_gui_colorscheme == 0 } { ;# normal GUI
+    option add *foreground black startupFile
+    option add *activeForeground black startupFile
+    option add *background {grey90} startupFile
+    option add *activeBackground {#ececec} startupFile
+    option add *disabledForeground {black} startupFile
+    option add *disabledBackground {grey70} startupFile
+    option add *readonlyBackground {grey70} startupFile
+    option add *highlightBackground {white} startupFile
+    option add *highlightThickness 0 startupFile
+    option add *highlightColor {grey30} startupFile
+    option add *insertBackground {black} startupFile
+    option add *selectColor {white} startupFile ;# checkbuttons, radiobuttons
+    option add *selectForeground black
+    option add *selectBackground grey70
+  } else { ;# dark GUI colorscheme
+    option add *foreground white startupFile
+    option add *activeForeground white startupFile
+    option add *background {grey20} startupFile
+    option add *activeBackground {grey20} startupFile
+    option add *disabledForeground {white} startupFile
+    option add *disabledBackground {grey20} startupFile
+    option add *readonlyBackground {grey20} startupFile
+    option add *highlightBackground {black} startupFile
+    option add *highlightThickness 0 startupFile
+    option add *highlightColor {grey70} startupFile
+    option add *insertBackground {white} startupFile
+    option add *selectColor {grey10} startupFile ;# checkbuttons, radiobuttons
+    option add *selectForeground black
+    option add *selectBackground grey70
+  }
+}
 set OS [lindex $tcl_platform(os) 0]
 set env(LC_ALL) C
 # tcl variable XSCHEM_LIBRARY_PATH  should already be set in xschemrc
 set_ne add_all_windows_drives 1
 set_paths
 print_help_and_exit
-
 set_ne text_replace_selection 1
 if {$text_replace_selection && $OS != "Windows"} {
   # deletes selected text when pasting in text widgets, courtesy Wolf-Dieter Busch
@@ -7344,6 +8262,7 @@ set_ne xschem_libs {}
 set_ne noprint_libs {}
 set_ne nolist_libs {}
 set_ne debug_var 0
+set_ne debug_tcleval 0 ;# debug tclpropeval2 (tcleval() in xschem attributes)
 # used to activate debug from menu
 set_ne menu_debug_var 0
 set textwindow_wcounter 1
@@ -7367,7 +8286,7 @@ if { ![info exists dircolor] } {
   set_ne dircolor(/share/doc/xschem/) {#338844}
 }
 
-set_ne myload_globfilter {*}
+set_ne file_dialog_globfilter {*}
 set_ne component_browser_on_top 1
 ## list of tcl procedures to load at end of xschem.tcl
 set_ne tcl_files {}
@@ -7389,6 +8308,7 @@ set_ne split_files 0
 set_ne flat_netlist 0
 set_ne netlist_show 0
 set_ne color_ps 1
+set_ne ps_page_title 1 ;# add a title in the top left page corner
 set_ne crosshair_layer 3 ;# TEXTLAYER
 set_ne ps_paper_size {a4 842 595}
 set_ne transparent_svg 0
@@ -7403,13 +8323,21 @@ set_ne draw_window 0
 set_ne show_hidden_texts 0
 set_ne incr_hilight 1
 set_ne enable_stretch 0
-set_ne constrained_move 0
+set_ne constr_mv 0
 set_ne unselect_partial_sel_wires 0
+set_ne load_file_dialog_fullpath 1
+
+# if set show selected elements while dragging the selection rectangle.
+# once selected these can not be unselected by retracting the selection rectangle
+# if not set show selected items at end of drag.
+set_ne incremental_select 1
+
 set_ne draw_crosshair 0
 set_ne draw_grid 1
 set_ne big_grid_points 0
 set_ne draw_grid_axes 1
 set_ne persistent_command 0
+set_ne intuitive_interface 1
 set_ne autotrim_wires 0
 set_ne compare_sch 0
 set_ne disable_unique_names 0
@@ -7422,7 +8350,11 @@ set_ne editor {gvim -f}
 set_ne rainbow_colors 0
 set_ne initial_geometry {900x600}
 set_ne edit_symbol_prop_new_sel {}
-set_ne launcher_default_program {xdg-open}
+if {$OS == "Windows"} {
+  set_ne launcher_default_program {start}
+} else {
+  set_ne launcher_default_program {xdg-open}
+}
 set_ne auto_hilight 0
 set_ne use_tclreadline 1
 set_ne en_hilight_conn_inst 0
@@ -7452,11 +8384,13 @@ set_ne tabbed_interface 1
 ## case insensitive symbol lookup (on case insensitive filesystems only!)
 set_ne case_insensitive 0
 
-set_ne myload_ext {*}
+set_ne file_dialog_ext {*}
 
 ## remember edit_prop widget size
 set_ne edit_prop_size 80x12
-set_ne text_line_default_geometry 80x12
+set_ne text_line_default_geometry {}
+set_ne enter_text_default_geometry {}
+set_ne graph_dialog_default_geometry {}
 set_ne terminal xterm
 
 # xschem tcp port number (listen to port and execute commands from there if set) 
@@ -7466,6 +8400,8 @@ set_ne xschem_listen_port {}
 # server for bespice waveform connection (listen to port and send commands to bespice if set)
 # set a port number in xschemrc if you want xschem to be able to cross-probe to bespice
 set_ne bespice_listen_port {}
+
+set_ne keep_symbols 0 ;# if set loaded symbols will not be purged when descending/netlisting.
 
 # hide instance details (show only bbox) 
 set_ne hide_symbols 0
@@ -7490,11 +8426,10 @@ set_ne svg_font_name {Sans-Serif}
 # has_cairo set by c program if cairo enabled
 set has_cairo 0 
 set rotated_text {} ;#20171208
-set_ne dark_colorscheme 1
 set_ne enable_dim_bg 0
 set_ne dim_bg 0.0
 set_ne dim_value 0.0
-set_ne fix_broken_tiled_fill 0 ;# set to 1 on some broken X11 drivers / GPUs that show garbage on screen */
+set_ne fix_broken_tiled_fill 1 ;# set to 1 on some broken X11 drivers / GPUs that show garbage on screen */
 # this fix uses an alternative method for getting mouse coordinates on KeyPress/KeyRelease
 # events. Some remote connection softwares do not generate the correct coordinates
 # on such events */
@@ -7541,6 +8476,99 @@ if {!$rainbow_colors} {
   }
 }
 
+
+# every 0x#### hex data represents one 16 bit row of the 16x16 bit fill bitmap
+# of the specified layer number.
+set_ne pixdata(0) {
+  0xffff 0xffff 0xffff 0xffff 0xffff 0xffff 0xffff 0xffff
+  0xffff 0xffff 0xffff 0xffff 0xffff 0xffff 0xffff 0xffff
+}
+set_ne pixdata(1) {
+  0xffff 0xffff 0xffff 0xffff 0xffff 0xffff 0xffff 0xffff
+  0xffff 0xffff 0xffff 0xffff 0xffff 0xffff 0xffff 0xffff
+}
+set_ne pixdata(2) {
+  0x0000 0x0000 0x0000 0x0000 0x0000 0x0000 0x0000 0x0000
+  0x0000 0x0000 0x0000 0x0000 0x0000 0x0000 0x0000 0x0000
+}
+set_ne pixdata(3) {
+  0x5555 0x0000 0xaaaa 0x0000 0x5555 0x0000 0xaaaa 0x0000
+  0x5555 0x0000 0xaaaa 0x0000 0x5555 0x0000 0xaaaa 0x0000
+}
+set_ne pixdata(4) {
+  0xffff 0xffff 0xffff 0xffff 0xffff 0xffff 0xffff 0xffff
+  0xffff 0xffff 0xffff 0xffff 0xffff 0xffff 0xffff 0xffff
+}
+set_ne pixdata(5) {
+  0xffff 0xffff 0xffff 0xffff 0xffff 0xffff 0xffff 0xffff
+  0xffff 0xffff 0xffff 0xffff 0xffff 0xffff 0xffff 0xffff
+}
+set_ne pixdata(6) {
+  0x0101 0x0000 0x0000 0x0000 0x1010 0x0000 0x0000 0x0000
+  0x0101 0x0000 0x0000 0x0000 0x1010 0x0000 0x0000 0x0000
+}
+set_ne pixdata(7) {
+  0x0000 0x8000 0x0000 0x0000 0x0000 0x0000 0x0000 0x0200
+  0x0000 0x0080 0x0000 0x0000 0x0000 0x0000 0x0000 0x0002
+}
+set_ne pixdata(8) {
+  0x1111 0x0000 0x0000 0x0000 0x1111 0x0000 0x0000 0x0000
+  0x1111 0x0000 0x0000 0x0000 0x1111 0x0000 0x0000 0x0000
+}
+set_ne pixdata(9) {
+  0x0441 0x0000 0x1004 0x0000 0x4110 0x0000 0x0441 0x0000
+  0x1004 0x0000 0x4110 0x0000 0x0441 0x0000 0x1004 0x0000
+}
+set_ne pixdata(10) {
+  0xffff 0xffff 0xffff 0xffff 0xffff 0xffff 0xffff 0xffff
+  0xffff 0xffff 0xffff 0xffff 0xffff 0xffff 0xffff 0xffff
+}
+set_ne pixdata(11) {
+  0x1111 0x0000 0x4444 0x0000 0x1111 0x0000 0x4444 0x0000
+  0x1111 0x0000 0x4444 0x0000 0x1111 0x0000 0x4444 0x0000
+}
+set_ne pixdata(12) {
+  0x0404 0x0202 0x0101 0x8080 0x4040 0x2020 0x1010 0x0808
+  0x0404 0x0202 0x0101 0x8080 0x4040 0x2020 0x1010 0x0808
+}
+set_ne pixdata(13) {
+  0x1111 0x2222 0x4444 0x8888 0x1111 0x2222 0x4444 0x8888
+  0x1111 0x2222 0x4444 0x8888 0x1111 0x2222 0x4444 0x8888
+}
+set_ne pixdata(14) {
+  0x0000 0x0000 0x0000 0x0000 0x0000 0x0000 0x0000 0x0000
+  0x0000 0x0000 0x0000 0x0000 0x0000 0x0000 0x0000 0x0000
+}
+set_ne pixdata(15) {
+  0x4444 0x0000 0x0000 0x0000 0x4444 0x0000 0x0000 0x0000
+  0x4444 0x0000 0x0000 0x0000 0x4444 0x0000 0x0000 0x0000
+}
+set_ne pixdata(16) {
+  0x1111 0x0000 0x0000 0x0000 0x2222 0x0000 0x0000 0x0000
+  0x4444 0x0000 0x0000 0x0000 0x8888 0x0000 0x0000 0x0000
+}
+set_ne pixdata(17) {
+  0x0000 0x0000 0x0000 0x0000 0x0000 0x0000 0x0000 0x0000
+  0x0000 0x0000 0x0000 0x0000 0x0000 0x0000 0x0000 0x0000
+}
+set_ne pixdata(18) {
+  0x5555 0xaaaa 0x5555 0xaaaa 0x5555 0xaaaa 0x5555 0xaaaa
+  0x5555 0xaaaa 0x5555 0xaaaa 0x5555 0xaaaa 0x5555 0xaaaa
+}
+set_ne pixdata(19) {
+  0x0000 0x0000 0x0000 0x0000 0x0000 0x0000 0x0000 0x0000
+  0x0000 0x0000 0x0000 0x0000 0x0000 0x0000 0x0000 0x0000
+}
+set_ne pixdata(20) {
+  0x0000 0x0000 0x0000 0x0000 0x0000 0x0000 0x0000 0x0000
+  0x0000 0x0000 0x0000 0x0000 0x0000 0x0000 0x0000 0x0000
+}
+set_ne pixdata(21) {
+  0x0000 0x0000 0x0000 0x0000 0x0000 0x0000 0x0000 0x0000
+  0x0000 0x0000 0x0000 0x0000 0x0000 0x0000 0x0000 0x0000
+}
+
+
 # for svg and pdf draw 20121108
 regsub -all {"} $dark_colors  {} svg_colors
 regsub -all {#} $svg_colors  {0x} svg_colors
@@ -7551,7 +8579,7 @@ set_missing_colors_to_black
 set dark_colors_save $dark_colors
 set light_colors_save $light_colors
 
-set_ne colors $dark_colors
+set_ne tctx::colors $dark_colors
 ##### end set colors
 
 
@@ -7566,8 +8594,6 @@ if {$OS == "Windows"} {
 } else {
   set filetmp [pwd]/.tmp2
 }
-
-set rawfile_loaded 0
 
 # flag bound to a checkbutton in symbol editprop form
 # if set cell is copied when renaming it
@@ -7623,13 +8649,13 @@ if { [llength $dark_colors] < $cadlayers || [llength $light_colors] < $cadlayers
   puts stderr { Warning: wrong number of configured layers in light_colors or dark_colors variables.}
 }
 if { $dark_colorscheme == 1} { 
-  set colors $dark_colors
+  set tctx::colors $dark_colors
 } else {
-  set colors $light_colors
+  set tctx::colors $light_colors
 }
 regsub -all {"} $light_colors  {} ps_colors
 regsub -all {#} $ps_colors  {0x} ps_colors
-regsub -all {"} $colors {} svg_colors
+regsub -all {"} $tctx::colors {} svg_colors
 regsub -all {#} $svg_colors {0x} svg_colors
 
 if { $show_infowindow } { wm deiconify .infotext } 

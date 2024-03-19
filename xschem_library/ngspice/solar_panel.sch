@@ -98,8 +98,8 @@ jpeg_quality=30
 linewidth_mult=2.0
 hilight_wave=-1}
 B 2 1260 -390 1680 -220 {flags=graph 
-y1 = 0
-y2 = 6.7
+y1 = 3.35
+y2 = 10.05
 divy = 4
 subdivy=1
 x1=5e-10
@@ -114,7 +114,7 @@ jpeg_quality=30
 linewidth_mult=2.0}
 B 2 1260 -750 1680 -560 {flags=graph 
 y1 = -2.7e-05
-y2 = 97
+y2 = 100
 divy = 5
 subdivy=1
 x1=5e-10
@@ -126,7 +126,7 @@ color="7 4 6 10"
 node="\\"Panel power; i(vpanel) v(panel) *\\"
 \\"Led power; i(vled) v(led) *\\"
 \\"Avg.Pan. Pwr; i(vpanel) v(panel) * 20u ravg()\\"
-\\"SUN %; sun 100 *\\""
+\\"SUN \\\\%; sun 100 *\\""
 hilight_wave=-1
 jpeg_quality=30
 linewidth_mult=2.0}
@@ -148,7 +148,8 @@ digital=0
 ypos1=0.00261891
 ypos2=0.51596
 jpeg_quality=30
-linewidth_mult=2.0}
+linewidth_mult=2.0
+}
 B 2 1260 -1140 1680 -950 {flags=graph 
 y1 = 0
 y2 = 1
@@ -206,6 +207,8 @@ T {@value} 985 -286.25 0 1 0.3 0.3 {layer=7 name=C1}
 T {m=@m} 985 -263.75 0 1 0.3 0.3 {layer=7 name=C1}
 T {Floater text
 example} 870 -440 0 0 0.4 0.4 {}
+T {@spice_get_current} 875 -598.75 0 0 0.3 0.3 {layer=7 name=L2}
+T {@spice_get_current} 1015 -268.75 0 0 0.3 0.3 {layer=7 name=C1}
 N 1010 -210 1100 -210 {lab=0}
 N 1100 -300 1100 -210 {lab=0}
 N 640 -610 730 -610 {lab=#net1}
@@ -274,10 +277,12 @@ lab=0}
 C {title.sym} 160 -40 0 0 {name=l1 author="Stefan Schippers" net_name=true}
 C {code_shown.sym} 170 -310 0 0 {name=CONTROL
 value="tcleval(
+.option savecurrents
 .control
   * example of tcl evaluation of code blocks:
   *   current path: $path 
   *   schematic: [xschem get current_name]
+  save all
   tran .05u 1m uic
   write solar_panel.raw
   quit 0
@@ -336,7 +341,7 @@ tclcommand="
 xschem raw_read $netlist_dir/[file tail [file rootname [xschem get current_name]]].raw tran
 "
 }
-C {pv_ngspice.sym} 360 -450 0 0 {name=X1  m=1 power=100 n=36}
+C {pv_ngspice.sym} 360 -450 0 0 {name=X1  m=1 isc=6.8 n=36}
 C {lab_pin.sym} 360 -370 0 0 {name=l12  lab=0 }
 C {capa.sym} 500 -500 0 0 {name=C11
 m=1
